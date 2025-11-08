@@ -159,26 +159,32 @@ def fn_extract_markdown(pdf_path: Path) -> str:
     try:
         # NOTE: marker-pdf is imported here to avoid loading heavy ML models
         # at module import time. This keeps startup fast.
-        from marker.convert import convert_single_pdf
-        from marker.models import load_all_models
+        from marker.converters.pdf import PdfConverter
+        from marker.models import create_model_dict
+        from marker.output import text_from_rendered
 
-        # Load models (cached after first call)
-        model_list = load_all_models()
+        if not pdf_path.exists():
+            raise FileNotFoundError(f"PDF file not found: {pdf_path}")
 
-        # Convert PDF to Markdown
-        full_text, images, out_meta = convert_single_pdf(
-            fname=str(pdf_path),
-            model_lst=model_list,
+        # Create converter with models (models are cached globally by marker)
+        converter = PdfConverter(
+            artifact_dict=create_model_dict(),
         )
 
-        return full_text
+        # Convert PDF to rendered format
+        rendered = converter(str(pdf_path))
+
+        # Extract text from rendered output
+        text, metadata, images = text_from_rendered(rendered)
+
+        return text
 
     except ImportError as e:
         raise ImportError(
             "marker-pdf is not installed. Run: python setup_marker.py"
         ) from e
     except FileNotFoundError as e:
-        raise FileNotFoundError(f"PDF file not found: {pdf_path}") from e
+        raise
     except Exception as e:
         raise Exception(f"Failed to extract Markdown from {pdf_path}: {e}") from e
 
