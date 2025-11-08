@@ -122,25 +122,27 @@ def verify_installation() -> bool:
     try:
         print_info("Importing marker...")
         import marker
-        from marker.convert import convert_single_pdf
-        from marker.models import load_all_models
+        from marker.converters.pdf import PdfConverter
+        from marker.models import create_model_dict
+        from marker.output import text_from_rendered
 
         print_success("All imports successful!")
 
-        print_info("Checking model download...")
+        print_info("Checking model initialization...")
         print_info("(First run will download ~2GB of models - this is normal)")
         print()
 
         # This will trigger model download if needed
-        # We don't actually need to use them, just check they load
+        # We don't actually need to use them, just check they initialize
         try:
-            models = load_all_models()
+            model_dict = create_model_dict()
             print()
-            print_success("Models loaded successfully!")
+            print_success("Models initialized successfully!")
+            print_info("marker-pdf is ready to use")
             return True
         except Exception as e:
             print()
-            print_error(f"Failed to load models: {e}")
+            print_error(f"Failed to initialize models: {e}")
             print_info("Models will be downloaded on first use")
             return True  # Not a fatal error
 
