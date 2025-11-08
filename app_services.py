@@ -142,6 +142,9 @@ def fn_extract_markdown(pdf_path: Path) -> str:
 
     This function performs I/O (reading the PDF file) but is otherwise pure.
 
+    IMPORTANT: This function uses aggressive OCR settings to handle PDFs with
+    corrupted or missing text layers (common with Medium articles saved as PDF).
+
     Args:
         pdf_path: Path to the PDF file to convert
 
@@ -159,6 +162,7 @@ def fn_extract_markdown(pdf_path: Path) -> str:
     try:
         # NOTE: marker-pdf is imported here to avoid loading heavy ML models
         # at module import time. This keeps startup fast.
+        from marker.config.parser import ConfigParser
         from marker.converters.pdf import PdfConverter
         from marker.models import create_model_dict
         from marker.output import text_from_rendered
@@ -166,16 +170,48 @@ def fn_extract_markdown(pdf_path: Path) -> str:
         if not pdf_path.exists():
             raise FileNotFoundError(f"PDF file not found: {pdf_path}")
 
-        # Create converter with models (models are cached globally by marker)
-        converter = PdfConverter(
-            artifact_dict=create_model_dict(),
-        )
+        # Configure marker-pdf for aggressive OCR
+        # This strips existing (potentially corrupted) OCR and re-OCRs everything
+        config_dict = {
+            "output_format": "markdown",
+            "force_ocr": True,  # Force OCR on all pages
+            "strip_existing_ocr": True,  # Remove existing OCR text and re-OCR
+        }
+
+        # Create config parser
+        try:
+            config_parser = ConfigParser(config_dict)
+
+            # Create converter with enhanced OCR settings
+            converter = PdfConverter(
+                config=config_parser.generate_config_dict(),
+                artifact_dict=create_model_dict(),
+                processor_list=config_parser.get_processors(),
+                renderer=config_parser.get_renderer(),
+            )
+        except Exception as e:
+            # Fallback to basic config if ConfigParser fails
+            # (for older versions of marker-pdf)
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"ConfigParser failed, using basic config: {e}")
+
+            converter = PdfConverter(
+                artifact_dict=create_model_dict(),
+            )
 
         # Convert PDF to rendered format
         rendered = converter(str(pdf_path))
 
         # Extract text from rendered output
         text, metadata, images = text_from_rendered(rendered)
+
+        # Validate extracted text
+        if not text or len(text.strip()) < 100:
+            raise ValueError(
+                f"Extracted text is too short ({len(text)} chars). "
+                "PDF may be corrupted or contain only images."
+            )
 
         return text
 
