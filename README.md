@@ -144,6 +144,37 @@ Lokal-RAG/
 - Increase system swap space
 - Close other memory-intensive applications
 
+### Incorrect Text Extraction from PDF
+
+**Problem**: The extracted Markdown contains wrong text or "hallucinated" content that doesn't match the PDF
+
+**Causes**:
+- PDFs with corrupted or low-quality text layers (common with web-saved PDFs like Medium articles)
+- PDFs that are actually scanned images with broken OCR
+- PDFs with mixed text/image content
+
+**Solution (Fixed in v1.1+)**:
+
+The application now uses aggressive OCR settings by default:
+- `force_ocr: True` - Forces OCR on all pages
+- `strip_existing_ocr: True` - Removes corrupted text layer and re-OCRs
+
+If you still experience issues:
+
+1. **Check the source PDF**: Open it in a PDF viewer and try to select text. If text selection is broken or shows wrong characters, the PDF has a corrupted text layer.
+
+2. **Verify extracted content**: Check the saved `.md` file in `output_markdown/<tag>/` directory before assuming the extraction failed.
+
+3. **Re-process problematic files**: Delete the vector database and re-run:
+   ```bash
+   rm -rf lokal_rag_db/
+   python main.py
+   ```
+
+4. **Report the issue**: If marker-pdf consistently fails on a specific PDF type, please report it at [marker-pdf issues](https://github.com/VikParuchuri/marker/issues) with a sample PDF.
+
+**Note**: OCR accuracy depends on PDF quality. Clean, high-resolution PDFs will produce better results than low-quality scans.
+
 ## Technology Stack
 
 | Component | Technology | Purpose |
