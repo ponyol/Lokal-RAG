@@ -330,14 +330,6 @@ def processing_pipeline_worker(
             view_queue.put("LOG: " + "-" * 50)
             error_count += 1
 
-        finally:
-            # Clean up memory after each PDF to reduce RAM usage
-            # This frees ~10GB per file on systems with marker-pdf loaded
-            if config.CLEANUP_MEMORY_AFTER_PDF:
-                view_queue.put(f"LOG:   → Cleaning up memory...")
-                fn_cleanup_pdf_memory()
-                view_queue.put(f"LOG:   ✓ Memory freed")
-
     # Final summary
     view_queue.put("LOG: " + "=" * 50)
     view_queue.put(f"LOG: Processing complete!")
@@ -346,6 +338,17 @@ def processing_pipeline_worker(
     # Get total document count
     total_docs = storage.get_document_count()
     view_queue.put(f"LOG: Total documents in database: {total_docs}")
+
+    # Clean up memory after ALL PDFs (not between each PDF)
+    # Doing it between PDFs causes crashes with marker-pdf models
+    if config.CLEANUP_MEMORY_AFTER_PDF:
+        try:
+            view_queue.put("LOG: → Cleaning up memory...")
+            fn_cleanup_pdf_memory()
+            view_queue.put("LOG: ✓ Memory freed")
+        except Exception as e:
+            logger.warning(f"Memory cleanup failed (non-fatal): {e}")
+            view_queue.put(f"LOG: ⚠️  Memory cleanup skipped (non-fatal error)")
 
     # Signal that processing is complete
     view_queue.put("STOP_PROCESSING")
