@@ -359,8 +359,10 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
                                     logger.info(f"Found {parent_count} cookies from {parent_domain}")
 
                                     # Merge parent cookies into main cookie jar
-                                    # IMPORTANT: Do this BEFORE converting to list
-                                    cookies.update(parent_cookies)
+                                    # http.cookiejar.CookieJar doesn't have .update(), so iterate manually
+                                    for cookie in parent_cookies:
+                                        cookies.set_cookie(cookie)
+
                                     logger.info(f"✓ Merged {parent_count} cookies from parent domain")
                                     # Success - no need to try other formats
                                     break
