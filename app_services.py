@@ -325,8 +325,33 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
                 browser_name = config.WEB_BROWSER_CHOICE.capitalize()
 
                 try:
+                    # Extract base domain for sites like Medium (user.medium.com -> medium.com)
+                    # This is important because authentication cookies are often stored on parent domain
+                    parts = domain.split('.')
+                    base_domain = None
+                    if len(parts) >= 3:  # subdomain.example.com
+                        base_domain = '.'.join(parts[-2:])  # example.com
+                        logger.info(f"Detected subdomain, will also load cookies from parent: {base_domain}")
+
                     logger.info(f"Loading cookies from {browser_name}...")
+
+                    # Load cookies for the specific domain
                     cookies = browser_func(domain_name=domain)
+
+                    # If we have a subdomain, also load cookies from parent domain and merge
+                    if base_domain and base_domain != domain:
+                        try:
+                            logger.info(f"Loading additional cookies from parent domain: {base_domain}")
+                            parent_cookies = browser_func(domain_name=base_domain)
+
+                            # Merge parent cookies into main cookie jar
+                            # RequestsCookieJar.update() merges cookies
+                            if parent_cookies:
+                                cookies.update(parent_cookies)
+                                logger.info(f"Merged cookies from parent domain")
+                        except Exception as e:
+                            logger.debug(f"Could not load parent domain cookies: {e}")
+                            # Continue with subdomain cookies only
 
                     # Count cookies for debugging (don't modify cookies variable!)
                     cookie_list = list(cookies) if cookies else []
