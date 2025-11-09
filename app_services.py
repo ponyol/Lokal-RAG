@@ -15,6 +15,7 @@ Side effects (I/O) are isolated and clearly marked.
 
 import gc
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Optional
@@ -29,6 +30,10 @@ from app_config import (
     TAGGING_SYSTEM_PROMPT,
     TRANSLATION_SYSTEM_PROMPT,
 )
+
+
+# Configure logging for this module
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -257,6 +262,111 @@ def fn_cleanup_pdf_memory() -> None:
         # See: https://github.com/pytorch/pytorch/issues/82218
     except ImportError:
         pass  # PyTorch not installed or not needed
+
+
+# ============================================================================
+# Web Article Extraction
+# ============================================================================
+
+
+def fn_fetch_web_article(url: str, config: AppConfig) -> str:
+    """
+    Fetch, authenticate, clean, and convert a web article to Markdown.
+
+    This function:
+    1. Optionally loads browser cookies for authentication (Medium, paywalled sites)
+    2. Fetches the HTML content
+    3. Extracts the main article content using readability
+    4. Converts to Markdown
+
+    Works with authenticated sites (Medium) and public sites (blogs, news).
+
+    Args:
+        url: The URL of the article to fetch
+        config: Application configuration
+
+    Returns:
+        str: The article content in Markdown format
+
+    Raises:
+        Exception: If fetching or parsing fails
+
+    Example:
+        >>> config = AppConfig()
+        >>> md = fn_fetch_web_article("https://medium.com/...", config)
+    """
+    try:
+        # Import web scraping libraries here (lazy loading)
+        import browser_cookie3
+        from markdownify import markdownify as md
+        from readability import Document
+
+        # Extract domain for cookie filtering
+        from urllib.parse import urlparse
+        domain = urlparse(url).netloc
+
+        # Step 1: Prepare cookies (if enabled)
+        cookies = None
+        if config.WEB_USE_BROWSER_COOKIES:
+            try:
+                # Load cookies for this specific domain from all browsers
+                cookies = browser_cookie3.load(domain_name=domain)
+                logger.info(f"Loaded browser cookies for domain: {domain}")
+            except Exception as e:
+                logger.warning(f"Could not load browser cookies: {e}")
+                logger.info("Proceeding without authentication")
+
+        # Step 2: Fetch HTML
+        headers = {
+            "User-Agent": config.WEB_USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+        }
+
+        with httpx.Client(
+            cookies=cookies,
+            follow_redirects=True,
+            timeout=config.WEB_REQUEST_TIMEOUT
+        ) as client:
+            logger.info(f"Fetching URL: {url}")
+            response = client.get(url, headers=headers)
+            response.raise_for_status()  # Raise exception for 4xx/5xx
+            full_html = response.text
+
+        # Step 3: Extract article content using readability
+        logger.info("Extracting article content...")
+        doc = Document(full_html)
+        article_title = doc.title()
+        article_html = doc.summary()
+
+        # Step 4: Convert to Markdown
+        logger.info("Converting to Markdown...")
+        markdown_text = md(article_html, heading_style="ATX")
+
+        # Add title at the top
+        final_markdown = f"# {article_title}\n\n{markdown_text}"
+
+        # Validate extracted text
+        if not final_markdown or len(final_markdown.strip()) < 100:
+            raise ValueError(
+                f"Extracted text is too short ({len(final_markdown)} chars). "
+                "Page may be blocked or content extraction failed."
+            )
+
+        logger.info(f"Successfully extracted article: {article_title} ({len(final_markdown)} chars)")
+        return final_markdown
+
+    except ImportError as e:
+        raise ImportError(
+            "Web scraping libraries not installed. Run: pip install -r requirements.txt"
+        ) from e
+    except httpx.HTTPStatusError as e:
+        raise Exception(
+            f"Failed to fetch URL (HTTP {e.response.status_code}): {url}\n"
+            f"The page may be restricted or require authentication."
+        ) from e
+    except Exception as e:
+        raise Exception(f"Failed to extract article from {url}: {e}") from e
 
 
 # ============================================================================

@@ -17,6 +17,13 @@ langchain-community==0.0.16
 # Data validation
 pydantic==2.5.3
 
+# Web scraping and content extraction
+browser-cookie3==0.19.1  # Extract cookies from browser for authenticated requests
+readability-lxml==0.8.1  # Extract main article content from HTML
+markdownify==0.11.6      # Convert HTML to Markdown
+lxml==4.9.3              # Required by readability-lxml
+beautifulsoup4==4.12.2   # HTML parsing utilities
+
 # NOTE: marker-pdf requires separate installation due to heavy ML dependencies
 # Run: python setup_marker.py
 # Or manually: pip install marker-pdf

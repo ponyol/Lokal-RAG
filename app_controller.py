@@ -26,6 +26,7 @@ from app_services import (
     fn_cleanup_pdf_memory,
     fn_create_text_chunks,
     fn_extract_markdown,
+    fn_fetch_web_article,
     fn_find_pdf_files,
     fn_generate_tags,
     fn_get_rag_response,
@@ -145,9 +146,9 @@ class AppOrchestrator:
         Handle the "Start Processing" button click.
 
         This method:
-        1. Validates input
+        1. Validates input (PDFs or URLs)
         2. Sets processing state
-        3. Spawns a worker thread to process PDFs
+        3. Spawns a worker thread to process content
         """
         # Prevent multiple simultaneous processing tasks
         if self.is_processing:
@@ -156,23 +157,39 @@ class AppOrchestrator:
 
         # Get settings from the view
         settings = self.view.get_ingestion_settings()
-        folder_path = settings["folder_path"]
+        source_type = settings["source_type"]
 
-        # Validate folder selection
-        if folder_path == "No folder selected" or not folder_path:
-            self.view.show_warning("No Folder", "Please select a folder containing PDF files.")
-            return
+        # Validate input based on source type
+        if source_type == "pdf":
+            # Validate PDF folder
+            folder_path = settings["folder_path"]
+            if folder_path == "No folder selected" or not folder_path:
+                self.view.show_warning("No Folder", "Please select a folder containing PDF files.")
+                return
 
-        folder = Path(folder_path)
-        if not folder.exists():
-            self.view.show_warning("Invalid Folder", f"Folder does not exist: {folder_path}")
-            return
+            folder = Path(folder_path)
+            if not folder.exists():
+                self.view.show_warning("Invalid Folder", f"Folder does not exist: {folder_path}")
+                return
 
-        # Find PDF files
-        pdf_files = fn_find_pdf_files(folder)
-        if not pdf_files:
-            self.view.show_warning("No PDFs", f"No PDF files found in: {folder_path}")
-            return
+            # Find PDF files
+            pdf_files = fn_find_pdf_files(folder)
+            if not pdf_files:
+                self.view.show_warning("No PDFs", f"No PDF files found in: {folder_path}")
+                return
+
+            items = pdf_files
+            item_type = "PDF"
+
+        else:  # web
+            # Validate URLs
+            web_urls = settings["web_urls"]
+            if not web_urls:
+                self.view.show_warning("No URLs", "Please enter at least one URL.")
+                return
+
+            items = web_urls
+            item_type = "URL"
 
         # Set processing state
         self.is_processing = True
@@ -180,20 +197,23 @@ class AppOrchestrator:
         self.view.clear_log()
 
         # Log initial message
-        self.view_queue.put(f"LOG: Found {len(pdf_files)} PDF file(s)")
+        self.view_queue.put(f"LOG: Found {len(items)} {item_type}(s)")
+        self.view_queue.put(f"LOG: Source type: {source_type.upper()}")
         self.view_queue.put(f"LOG: Translation: {'ON' if settings['do_translation'] else 'OFF'}")
         self.view_queue.put(f"LOG: Auto-tagging: {'ON' if settings['do_tagging'] else 'OFF'}")
+        if source_type == "web":
+            self.view_queue.put(f"LOG: Use cookies: {'ON' if settings['use_cookies'] else 'OFF'}")
         self.view_queue.put("LOG: " + "=" * 50)
 
         # Spawn worker thread
         worker = threading.Thread(
             target=processing_pipeline_worker,
-            args=(pdf_files, settings, self.config, self.storage, self.view_queue),
+            args=(items, settings, self.config, self.storage, self.view_queue),
             daemon=True,
         )
         worker.start()
 
-        logger.info(f"Started processing {len(pdf_files)} PDF files")
+        logger.info(f"Started processing {len(items)} {item_type}(s)")
 
     def on_send_chat_message(self) -> None:
         """
@@ -243,43 +263,60 @@ class AppOrchestrator:
 
 
 def processing_pipeline_worker(
-    pdf_files: list[Path],
+    items: list,  # Can be list[Path] for PDFs or list[str] for URLs
     settings: dict,
     config: AppConfig,
     storage: StorageService,
     view_queue: queue.Queue,
 ) -> None:
     """
-    Worker function to process PDF files.
+    Worker function to process content (PDFs or web articles).
 
     This function runs in a separate thread and performs:
-    1. PDF to Markdown conversion
+    1. Content extraction (PDF → Markdown or URL → Markdown)
     2. (Optional) Translation
     3. (Optional) Tagging
     4. Save to disk
     5. Chunk and add to vector database
 
     Args:
-        pdf_files: List of PDF file paths to process
-        settings: User settings (translation, tagging)
+        items: List of items to process (Path objects for PDFs, str URLs for web)
+        settings: User settings (source_type, translation, tagging, use_cookies)
         config: Application configuration
         storage: Storage service instance
         view_queue: Queue for sending updates to the GUI
 
     NOTE: This function is imperative and orchestrates the pure functional services.
     """
+    source_type = settings.get("source_type", "pdf")
     do_translation = settings.get("do_translation", False)
     do_tagging = settings.get("do_tagging", True)
+    use_cookies = settings.get("use_cookies", True)
+
+    # Update config for web scraping if needed
+    if source_type == "web" and not use_cookies:
+        # Create a modified config with cookies disabled
+        from dataclasses import replace
+        config = replace(config, WEB_USE_BROWSER_COOKIES=False)
 
     success_count = 0
     error_count = 0
 
-    for pdf_path in pdf_files:
+    for item in items:
         try:
-            # Step 1: Extract Markdown from PDF
-            view_queue.put(f"LOG: Processing {pdf_path.name}...")
-            markdown_text = fn_extract_markdown(pdf_path)
-            view_queue.put(f"LOG:   ✓ Extracted Markdown ({len(markdown_text)} chars)")
+            # Step 1: Extract Markdown from source
+            if source_type == "pdf":
+                # PDF processing
+                item_name = item.name
+                view_queue.put(f"LOG: Processing {item_name}...")
+                markdown_text = fn_extract_markdown(item)
+                view_queue.put(f"LOG:   ✓ Extracted Markdown ({len(markdown_text)} chars)")
+            else:
+                # Web article processing
+                item_name = item.split("://")[-1][:50] + "..."  # Shortened URL for display
+                view_queue.put(f"LOG: Fetching {item}...")
+                markdown_text = fn_fetch_web_article(item, config)
+                view_queue.put(f"LOG:   ✓ Extracted article ({len(markdown_text)} chars)")
 
             # Step 2: Translation (optional)
             final_text = markdown_text
@@ -297,10 +334,31 @@ def processing_pipeline_worker(
 
             # Step 4: Save to disk
             primary_tag = tags[0] if tags else "general"
+
+            # Generate filename based on source type
+            if source_type == "pdf":
+                filename = item.stem
+                source_name = item.name
+            else:
+                # Extract title from markdown (first # heading) or use URL
+                import re
+                title_match = re.search(r'^#\s+(.+)$', markdown_text, re.MULTILINE)
+                if title_match:
+                    filename = title_match.group(1)[:50]  # Limit to 50 chars
+                    # Sanitize filename
+                    filename = re.sub(r'[^\w\s-]', '', filename)
+                    filename = re.sub(r'[-\s]+', '-', filename)
+                else:
+                    # Use domain + path as filename
+                    from urllib.parse import urlparse
+                    parsed = urlparse(item)
+                    filename = f"{parsed.netloc}{parsed.path}".replace("/", "-")[:50]
+                source_name = item
+
             saved_path = fn_save_markdown_to_disk(
                 text=final_text,
                 tag=primary_tag,
-                filename=pdf_path.stem,
+                filename=filename,
                 config=config,
             )
             view_queue.put(f"LOG:   ✓ Saved to: {saved_path}")
@@ -309,7 +367,7 @@ def processing_pipeline_worker(
             view_queue.put(f"LOG:   → Creating chunks...")
             chunks = fn_create_text_chunks(
                 text=final_text,
-                source_file=pdf_path.name,
+                source_file=source_name,
                 config=config,
             )
             view_queue.put(f"LOG:   ✓ Created {len(chunks)} chunks")
@@ -318,14 +376,14 @@ def processing_pipeline_worker(
             storage.add_documents(chunks)
             view_queue.put(f"LOG:   ✓ Added to database")
 
-            view_queue.put(f"LOG: ✅ SUCCESS: {pdf_path.name}")
+            view_queue.put(f"LOG: ✅ SUCCESS: {item_name}")
             view_queue.put("LOG: " + "-" * 50)
 
             success_count += 1
 
         except Exception as e:
-            logger.error(f"Failed to process {pdf_path.name}: {e}", exc_info=True)
-            view_queue.put(f"LOG: ❌ ERROR: {pdf_path.name}")
+            logger.error(f"Failed to process {item_name}: {e}", exc_info=True)
+            view_queue.put(f"LOG: ❌ ERROR: {item_name}")
             view_queue.put(f"LOG:   {str(e)}")
             view_queue.put("LOG: " + "-" * 50)
             error_count += 1
