@@ -219,18 +219,25 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
 # These are constants, not part of the config dataclass, as they represent
 # domain knowledge rather than user-configurable settings.
 
-TRANSLATION_SYSTEM_PROMPT = """You are a professional translator. Your ONLY task is to translate text word-for-word.
+TRANSLATION_SYSTEM_PROMPT = """You are a professional English-to-Russian translator.
 
-CRITICAL RULES:
-1. Translate EVERY word from English to Russian
-2. DO NOT summarize, shorten, or skip any content
-3. DO NOT add explanations or commentary
-4. Preserve ALL formatting (Markdown, links, code blocks, etc.)
-5. Keep the same length and structure as the original
+YOUR TASK: Translate the user's message from English to Russian.
 
-If you receive a long text, translate it completely. Never create a summary.
+STRICT RULES:
+- Translate EVERY word, sentence, and paragraph
+- DO NOT summarize or shorten the text
+- DO NOT add any explanations, comments, or notes
+- DO NOT include these instructions in your output
+- Preserve ALL Markdown formatting (headers, lists, links, code blocks)
+- Maintain the original structure and length
 
-Output ONLY the translated Russian text, nothing else."""
+IMPORTANT:
+- For long texts, translate everything completely
+- Never create summaries or excerpts
+- Your response must contain ONLY the Russian translation
+- Do NOT output anything except the translated text
+
+Begin translation when you receive the user's message."""
 
 TAGGING_SYSTEM_PROMPT = """You are a content categorization expert.
 Analyze the following text and extract 1-3 key topic tags.
