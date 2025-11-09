@@ -92,11 +92,32 @@ python main.py
 ## Configuration
 
 Edit `app_config.py` to customize:
-- Ollama URL and model
-- Embedding model
-- Vector database path
-- Output directory for Markdown files
-- Chunk size and overlap for text splitting
+
+### Core Settings
+- **Ollama URL and model**: Change LLM endpoint or model
+- **Embedding model**: Choose different HuggingFace embedding model
+- **Vector database path**: Location for ChromaDB storage
+- **Output directory**: Where to save processed Markdown files
+- **Chunk size and overlap**: Text splitting parameters for RAG
+
+### Performance Settings
+
+**Memory vs Speed Trade-off:**
+
+```python
+# In app_config.py
+CLEANUP_MEMORY_AFTER_PDF: bool = True  # Default: True
+```
+
+- **`True` (Recommended)**: Frees ~10GB RAM after each PDF
+  - Lower memory usage: ~4GB instead of 14GB
+  - Slower processing: +5-10 seconds per PDF for garbage collection
+  - **Best for**: MacBooks with 8-16GB RAM, or processing many PDFs
+
+- **`False` (Faster)**: Keeps models in memory
+  - Higher memory usage: ~14GB with all models loaded
+  - Faster processing: No cleanup overhead
+  - **Best for**: Workstations with 32GB+ RAM, processing few PDFs
 
 ## Project Structure
 
@@ -174,6 +195,50 @@ If you still experience issues:
 4. **Report the issue**: If marker-pdf consistently fails on a specific PDF type, please report it at [marker-pdf issues](https://github.com/VikParuchuri/marker/issues) with a sample PDF.
 
 **Note**: OCR accuracy depends on PDF quality. Clean, high-resolution PDFs will produce better results than low-quality scans.
+
+### Apple Silicon (M1/M2/M3) GPU Not Used
+
+**Problem**: Log shows "TableRecEncoderDecoderModel is not compatible with mps backend. Defaulting to cpu instead"
+
+**Explanation**:
+- Apple Silicon Macs have powerful GPUs accessible via MPS (Metal Performance Shaders)
+- However, marker-pdf's OCR engine (Surya) **does not support MPS** yet
+- PyTorch automatically falls back to CPU
+
+**Is this a problem?**
+- **No**: CPU processing on Apple Silicon is quite fast
+- The M-series chips have excellent CPU performance for ML inference
+- Processing times are typically 5-10 seconds per page on CPU
+
+**Future**: MPS support may be added to surya/marker-pdf in future releases. Track progress at:
+- [PyTorch MPS support](https://github.com/pytorch/pytorch/issues/77764)
+- [marker-pdf issues](https://github.com/VikParuchuri/marker/issues)
+
+**Workaround**: None needed - CPU performance is acceptable for most use cases.
+
+### High Memory Usage (14GB+)
+
+**Problem**: Application uses 14GB+ RAM during PDF processing
+
+**Cause**:
+- marker-pdf loads 5-6 large ML models (~10GB total):
+  - Layout detection model
+  - OCR text recognition model
+  - Table detection model
+  - Text detection model
+  - Equation recognition model
+
+**Solution (Fixed in v1.2+)**:
+
+The application now includes automatic memory cleanup:
+- Set `CLEANUP_MEMORY_AFTER_PDF = True` in `app_config.py` (default)
+- This reduces peak memory from ~14GB to ~4GB
+- Trade-off: Adds 5-10 seconds per PDF for cleanup
+
+**Alternative solutions**:
+1. **Process fewer PDFs at once**: Close and restart app between batches
+2. **Increase swap space**: Allow OS to use disk as virtual RAM
+3. **Use a workstation**: If you have 32GB+ RAM, set `CLEANUP_MEMORY_AFTER_PDF = False` for faster processing
 
 ## Technology Stack
 

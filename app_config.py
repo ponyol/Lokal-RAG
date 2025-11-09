@@ -53,6 +53,9 @@ class AppConfig:
     # RAG Configuration
     RAG_TOP_K: int = 4  # Number of documents to retrieve for context
 
+    # Performance Configuration
+    CLEANUP_MEMORY_AFTER_PDF: bool = True  # Free memory after each PDF (slower but uses less RAM)
+
 
 def create_default_config() -> AppConfig:
     """
