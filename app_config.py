@@ -35,6 +35,7 @@ class AppConfig:
         MARKDOWN_OUTPUT_PATH: Path where processed Markdown files will be saved
         CHUNK_SIZE: Size of text chunks for vector database (in characters)
         CHUNK_OVERLAP: Overlap between consecutive chunks (in characters)
+        TRANSLATION_CHUNK_SIZE: Size of text chunks for translation (in characters)
         MAX_TAGS: Maximum number of tags to generate per document
         RAG_TOP_K: Number of documents to retrieve for RAG context
         CLEANUP_MEMORY_AFTER_PDF: Whether to free memory after batch processing
@@ -43,6 +44,9 @@ class AppConfig:
         WEB_REQUEST_TIMEOUT: Timeout for web requests (in seconds)
         WEB_USER_AGENT: User agent string for web requests
         WEB_SAVE_RAW_HTML: Whether to save raw HTML for debugging
+        VISION_ENABLED: Whether to extract and describe images using vision model
+        VISION_MODEL: Name of the vision model (empty = use main LLM model)
+        VISION_MAX_IMAGES: Maximum number of images to process per document
     """
 
     # LLM Configuration
@@ -63,6 +67,7 @@ class AppConfig:
     # Text Processing Configuration
     CHUNK_SIZE: int = 1500
     CHUNK_OVERLAP: int = 200
+    TRANSLATION_CHUNK_SIZE: int = 2000  # Size of chunks for translation (larger to preserve context)
 
     # Tagging Configuration
     MAX_TAGS: int = 3
@@ -79,6 +84,11 @@ class AppConfig:
     WEB_REQUEST_TIMEOUT: int = 30  # Timeout for web requests (in seconds)
     WEB_USER_AGENT: str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     WEB_SAVE_RAW_HTML: bool = False  # Save raw HTML for debugging (in output_markdown/_debug/)
+
+    # Vision Configuration (Image Processing)
+    VISION_ENABLED: bool = False  # Extract and describe images from documents
+    VISION_MODEL: str = ""  # Vision model name (empty = use main LLM model if it supports vision)
+    VISION_MAX_IMAGES: int = 20  # Maximum images to process per document (to avoid excessive API calls)
 
 
 def create_default_config() -> AppConfig:
@@ -203,6 +213,9 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
     if "timeout" in settings:
         overrides["LLM_REQUEST_TIMEOUT"] = settings["timeout"]
 
+    if "translation_chunk_size" in settings:
+        overrides["TRANSLATION_CHUNK_SIZE"] = settings["translation_chunk_size"]
+
     # Create new config with overrides
     if overrides:
         return replace(base_config, **overrides)
@@ -214,18 +227,25 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
 # These are constants, not part of the config dataclass, as they represent
 # domain knowledge rather than user-configurable settings.
 
-TRANSLATION_SYSTEM_PROMPT = """You are a professional translator. Your ONLY task is to translate text word-for-word.
+TRANSLATION_SYSTEM_PROMPT = """You are a professional English-to-Russian translator.
 
-CRITICAL RULES:
-1. Translate EVERY word from English to Russian
-2. DO NOT summarize, shorten, or skip any content
-3. DO NOT add explanations or commentary
-4. Preserve ALL formatting (Markdown, links, code blocks, etc.)
-5. Keep the same length and structure as the original
+YOUR TASK: Translate the user's message from English to Russian.
 
-If you receive a long text, translate it completely. Never create a summary.
+STRICT RULES:
+- Translate EVERY word, sentence, and paragraph
+- DO NOT summarize or shorten the text
+- DO NOT add any explanations, comments, or notes
+- DO NOT include these instructions in your output
+- Preserve ALL Markdown formatting (headers, lists, links, code blocks)
+- Maintain the original structure and length
 
-Output ONLY the translated Russian text, nothing else."""
+IMPORTANT:
+- For long texts, translate everything completely
+- Never create summaries or excerpts
+- Your response must contain ONLY the Russian translation
+- Do NOT output anything except the translated text
+
+Begin translation when you receive the user's message."""
 
 TAGGING_SYSTEM_PROMPT = """You are a content categorization expert.
 Analyze the following text and extract 1-3 key topic tags.
@@ -243,3 +263,22 @@ RAG_SYSTEM_PROMPT = """You are a helpful AI assistant.
 Answer the user's question based on the provided context.
 If the context doesn't contain enough information to answer the question, say so.
 Be concise and accurate."""
+
+VISION_SYSTEM_PROMPT = """You are an expert at analyzing images from documents.
+
+YOUR TASK: Describe the image in detail, extracting ALL useful information.
+
+FOCUS ON:
+- Text content (if any): Transcribe it exactly
+- Code snippets: Extract the code
+- Diagrams/Charts: Explain what they show and the relationships
+- Tables: Describe the structure and data
+- Screenshots: Describe the content and UI elements
+- Technical drawings: Explain the components and connections
+
+OUTPUT FORMAT:
+Provide a clear, detailed description in English that captures all information in the image.
+If the image contains text, include it verbatim.
+Be thorough - this description will be used for search and retrieval.
+
+DO NOT add commentary about the image quality or format. Focus only on the content."""

@@ -217,6 +217,7 @@ class AppOrchestrator:
         self.view_queue.put(f"LOG: Source type: {source_type.upper()}")
         self.view_queue.put(f"LOG: Translation: {'ON' if settings['do_translation'] else 'OFF'}")
         self.view_queue.put(f"LOG: Auto-tagging: {'ON' if settings['do_tagging'] else 'OFF'}")
+        self.view_queue.put(f"LOG: Extract images: {'ON' if settings['extract_images'] else 'OFF'}")
         if source_type == "web":
             self.view_queue.put(f"LOG: Use cookies: {'ON' if settings['use_cookies'] else 'OFF'}")
             if settings['use_cookies']:
@@ -403,20 +404,20 @@ def processing_pipeline_worker(
     source_type = settings.get("source_type", "pdf")
     do_translation = settings.get("do_translation", False)
     do_tagging = settings.get("do_tagging", True)
+    extract_images = settings.get("extract_images", False)
     use_cookies = settings.get("use_cookies", True)
     browser_choice = settings.get("browser_choice", "chrome")
     save_raw_html = settings.get("save_raw_html", False)
 
-    # Update config for web scraping if needed
-    if source_type == "web":
-        # Create a modified config with user's web settings
-        from dataclasses import replace
-        config = replace(
-            config,
-            WEB_USE_BROWSER_COOKIES=use_cookies,
-            WEB_BROWSER_CHOICE=browser_choice,
-            WEB_SAVE_RAW_HTML=save_raw_html,
-        )
+    # Update config with user settings
+    from dataclasses import replace
+    config = replace(
+        config,
+        VISION_ENABLED=extract_images,
+        WEB_USE_BROWSER_COOKIES=use_cookies,
+        WEB_BROWSER_CHOICE=browser_choice,
+        WEB_SAVE_RAW_HTML=save_raw_html,
+    )
 
     success_count = 0
     error_count = 0
@@ -428,7 +429,7 @@ def processing_pipeline_worker(
                 # PDF processing
                 item_name = item.name
                 view_queue.put(f"LOG: Processing {item_name}...")
-                markdown_text = fn_extract_markdown(item)
+                markdown_text = fn_extract_markdown(item, config)
                 view_queue.put(f"LOG:   ✓ Extracted Markdown ({len(markdown_text)} chars)")
             else:
                 # Web article processing

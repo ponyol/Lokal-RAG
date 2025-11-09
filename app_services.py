@@ -29,6 +29,7 @@ from app_config import (
     RAG_SYSTEM_PROMPT,
     TAGGING_SYSTEM_PROMPT,
     TRANSLATION_SYSTEM_PROMPT,
+    VISION_SYSTEM_PROMPT,
 )
 
 
@@ -192,11 +193,125 @@ def fn_check_ollama_availability(config: AppConfig) -> tuple[bool, Optional[str]
 
 
 # ============================================================================
+# Vision (Image Processing)
+# ============================================================================
+
+
+def fn_describe_image(image_bytes: bytes, config: AppConfig) -> str:
+    """
+    Describe an image using a vision-capable LLM.
+
+    This function sends an image to a multimodal LLM and receives a textual description.
+    Works with both Ollama (llava, bakllava, etc.) and LM Studio (with vision models).
+
+    Args:
+        image_bytes: The image data as bytes (PNG, JPEG, etc.)
+        config: Application configuration containing vision model settings
+
+    Returns:
+        str: A detailed description of the image content
+
+    Raises:
+        httpx.HTTPError: If the request to the vision API fails
+        ValueError: If the response format is invalid
+
+    Example:
+        >>> with open("diagram.png", "rb") as f:
+        ...     image_data = f.read()
+        >>> config = AppConfig(VISION_ENABLED=True)
+        >>> description = fn_describe_image(image_data, config)
+    """
+    import base64
+
+    # Convert image to base64
+    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+
+    # Determine which model to use
+    # If VISION_MODEL is specified, use it; otherwise use the main LLM model
+    vision_model = config.VISION_MODEL if config.VISION_MODEL else (
+        config.OLLAMA_MODEL if config.LLM_PROVIDER == "ollama" else config.LMSTUDIO_MODEL
+    )
+
+    logger.info(f"Describing image using {config.LLM_PROVIDER} with model {vision_model}")
+
+    if config.LLM_PROVIDER == "ollama":
+        return _describe_image_ollama(base64_image, vision_model, config)
+    elif config.LLM_PROVIDER == "lmstudio":
+        return _describe_image_lmstudio(base64_image, vision_model, config)
+    else:
+        raise ValueError(f"Unsupported LLM provider for vision: {config.LLM_PROVIDER}")
+
+
+def _describe_image_ollama(base64_image: str, model: str, config: AppConfig) -> str:
+    """Describe image using Ollama vision API."""
+    url = f"{config.OLLAMA_BASE_URL}/api/generate"
+
+    payload = {
+        "model": model,
+        "prompt": VISION_SYSTEM_PROMPT,
+        "images": [base64_image],
+        "stream": False,
+    }
+
+    with httpx.Client(timeout=config.LLM_REQUEST_TIMEOUT) as client:
+        response = client.post(url, json=payload)
+        response.raise_for_status()
+
+    data = response.json()
+
+    if "response" not in data:
+        raise ValueError(f"Invalid Ollama vision response format: {data}")
+
+    return data["response"].strip()
+
+
+def _describe_image_lmstudio(base64_image: str, model: str, config: AppConfig) -> str:
+    """Describe image using LM Studio vision API (OpenAI-compatible)."""
+    url = f"{config.LMSTUDIO_BASE_URL}/chat/completions"
+
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": VISION_SYSTEM_PROMPT},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}"
+                        }
+                    }
+                ]
+            }
+        ],
+        "temperature": 0.7,
+        "max_tokens": -1,
+        "stream": False,
+    }
+
+    with httpx.Client(timeout=config.LLM_REQUEST_TIMEOUT) as client:
+        response = client.post(url, json=payload)
+        response.raise_for_status()
+
+    data = response.json()
+
+    if "choices" not in data or len(data["choices"]) == 0:
+        raise ValueError(f"Invalid LM Studio vision response format: {data}")
+
+    message = data["choices"][0].get("message", {})
+    if "content" not in message:
+        raise ValueError(f"Invalid LM Studio vision message format: {data}")
+
+    return message["content"].strip()
+
+
+# ============================================================================
 # PDF Processing
 # ============================================================================
 
 
-def fn_extract_markdown(pdf_path: Path) -> str:
+def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
     """
     Convert a PDF file to Markdown using marker-pdf.
 
@@ -205,11 +320,15 @@ def fn_extract_markdown(pdf_path: Path) -> str:
     IMPORTANT: This function uses aggressive OCR settings to handle PDFs with
     corrupted or missing text layers (common with Medium articles saved as PDF).
 
+    If config.VISION_ENABLED is True, extracts images and describes them using
+    a vision model, appending descriptions to the markdown.
+
     Args:
         pdf_path: Path to the PDF file to convert
+        config: Application configuration (for vision settings)
 
     Returns:
-        str: The Markdown content extracted from the PDF
+        str: The Markdown content extracted from the PDF (with optional image descriptions)
 
     Raises:
         FileNotFoundError: If the PDF file doesn't exist
@@ -217,7 +336,8 @@ def fn_extract_markdown(pdf_path: Path) -> str:
 
     Example:
         >>> pdf_path = Path("document.pdf")
-        >>> markdown = fn_extract_markdown(pdf_path)
+        >>> config = AppConfig(VISION_ENABLED=True)
+        >>> markdown = fn_extract_markdown(pdf_path, config)
     """
     try:
         # NOTE: marker-pdf is imported here to avoid loading heavy ML models
@@ -272,6 +392,46 @@ def fn_extract_markdown(pdf_path: Path) -> str:
                 f"Extracted text is too short ({len(text)} chars). "
                 "PDF may be corrupted or contain only images."
             )
+
+        # Process images if vision is enabled
+        if config.VISION_ENABLED and images:
+            logger.info(f"Found {len(images)} images in PDF, processing with vision model...")
+
+            # Limit number of images to process
+            images_to_process = images[:config.VISION_MAX_IMAGES]
+
+            if len(images) > config.VISION_MAX_IMAGES:
+                logger.warning(
+                    f"PDF contains {len(images)} images, but VISION_MAX_IMAGES is {config.VISION_MAX_IMAGES}. "
+                    f"Only processing first {config.VISION_MAX_IMAGES} images."
+                )
+
+            image_descriptions = []
+            for idx, (image_path, image_data) in enumerate(images_to_process.items(), 1):
+                try:
+                    logger.info(f"Processing image {idx}/{len(images_to_process)}: {image_path}")
+
+                    # image_data is a PIL Image object, convert to bytes
+                    from io import BytesIO
+                    img_bytes = BytesIO()
+                    image_data.save(img_bytes, format='PNG')
+                    img_bytes_data = img_bytes.getvalue()
+
+                    # Get description from vision model
+                    description = fn_describe_image(img_bytes_data, config)
+
+                    image_descriptions.append(f"### Image {idx}\n\n{description}\n")
+                    logger.info(f"✓ Image {idx} processed successfully")
+
+                except Exception as e:
+                    logger.error(f"Failed to process image {idx}: {e}")
+                    image_descriptions.append(f"### Image {idx}\n\n[Error: Could not process image - {str(e)}]\n")
+
+            # Append image descriptions to the markdown
+            if image_descriptions:
+                text += "\n\n---\n\n## Images from Document\n\n"
+                text += "\n".join(image_descriptions)
+                logger.info(f"Added {len(image_descriptions)} image descriptions to markdown")
 
         return text
 
@@ -562,6 +722,68 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
                 "Page may be blocked or content extraction failed."
             )
 
+        # Process images if vision is enabled
+        if config.VISION_ENABLED:
+            try:
+                from bs4 import BeautifulSoup
+                from urllib.parse import urljoin
+
+                logger.info("Extracting images from article...")
+                soup = BeautifulSoup(article_html, 'lxml')
+                img_tags = soup.find_all('img')
+
+                if img_tags:
+                    logger.info(f"Found {len(img_tags)} images in article")
+
+                    # Limit number of images to process
+                    images_to_process = img_tags[:config.VISION_MAX_IMAGES]
+
+                    if len(img_tags) > config.VISION_MAX_IMAGES:
+                        logger.warning(
+                            f"Article contains {len(img_tags)} images, but VISION_MAX_IMAGES is {config.VISION_MAX_IMAGES}. "
+                            f"Only processing first {config.VISION_MAX_IMAGES} images."
+                        )
+
+                    image_descriptions = []
+                    for idx, img_tag in enumerate(images_to_process, 1):
+                        try:
+                            # Get image URL (handle relative URLs)
+                            img_url = img_tag.get('src') or img_tag.get('data-src')
+                            if not img_url:
+                                logger.warning(f"Image {idx} has no src attribute, skipping")
+                                continue
+
+                            # Convert relative URLs to absolute
+                            img_url = urljoin(url, img_url)
+
+                            logger.info(f"Processing image {idx}/{len(images_to_process)}: {img_url[:100]}...")
+
+                            # Download image
+                            with httpx.Client(timeout=config.WEB_REQUEST_TIMEOUT) as client:
+                                img_response = client.get(img_url, headers={"User-Agent": config.WEB_USER_AGENT})
+                                img_response.raise_for_status()
+                                img_bytes = img_response.content
+
+                            # Get description from vision model
+                            description = fn_describe_image(img_bytes, config)
+
+                            image_descriptions.append(f"### Image {idx}\n\n**Source:** {img_url}\n\n{description}\n")
+                            logger.info(f"✓ Image {idx} processed successfully")
+
+                        except Exception as e:
+                            logger.error(f"Failed to process image {idx}: {e}")
+                            image_descriptions.append(f"### Image {idx}\n\n[Error: Could not process image - {str(e)}]\n")
+
+                    # Append image descriptions to the markdown
+                    if image_descriptions:
+                        final_markdown += "\n\n---\n\n## Images from Article\n\n"
+                        final_markdown += "\n".join(image_descriptions)
+                        logger.info(f"Added {len(image_descriptions)} image descriptions to markdown")
+
+            except Exception as e:
+                logger.error(f"Error during image processing: {e}")
+                # Don't fail the entire article extraction if image processing fails
+
         logger.info(f"Successfully extracted article: {article_title} ({len(final_markdown)} chars)")
         return final_markdown
 
@@ -587,12 +809,12 @@ def fn_translate_text(text: str, config: AppConfig) -> str:
     """
     Translate text from English to Russian using the LLM.
 
-    For long texts (>2000 chars), splits into chunks by paragraphs to avoid
+    For long texts (>TRANSLATION_CHUNK_SIZE chars), splits into chunks by paragraphs to avoid
     LLM summarization instead of translation.
 
     Args:
         text: The English text to translate
-        config: Application configuration
+        config: Application configuration (uses config.TRANSLATION_CHUNK_SIZE)
 
     Returns:
         str: The translated Russian text
@@ -601,10 +823,8 @@ def fn_translate_text(text: str, config: AppConfig) -> str:
         >>> config = AppConfig()
         >>> russian = fn_translate_text("Hello world", config)
     """
-    CHUNK_SIZE = 2000  # Max characters per chunk
-
     # If text is short enough, translate directly
-    if len(text) <= CHUNK_SIZE:
+    if len(text) <= config.TRANSLATION_CHUNK_SIZE:
         return fn_call_llm(
             prompt=text,
             system_prompt=TRANSLATION_SYSTEM_PROMPT,
@@ -622,7 +842,7 @@ def fn_translate_text(text: str, config: AppConfig) -> str:
 
     for para in paragraphs:
         # If adding this paragraph would exceed chunk size, start a new chunk
-        if len(current_chunk) + len(para) + 2 > CHUNK_SIZE and current_chunk:
+        if len(current_chunk) + len(para) + 2 > config.TRANSLATION_CHUNK_SIZE and current_chunk:
             chunks.append(current_chunk)
             current_chunk = para
         else:

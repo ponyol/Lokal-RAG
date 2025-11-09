@@ -50,6 +50,7 @@ class AppView:
         self.web_urls_var = ctk.StringVar(value="")
         self.translate_var = ctk.BooleanVar(value=False)
         self.tag_var = ctk.BooleanVar(value=True)
+        self.extract_images_var = ctk.BooleanVar(value=False)
         self.use_cookies_var = ctk.BooleanVar(value=True)
         self.browser_choice_var = ctk.StringVar(value="chrome")
         self.save_raw_html_var = ctk.BooleanVar(value=False)
@@ -61,6 +62,7 @@ class AppView:
         self.lmstudio_url_var = ctk.StringVar(value="http://localhost:1234/v1")
         self.lmstudio_model_var = ctk.StringVar(value="meta-llama-3.1-8b-instruct")
         self.timeout_var = ctk.StringVar(value="300")
+        self.translation_chunk_var = ctk.StringVar(value="2000")
 
         # Create the UI
         self._create_widgets()
@@ -238,6 +240,13 @@ class AppView:
             variable=self.tag_var,
         )
         self.tag_checkbox.pack(anchor="w", padx=20, pady=5)
+
+        self.extract_images_checkbox = ctk.CTkCheckBox(
+            options_frame,
+            text="Extract images with vision model (slower, requires vision-capable model)",
+            variable=self.extract_images_var,
+        )
+        self.extract_images_checkbox.pack(anchor="w", padx=20, pady=5)
 
         # Start button
         self.start_button = ctk.CTkButton(
@@ -459,6 +468,32 @@ class AppView:
         )
         self.timeout_entry.pack(anchor="w", padx=20, pady=(0, 10))
 
+        # Translation chunk size setting
+        chunk_frame = ctk.CTkFrame(tab)
+        chunk_frame.pack(fill="x", padx=20, pady=10)
+
+        chunk_label = ctk.CTkLabel(
+            chunk_frame,
+            text="Translation Chunk Size (characters):",
+            font=ctk.CTkFont(size=12),
+        )
+        chunk_label.pack(anchor="w", padx=10, pady=(10, 0))
+
+        chunk_help = ctk.CTkLabel(
+            chunk_frame,
+            text="Size of text chunks for translation. Smaller values = more API calls but better quality.",
+            font=ctk.CTkFont(size=10),
+            text_color="gray",
+        )
+        chunk_help.pack(anchor="w", padx=10, pady=(0, 5))
+
+        self.translation_chunk_entry = ctk.CTkEntry(
+            chunk_frame,
+            textvariable=self.translation_chunk_var,
+            width=100,
+        )
+        self.translation_chunk_entry.pack(anchor="w", padx=20, pady=(0, 10))
+
         # Buttons frame
         buttons_frame = ctk.CTkFrame(tab)
         buttons_frame.pack(fill="x", padx=20, pady=20)
@@ -527,6 +562,7 @@ class AppView:
             "web_urls": web_urls,
             "do_translation": self.translate_var.get(),
             "do_tagging": self.tag_var.get(),
+            "extract_images": self.extract_images_var.get(),
             "use_cookies": self.use_cookies_var.get(),
             "browser_choice": self.browser_choice_var.get(),
             "save_raw_html": self.save_raw_html_var.get(),
@@ -571,6 +607,7 @@ class AppView:
             "lmstudio_base_url": self.lmstudio_url_var.get(),
             "lmstudio_model": self.lmstudio_model_var.get(),
             "timeout": int(self.timeout_var.get()),
+            "translation_chunk_size": int(self.translation_chunk_var.get()),
         }
 
     def set_llm_settings(self, settings: dict) -> None:
@@ -601,6 +638,9 @@ class AppView:
 
         if "timeout" in settings:
             self.timeout_var.set(str(settings["timeout"]))
+
+        if "translation_chunk_size" in settings:
+            self.translation_chunk_var.set(str(settings["translation_chunk_size"]))
 
     def show_settings_status(self, message: str, is_error: bool = False) -> None:
         """
