@@ -340,18 +340,32 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
 
                     # If we have a subdomain, also load cookies from parent domain and merge
                     if base_domain and base_domain != domain:
-                        try:
-                            logger.info(f"Loading additional cookies from parent domain: {base_domain}")
-                            parent_cookies = browser_func(domain_name=base_domain)
+                        # Try multiple domain formats since browsers store cookies differently
+                        # e.g., "medium.com" vs ".medium.com" (with leading dot)
+                        parent_domains_to_try = [
+                            base_domain,           # medium.com
+                            f".{base_domain}",     # .medium.com
+                        ]
 
-                            # Merge parent cookies into main cookie jar
-                            # RequestsCookieJar.update() merges cookies
-                            if parent_cookies:
-                                cookies.update(parent_cookies)
-                                logger.info(f"Merged cookies from parent domain")
-                        except Exception as e:
-                            logger.debug(f"Could not load parent domain cookies: {e}")
-                            # Continue with subdomain cookies only
+                        for parent_domain in parent_domains_to_try:
+                            try:
+                                logger.info(f"Loading additional cookies from parent domain: {parent_domain}")
+                                parent_cookies = browser_func(domain_name=parent_domain)
+
+                                # Count parent cookies
+                                parent_cookie_list = list(parent_cookies) if parent_cookies else []
+                                parent_count = len(parent_cookie_list)
+                                logger.info(f"Found {parent_count} cookies from {parent_domain}")
+
+                                # Merge parent cookies into main cookie jar
+                                if parent_count > 0:
+                                    cookies.update(parent_cookies)
+                                    logger.info(f"✓ Merged {parent_count} cookies from parent domain")
+                                    # Success - no need to try other formats
+                                    break
+                            except Exception as e:
+                                logger.debug(f"Could not load cookies from {parent_domain}: {e}")
+                                # Try next format
 
                     # Count cookies for debugging (don't modify cookies variable!)
                     cookie_list = list(cookies) if cookies else []
