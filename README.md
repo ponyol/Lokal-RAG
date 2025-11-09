@@ -102,22 +102,24 @@ Edit `app_config.py` to customize:
 
 ### Performance Settings
 
-**Memory vs Speed Trade-off:**
+**Memory Management:**
 
 ```python
 # In app_config.py
 CLEANUP_MEMORY_AFTER_PDF: bool = True  # Default: True
 ```
 
-- **`True` (Recommended)**: Frees ~10GB RAM after each PDF
-  - Lower memory usage: ~4GB instead of 14GB
-  - Slower processing: +5-10 seconds per PDF for garbage collection
-  - **Best for**: MacBooks with 8-16GB RAM, or processing many PDFs
+- **`True` (Recommended)**: Frees ~10GB RAM after processing **all** PDFs
+  - Lower memory usage after batch completes
+  - During processing: Still uses ~14GB (models stay loaded)
+  - After processing: Drops to ~4GB
+  - **Best for**: MacBooks with 8-16GB RAM
+  - **Note**: Cleanup happens once at the end, not between PDFs (to prevent crashes)
 
-- **`False` (Faster)**: Keeps models in memory
-  - Higher memory usage: ~14GB with all models loaded
-  - Faster processing: No cleanup overhead
-  - **Best for**: Workstations with 32GB+ RAM, processing few PDFs
+- **`False`**: Keeps models in memory indefinitely
+  - Memory usage: ~14GB remains even after processing
+  - Faster if processing multiple batches
+  - **Best for**: Workstations with 32GB+ RAM
 
 ## Project Structure
 
@@ -228,17 +230,23 @@ If you still experience issues:
   - Text detection model
   - Equation recognition model
 
-**Solution (Fixed in v1.2+)**:
+**Solution (Updated in v1.2.1)**:
 
-The application now includes automatic memory cleanup:
+The application now includes automatic memory cleanup **after batch completion**:
 - Set `CLEANUP_MEMORY_AFTER_PDF = True` in `app_config.py` (default)
-- This reduces peak memory from ~14GB to ~4GB
-- Trade-off: Adds 5-10 seconds per PDF for cleanup
+- During processing: Uses ~14GB (models must stay loaded for stability)
+- After processing: Drops to ~4GB (cleanup runs once at the end)
+
+**Why cleanup happens at the end, not between PDFs:**
+- marker-pdf models don't handle mid-batch cleanup well
+- Causes crashes (trace trap) on Apple Silicon when cleaning between files
+- Keeping models loaded during batch is more stable
 
 **Alternative solutions**:
-1. **Process fewer PDFs at once**: Close and restart app between batches
-2. **Increase swap space**: Allow OS to use disk as virtual RAM
-3. **Use a workstation**: If you have 32GB+ RAM, set `CLEANUP_MEMORY_AFTER_PDF = False` for faster processing
+1. **Process PDFs in smaller batches**: Select fewer files per run
+2. **Close app between batches**: Memory is freed when app exits
+3. **Increase swap space**: Allow OS to use disk as virtual RAM
+4. **Use a workstation**: If you have 32GB+ RAM, set `CLEANUP_MEMORY_AFTER_PDF = False`
 
 ## Technology Stack
 

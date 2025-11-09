@@ -228,18 +228,23 @@ def fn_extract_markdown(pdf_path: Path) -> str:
 
 def fn_cleanup_pdf_memory() -> None:
     """
-    Force garbage collection to free memory after PDF processing.
+    Force garbage collection to free memory after PDF batch processing.
 
     marker-pdf loads large ML models (~5-6GB) that stay in memory.
-    Calling this function after each PDF helps reduce memory usage,
-    especially on systems with limited RAM.
+    This function should be called AFTER processing ALL PDFs, not between them.
 
-    NOTE: This makes processing slower, but significantly reduces memory usage.
+    IMPORTANT: Do NOT call this between PDFs in a batch!
+    - Causes crashes (trace trap) on Apple Silicon with marker-pdf
+    - Models need to stay loaded during batch for stability
+    - Only safe to call after entire batch completes
+
     On a MacBook with 16GB RAM, this can reduce memory from 14GB to ~4GB.
 
     Example:
-        >>> markdown = fn_extract_markdown(pdf_path)
-        >>> fn_cleanup_pdf_memory()  # Free ~10GB of RAM
+        >>> for pdf in pdf_files:
+        ...     markdown = fn_extract_markdown(pdf)
+        ...     # Process markdown...
+        >>> fn_cleanup_pdf_memory()  # Free ~10GB of RAM AFTER all PDFs
     """
     gc.collect()  # Force Python garbage collection
 
