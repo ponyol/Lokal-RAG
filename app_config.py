@@ -8,10 +8,14 @@ Following functional programming principles, this configuration object is:
 - Immutable (frozen=True)
 - Created once at startup
 - Passed explicitly to functions that need it
+
+Settings can be persisted to and loaded from ~/.lokal-rag/settings.json
 """
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -32,9 +36,12 @@ class AppConfig:
     """
 
     # LLM Configuration
+    LLM_PROVIDER: str = "ollama"  # "ollama" or "lmstudio"
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    LLM_MODEL: str = "qwen2.5:7b-instruct"
-    OLLAMA_REQUEST_TIMEOUT: int = 300  # 5 minutes for large documents
+    OLLAMA_MODEL: str = "qwen2.5:7b-instruct"
+    LMSTUDIO_BASE_URL: str = "http://localhost:1234/v1"
+    LMSTUDIO_MODEL: str = "meta-llama-3.1-8b-instruct"
+    LLM_REQUEST_TIMEOUT: int = 300  # 5 minutes for large documents
 
     # Embedding Configuration
     EMBEDDING_MODEL: str = "paraphrase-multilingual-MiniLM-L12-v2"
@@ -77,10 +84,120 @@ def create_default_config() -> AppConfig:
 
     Example:
         >>> config = create_default_config()
-        >>> print(config.LLM_MODEL)
+        >>> print(config.OLLAMA_MODEL)
         'qwen2.5:7b-instruct'
     """
     return AppConfig()
+
+
+def get_settings_path() -> Path:
+    """
+    Get the path to the settings file.
+
+    Returns:
+        Path: Path to ~/.lokal-rag/settings.json
+    """
+    settings_dir = Path.home() / ".lokal-rag"
+    settings_dir.mkdir(parents=True, exist_ok=True)
+    return settings_dir / "settings.json"
+
+
+def load_settings_from_json() -> dict:
+    """
+    Load LLM settings from JSON file.
+
+    Returns:
+        dict: Settings dictionary, or empty dict if file doesn't exist
+
+    Example:
+        >>> settings = load_settings_from_json()
+        >>> print(settings.get("llm_provider", "ollama"))
+    """
+    settings_path = get_settings_path()
+
+    if not settings_path.exists():
+        return {}
+
+    try:
+        with open(settings_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Warning: Failed to load settings from {settings_path}: {e}")
+        return {}
+
+
+def save_settings_to_json(settings: dict) -> None:
+    """
+    Save LLM settings to JSON file.
+
+    Args:
+        settings: Settings dictionary to save
+
+    Example:
+        >>> settings = {
+        ...     "llm_provider": "ollama",
+        ...     "ollama_model": "qwen2.5:7b-instruct"
+        ... }
+        >>> save_settings_to_json(settings)
+    """
+    settings_path = get_settings_path()
+
+    try:
+        with open(settings_path, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"Error: Failed to save settings to {settings_path}: {e}")
+
+
+def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
+    """
+    Create AppConfig instance from saved settings.
+
+    Loads settings from JSON if not provided, merges with defaults.
+
+    Args:
+        settings: Optional settings dict (if None, loads from file)
+
+    Returns:
+        AppConfig: Configuration with user settings applied
+
+    Example:
+        >>> config = create_config_from_settings()
+        >>> print(config.LLM_PROVIDER)
+        'ollama'
+    """
+    if settings is None:
+        settings = load_settings_from_json()
+
+    # Start with defaults
+    base_config = create_default_config()
+
+    # Override with saved settings
+    overrides = {}
+
+    if "llm_provider" in settings:
+        overrides["LLM_PROVIDER"] = settings["llm_provider"]
+
+    if "ollama_base_url" in settings:
+        overrides["OLLAMA_BASE_URL"] = settings["ollama_base_url"]
+
+    if "ollama_model" in settings:
+        overrides["OLLAMA_MODEL"] = settings["ollama_model"]
+
+    if "lmstudio_base_url" in settings:
+        overrides["LMSTUDIO_BASE_URL"] = settings["lmstudio_base_url"]
+
+    if "lmstudio_model" in settings:
+        overrides["LMSTUDIO_MODEL"] = settings["lmstudio_model"]
+
+    if "timeout" in settings:
+        overrides["LLM_REQUEST_TIMEOUT"] = settings["timeout"]
+
+    # Create new config with overrides
+    if overrides:
+        return replace(base_config, **overrides)
+
+    return base_config
 
 
 # System prompts for LLM operations

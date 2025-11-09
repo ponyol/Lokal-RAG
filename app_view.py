@@ -54,6 +54,14 @@ class AppView:
         self.browser_choice_var = ctk.StringVar(value="chrome")
         self.save_raw_html_var = ctk.BooleanVar(value=False)
 
+        # LLM Settings state variables
+        self.llm_provider_var = ctk.StringVar(value="ollama")
+        self.ollama_url_var = ctk.StringVar(value="http://localhost:11434")
+        self.ollama_model_var = ctk.StringVar(value="qwen2.5:7b-instruct")
+        self.lmstudio_url_var = ctk.StringVar(value="http://localhost:1234/v1")
+        self.lmstudio_model_var = ctk.StringVar(value="meta-llama-3.1-8b-instruct")
+        self.timeout_var = ctk.StringVar(value="300")
+
         # Create the UI
         self._create_widgets()
 
@@ -66,10 +74,12 @@ class AppView:
         # Add tabs
         self.tabview.add("Ingestion")
         self.tabview.add("Chat")
+        self.tabview.add("Settings")
 
         # Setup each tab
         self._setup_ingestion_tab()
         self._setup_chat_tab()
+        self._setup_settings_tab()
 
     # ========================================================================
     # Ingestion Tab
@@ -335,6 +345,154 @@ class AppView:
             self.send_button.cget("command")()
 
     # ========================================================================
+    # Settings Tab
+    # ========================================================================
+
+    def _setup_settings_tab(self) -> None:
+        """Setup the Settings tab UI."""
+        tab = self.tabview.tab("Settings")
+
+        # Title
+        title = ctk.CTkLabel(
+            tab,
+            text="⚙️ LLM Settings",
+            font=ctk.CTkFont(size=20, weight="bold"),
+        )
+        title.pack(pady=(10, 20))
+
+        # Provider selection
+        provider_frame = ctk.CTkFrame(tab)
+        provider_frame.pack(fill="x", padx=20, pady=10)
+
+        provider_label = ctk.CTkLabel(
+            provider_frame,
+            text="LLM Provider:",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        provider_label.pack(anchor="w", padx=10, pady=(10, 5))
+
+        self.provider_dropdown = ctk.CTkOptionMenu(
+            provider_frame,
+            variable=self.llm_provider_var,
+            values=["ollama", "lmstudio"],
+            command=self._on_provider_changed,
+        )
+        self.provider_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
+
+        # Ollama settings frame
+        ollama_frame = ctk.CTkFrame(tab)
+        ollama_frame.pack(fill="x", padx=20, pady=10)
+
+        ollama_title = ctk.CTkLabel(
+            ollama_frame,
+            text="Ollama Settings:",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        ollama_title.pack(anchor="w", padx=10, pady=(10, 5))
+
+        ollama_url_label = ctk.CTkLabel(ollama_frame, text="Base URL:")
+        ollama_url_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.ollama_url_entry = ctk.CTkEntry(
+            ollama_frame,
+            textvariable=self.ollama_url_var,
+            width=300,
+        )
+        self.ollama_url_entry.pack(anchor="w", padx=20, pady=(0, 10))
+
+        ollama_model_label = ctk.CTkLabel(ollama_frame, text="Model Name:")
+        ollama_model_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.ollama_model_entry = ctk.CTkEntry(
+            ollama_frame,
+            textvariable=self.ollama_model_var,
+            width=300,
+        )
+        self.ollama_model_entry.pack(anchor="w", padx=20, pady=(0, 10))
+
+        # LM Studio settings frame
+        lmstudio_frame = ctk.CTkFrame(tab)
+        lmstudio_frame.pack(fill="x", padx=20, pady=10)
+
+        lmstudio_title = ctk.CTkLabel(
+            lmstudio_frame,
+            text="LM Studio Settings:",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        lmstudio_title.pack(anchor="w", padx=10, pady=(10, 5))
+
+        lmstudio_url_label = ctk.CTkLabel(lmstudio_frame, text="Base URL:")
+        lmstudio_url_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.lmstudio_url_entry = ctk.CTkEntry(
+            lmstudio_frame,
+            textvariable=self.lmstudio_url_var,
+            width=300,
+        )
+        self.lmstudio_url_entry.pack(anchor="w", padx=20, pady=(0, 10))
+
+        lmstudio_model_label = ctk.CTkLabel(lmstudio_frame, text="Model Name:")
+        lmstudio_model_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.lmstudio_model_entry = ctk.CTkEntry(
+            lmstudio_frame,
+            textvariable=self.lmstudio_model_var,
+            width=300,
+        )
+        self.lmstudio_model_entry.pack(anchor="w", padx=20, pady=(0, 10))
+
+        # Timeout setting
+        timeout_frame = ctk.CTkFrame(tab)
+        timeout_frame.pack(fill="x", padx=20, pady=10)
+
+        timeout_label = ctk.CTkLabel(
+            timeout_frame,
+            text="Request Timeout (seconds):",
+            font=ctk.CTkFont(size=12),
+        )
+        timeout_label.pack(anchor="w", padx=10, pady=(10, 0))
+
+        self.timeout_entry = ctk.CTkEntry(
+            timeout_frame,
+            textvariable=self.timeout_var,
+            width=100,
+        )
+        self.timeout_entry.pack(anchor="w", padx=20, pady=(0, 10))
+
+        # Buttons frame
+        buttons_frame = ctk.CTkFrame(tab)
+        buttons_frame.pack(fill="x", padx=20, pady=20)
+
+        self.test_connection_button = ctk.CTkButton(
+            buttons_frame,
+            text="Test Connection",
+            command=None,  # Will be set by controller
+            width=150,
+        )
+        self.test_connection_button.pack(side="left", padx=10, pady=10)
+
+        self.save_settings_button = ctk.CTkButton(
+            buttons_frame,
+            text="Save Settings",
+            command=None,  # Will be set by controller
+            width=150,
+        )
+        self.save_settings_button.pack(side="left", padx=10, pady=10)
+
+        # Status label
+        self.settings_status_label = ctk.CTkLabel(
+            tab,
+            text="",
+            font=ctk.CTkFont(size=12),
+        )
+        self.settings_status_label.pack(padx=20, pady=10)
+
+    def _on_provider_changed(self, choice: str) -> None:
+        """Called when LLM provider dropdown changes."""
+        # This callback is for future use if needed
+        pass
+
+    # ========================================================================
     # Public API - Getters
     # ========================================================================
 
@@ -394,6 +552,69 @@ class AppView:
             >>> view.clear_chat_input()
         """
         self.chat_entry.delete(0, "end")
+
+    def get_llm_settings(self) -> dict:
+        """
+        Get the current LLM settings from the UI.
+
+        Returns:
+            dict: A dictionary containing LLM configuration
+
+        Example:
+            >>> settings = view.get_llm_settings()
+            >>> print(settings['llm_provider'])
+        """
+        return {
+            "llm_provider": self.llm_provider_var.get(),
+            "ollama_base_url": self.ollama_url_var.get(),
+            "ollama_model": self.ollama_model_var.get(),
+            "lmstudio_base_url": self.lmstudio_url_var.get(),
+            "lmstudio_model": self.lmstudio_model_var.get(),
+            "timeout": int(self.timeout_var.get()),
+        }
+
+    def set_llm_settings(self, settings: dict) -> None:
+        """
+        Update the LLM settings UI with values from a dictionary.
+
+        Args:
+            settings: Dictionary containing LLM configuration
+
+        Example:
+            >>> settings = {"llm_provider": "ollama", "ollama_model": "llama3:8b"}
+            >>> view.set_llm_settings(settings)
+        """
+        if "llm_provider" in settings:
+            self.llm_provider_var.set(settings["llm_provider"])
+
+        if "ollama_base_url" in settings:
+            self.ollama_url_var.set(settings["ollama_base_url"])
+
+        if "ollama_model" in settings:
+            self.ollama_model_var.set(settings["ollama_model"])
+
+        if "lmstudio_base_url" in settings:
+            self.lmstudio_url_var.set(settings["lmstudio_base_url"])
+
+        if "lmstudio_model" in settings:
+            self.lmstudio_model_var.set(settings["lmstudio_model"])
+
+        if "timeout" in settings:
+            self.timeout_var.set(str(settings["timeout"]))
+
+    def show_settings_status(self, message: str, is_error: bool = False) -> None:
+        """
+        Display a status message in the Settings tab.
+
+        Args:
+            message: The message to display
+            is_error: True if this is an error message (red text), False for success (green)
+
+        Example:
+            >>> view.show_settings_status("Settings saved!", is_error=False)
+        """
+        color = "red" if is_error else "green"
+        self.settings_status_label.configure(text=message, text_color=color)
 
     # ========================================================================
     # Public API - Setters
