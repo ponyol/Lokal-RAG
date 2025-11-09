@@ -328,7 +328,7 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
                     logger.info(f"Loading cookies from {browser_name}...")
                     cookies = browser_func(domain_name=domain)
 
-                    # Count cookies for debugging
+                    # Count cookies for debugging (don't modify cookies variable!)
                     cookie_list = list(cookies) if cookies else []
                     cookie_count = len(cookie_list)
                     logger.info(f"Loaded {cookie_count} cookies from {browser_name}")
@@ -344,8 +344,7 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
                         if found_auth:
                             logger.info(f"✓ Found authentication cookies: {', '.join(found_auth)}")
 
-                        # Recreate cookie jar from list (browser_cookie3 returns RequestsCookieJar)
-                        cookies = cookie_list
+                        # NOTE: Keep cookies as RequestsCookieJar for httpx compatibility
                     else:
                         logger.warning(f"⚠️  NO COOKIES LOADED from {browser_name}!")
                         logger.warning("For Medium articles, you need to:")
