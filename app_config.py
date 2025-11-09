@@ -24,15 +24,25 @@ class AppConfig:
     Immutable configuration for the Lokal-RAG application.
 
     Attributes:
+        LLM_PROVIDER: Which LLM provider to use ("ollama" or "lmstudio")
         OLLAMA_BASE_URL: URL of the local Ollama instance
-        LLM_MODEL: Name of the LLM model to use for translation, tagging, and RAG
+        OLLAMA_MODEL: Name of the Ollama model to use for translation, tagging, and RAG
+        LMSTUDIO_BASE_URL: URL of the local LM Studio instance
+        LMSTUDIO_MODEL: Name of the LM Studio model to use for translation, tagging, and RAG
+        LLM_REQUEST_TIMEOUT: Timeout for LLM API requests (in seconds)
         EMBEDDING_MODEL: Name of the HuggingFace embedding model
         VECTOR_DB_PATH: Path to the ChromaDB persistent storage
         MARKDOWN_OUTPUT_PATH: Path where processed Markdown files will be saved
         CHUNK_SIZE: Size of text chunks for vector database (in characters)
         CHUNK_OVERLAP: Overlap between consecutive chunks (in characters)
         MAX_TAGS: Maximum number of tags to generate per document
-        OLLAMA_REQUEST_TIMEOUT: Timeout for Ollama API requests (in seconds)
+        RAG_TOP_K: Number of documents to retrieve for RAG context
+        CLEANUP_MEMORY_AFTER_PDF: Whether to free memory after batch processing
+        WEB_USE_BROWSER_COOKIES: Whether to use browser cookies for authenticated requests
+        WEB_BROWSER_CHOICE: Which browser to extract cookies from
+        WEB_REQUEST_TIMEOUT: Timeout for web requests (in seconds)
+        WEB_USER_AGENT: User agent string for web requests
+        WEB_SAVE_RAW_HTML: Whether to save raw HTML for debugging
     """
 
     # LLM Configuration

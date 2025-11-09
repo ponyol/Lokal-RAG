@@ -175,10 +175,10 @@ def fn_check_ollama_availability(config: AppConfig) -> tuple[bool, Optional[str]
         models = data.get("models", [])
         model_names = [model.get("name", "") for model in models]
 
-        if config.LLM_MODEL not in model_names:
+        if config.OLLAMA_MODEL not in model_names:
             return (
                 False,
-                f"Model '{config.LLM_MODEL}' not found. Available models: {', '.join(model_names)}",
+                f"Model '{config.OLLAMA_MODEL}' not found. Available models: {', '.join(model_names)}",
             )
 
         return (True, None)
