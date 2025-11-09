@@ -309,9 +309,52 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
         cookies = None
         if config.WEB_USE_BROWSER_COOKIES:
             try:
-                # Load cookies for this specific domain from all browsers
-                cookies = browser_cookie3.load(domain_name=domain)
-                logger.info(f"Loaded browser cookies for domain: {domain}")
+                # Try to load cookies from all browsers
+                # For Medium, we need cookies from both 'medium.com' and '.medium.com'
+                logger.info(f"Attempting to load browser cookies for domain: {domain}")
+
+                # Try loading from all browsers first
+                try:
+                    cookies = browser_cookie3.load(domain_name=domain)
+
+                    # Count cookies for debugging
+                    cookie_count = len(list(cookies)) if cookies else 0
+                    logger.info(f"Loaded {cookie_count} cookies from all browsers")
+
+                    # Debug: Log cookie names (not values for security)
+                    if cookie_count > 0:
+                        cookie_names = [c.name for c in cookies]
+                        logger.info(f"Cookie names: {', '.join(cookie_names[:5])}...")
+                    else:
+                        logger.warning("No cookies found! Trying individual browsers...")
+
+                        # Try each browser individually
+                        for browser_func in [browser_cookie3.chrome, browser_cookie3.firefox,
+                                            browser_cookie3.safari, browser_cookie3.edge]:
+                            try:
+                                browser_name = browser_func.__name__
+                                logger.info(f"Trying {browser_name}...")
+                                cookies = browser_func(domain_name=domain)
+                                cookie_count = len(list(cookies)) if cookies else 0
+                                if cookie_count > 0:
+                                    logger.info(f"Successfully loaded {cookie_count} cookies from {browser_name}")
+                                    break
+                            except Exception as e:
+                                logger.debug(f"{browser_name} failed: {e}")
+                                continue
+
+                except Exception as e:
+                    logger.warning(f"Failed to load cookies: {e}")
+                    cookies = None
+
+                if not cookies or len(list(cookies)) == 0:
+                    logger.warning("⚠️  NO COOKIES LOADED!")
+                    logger.warning("For Medium articles, you need to:")
+                    logger.warning("1. Be logged into Medium in your browser")
+                    logger.warning("2. On macOS: Grant Terminal access to browser cookies")
+                    logger.warning("   (System Preferences → Security & Privacy → Full Disk Access)")
+                    logger.info("Proceeding without authentication - only free content will be available")
+
             except Exception as e:
                 logger.warning(f"Could not load browser cookies: {e}")
                 logger.info("Proceeding without authentication")
