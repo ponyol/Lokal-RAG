@@ -114,9 +114,14 @@ class AppView:
         )
         self.web_radio.pack(anchor="w", padx=20, pady=5)
 
+        # Create a container frame for source-specific inputs
+        # This ensures consistent positioning when switching between sources
+        self.source_container = ctk.CTkFrame(tab)
+        self.source_container.pack(fill="x", padx=20, pady=10)
+
         # PDF: Folder selection frame
-        self.folder_frame = ctk.CTkFrame(tab)
-        self.folder_frame.pack(fill="x", padx=20, pady=10)
+        self.folder_frame = ctk.CTkFrame(self.source_container)
+        self.folder_frame.pack(fill="x", padx=0, pady=0)
 
         self.select_folder_button = ctk.CTkButton(
             self.folder_frame,
@@ -134,7 +139,7 @@ class AppView:
         folder_label.pack(side="left", fill="x", expand=True, padx=10)
 
         # WEB: URL input frame
-        self.url_frame = ctk.CTkFrame(tab)
+        self.url_frame = ctk.CTkFrame(self.source_container)
         # Don't pack yet - will be shown when web radio is selected
 
         url_label = ctk.CTkLabel(
@@ -222,12 +227,12 @@ class AppView:
 
         if source_type == "pdf":
             # Show PDF folder frame, hide URL frame
-            self.folder_frame.pack(fill="x", padx=20, pady=10)
             self.url_frame.pack_forget()
+            self.folder_frame.pack(fill="x", padx=0, pady=0)
         else:  # web
             # Hide PDF folder frame, show URL frame
             self.folder_frame.pack_forget()
-            self.url_frame.pack(fill="x", padx=20, pady=10)
+            self.url_frame.pack(fill="x", padx=0, pady=0)
 
     # ========================================================================
     # Chat Tab
