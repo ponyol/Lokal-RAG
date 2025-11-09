@@ -56,6 +56,11 @@ class AppConfig:
     # Performance Configuration
     CLEANUP_MEMORY_AFTER_PDF: bool = True  # Free memory after batch completes (not between PDFs)
 
+    # Web Scraping Configuration
+    WEB_USE_BROWSER_COOKIES: bool = True  # Use browser cookies for authenticated requests (e.g., Medium)
+    WEB_REQUEST_TIMEOUT: int = 30  # Timeout for web requests (in seconds)
+    WEB_USER_AGENT: str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
 
 def create_default_config() -> AppConfig:
     """

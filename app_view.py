@@ -45,9 +45,12 @@ class AppView:
         ctk.set_default_color_theme("blue")
 
         # Initialize state variables
+        self.source_type_var = ctk.StringVar(value="pdf")  # "pdf" or "web"
         self.folder_path_var = ctk.StringVar(value="No folder selected")
+        self.web_urls_var = ctk.StringVar(value="")
         self.translate_var = ctk.BooleanVar(value=False)
         self.tag_var = ctk.BooleanVar(value=True)
+        self.use_cookies_var = ctk.BooleanVar(value=True)
 
         # Create the UI
         self._create_widgets()
@@ -77,17 +80,46 @@ class AppView:
         # Title
         title = ctk.CTkLabel(
             tab,
-            text="📄 PDF Document Ingestion",
+            text="📚 Content Ingestion",
             font=ctk.CTkFont(size=20, weight="bold"),
         )
         title.pack(pady=(10, 20))
 
-        # Folder selection frame
-        folder_frame = ctk.CTkFrame(tab)
-        folder_frame.pack(fill="x", padx=20, pady=10)
+        # Source type selection frame
+        source_type_frame = ctk.CTkFrame(tab)
+        source_type_frame.pack(fill="x", padx=20, pady=10)
+
+        source_label = ctk.CTkLabel(
+            source_type_frame,
+            text="Select Source Type:",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        source_label.pack(anchor="w", padx=10, pady=(10, 5))
+
+        self.pdf_radio = ctk.CTkRadioButton(
+            source_type_frame,
+            text="📄 PDF Files (from folder)",
+            variable=self.source_type_var,
+            value="pdf",
+            command=self._on_source_type_changed,
+        )
+        self.pdf_radio.pack(anchor="w", padx=20, pady=5)
+
+        self.web_radio = ctk.CTkRadioButton(
+            source_type_frame,
+            text="🌐 Web Articles (URLs)",
+            variable=self.source_type_var,
+            value="web",
+            command=self._on_source_type_changed,
+        )
+        self.web_radio.pack(anchor="w", padx=20, pady=5)
+
+        # PDF: Folder selection frame
+        self.folder_frame = ctk.CTkFrame(tab)
+        self.folder_frame.pack(fill="x", padx=20, pady=10)
 
         self.select_folder_button = ctk.CTkButton(
-            folder_frame,
+            self.folder_frame,
             text="Select Folder",
             command=self._on_select_folder_clicked,
             width=120,
@@ -95,11 +127,37 @@ class AppView:
         self.select_folder_button.pack(side="left", padx=10, pady=10)
 
         folder_label = ctk.CTkLabel(
-            folder_frame,
+            self.folder_frame,
             textvariable=self.folder_path_var,
             anchor="w",
         )
         folder_label.pack(side="left", fill="x", expand=True, padx=10)
+
+        # WEB: URL input frame
+        self.url_frame = ctk.CTkFrame(tab)
+        # Don't pack yet - will be shown when web radio is selected
+
+        url_label = ctk.CTkLabel(
+            self.url_frame,
+            text="Enter URLs (one per line):",
+            font=ctk.CTkFont(size=12),
+        )
+        url_label.pack(anchor="w", padx=10, pady=(10, 5))
+
+        self.url_textbox = ctk.CTkTextbox(
+            self.url_frame,
+            height=100,
+            wrap="word",
+        )
+        self.url_textbox.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+        # WEB: Authentication option
+        self.cookies_checkbox = ctk.CTkCheckBox(
+            self.url_frame,
+            text="Use browser cookies for authentication (Medium, paywalled sites)",
+            variable=self.use_cookies_var,
+        )
+        self.cookies_checkbox.pack(anchor="w", padx=20, pady=5)
 
         # Options frame
         options_frame = ctk.CTkFrame(tab)
@@ -157,6 +215,19 @@ class AppView:
         folder = filedialog.askdirectory(title="Select Folder Containing PDFs")
         if folder:
             self.folder_path_var.set(folder)
+
+    def _on_source_type_changed(self) -> None:
+        """Handle source type radio button change."""
+        source_type = self.source_type_var.get()
+
+        if source_type == "pdf":
+            # Show PDF folder frame, hide URL frame
+            self.folder_frame.pack(fill="x", padx=20, pady=10)
+            self.url_frame.pack_forget()
+        else:  # web
+            # Hide PDF folder frame, show URL frame
+            self.folder_frame.pack_forget()
+            self.url_frame.pack(fill="x", padx=20, pady=10)
 
     # ========================================================================
     # Chat Tab
@@ -228,18 +299,30 @@ class AppView:
 
         Returns:
             dict: A dictionary containing:
-                - folder_path: str
+                - source_type: str ("pdf" or "web")
+                - folder_path: str (for PDF sources)
+                - web_urls: list[str] (for web sources)
                 - do_translation: bool
                 - do_tagging: bool
+                - use_cookies: bool (for web sources)
 
         Example:
             >>> settings = view.get_ingestion_settings()
-            >>> print(settings['folder_path'])
+            >>> print(settings['source_type'])
         """
+        # Parse web URLs from textbox
+        web_urls = []
+        if self.source_type_var.get() == "web":
+            urls_text = self.url_textbox.get("1.0", "end").strip()
+            web_urls = [url.strip() for url in urls_text.split("\n") if url.strip()]
+
         return {
+            "source_type": self.source_type_var.get(),
             "folder_path": self.folder_path_var.get(),
+            "web_urls": web_urls,
             "do_translation": self.translate_var.get(),
             "do_tagging": self.tag_var.get(),
+            "use_cookies": self.use_cookies_var.get(),
         }
 
     def get_chat_input(self) -> str:

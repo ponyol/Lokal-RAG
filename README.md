@@ -5,6 +5,8 @@ A local-first desktop application for building a private RAG (Retrieval-Augmente
 ## Features
 
 - 📄 **PDF Ingestion**: Convert PDF files to high-quality Markdown using marker-pdf
+- 🌐 **Web Article Ingestion**: Fetch and extract content from web articles (Medium, blogs, news sites)
+- 🔐 **Authenticated Access**: Use your browser cookies to access paywalled content (Medium, etc.)
 - 🌍 **Translation**: Optional translation to Russian using local LLM
 - 🏷️ **Auto-tagging**: Automatic content categorization based on subject matter
 - 💾 **Local Storage**: All data stays on your machine - no cloud required
@@ -73,14 +75,41 @@ ollama serve
 python main.py
 ```
 
-### 3. Ingest Documents
+### 3. Ingest Content
+
+**Option A: PDF Documents**
 
 1. Go to the "Ingestion" tab
-2. Click "Select Folder" and choose a directory containing PDF files
-3. (Optional) Enable "Translate to Russian"
-4. (Optional) Enable "Auto-tag content"
-5. Click "Start Processing"
-6. Monitor the log for progress
+2. Select "📄 PDF Files (from folder)"
+3. Click "Select Folder" and choose a directory containing PDF files
+4. (Optional) Enable "Translate to Russian"
+5. (Optional) Enable "Auto-tag content"
+6. Click "Start Processing"
+7. Monitor the log for progress
+
+**Option B: Web Articles**
+
+1. Go to the "Ingestion" tab
+2. Select "🌐 Web Articles (URLs)"
+3. Enter URLs in the text box (one per line)
+4. (Optional) Enable "Use browser cookies for authentication" (for Medium, paywalled sites)
+5. (Optional) Enable "Translate to Russian"
+6. (Optional) Enable "Auto-tag content"
+7. Click "Start Processing"
+8. Monitor the log for progress
+
+**Example URLs:**
+```
+https://medium.com/@username/article-title
+https://blog.example.com/post/article
+https://news.ycombinator.com/item?id=12345
+```
+
+**Note on Authentication:**
+- For paywalled sites (Medium, etc.), make sure you're logged in to your browser first
+- The app will use your browser's cookies automatically
+- Works with Chrome, Firefox, Safari, Edge
+- No need to enter passwords - uses your existing session
 
 ### 4. Chat with Your Knowledge Base
 
@@ -100,6 +129,23 @@ Edit `app_config.py` to customize:
 - **Output directory**: Where to save processed Markdown files
 - **Chunk size and overlap**: Text splitting parameters for RAG
 
+### Web Scraping Settings
+
+```python
+# In app_config.py
+WEB_USE_BROWSER_COOKIES: bool = True  # Default: True
+WEB_REQUEST_TIMEOUT: int = 30         # Seconds
+WEB_USER_AGENT: str = "Mozilla/5.0..." # Browser user agent
+```
+
+- **`WEB_USE_BROWSER_COOKIES`**: Enable/disable browser cookie authentication
+  - `True`: Use browser cookies (for paywalled sites like Medium)
+  - `False`: Public access only
+
+- **`WEB_REQUEST_TIMEOUT`**: How long to wait for page to load (in seconds)
+
+- **`WEB_USER_AGENT`**: Browser identification string (rarely needs changing)
+
 ### Performance Settings
 
 **Memory Management:**
@@ -109,12 +155,12 @@ Edit `app_config.py` to customize:
 CLEANUP_MEMORY_AFTER_PDF: bool = True  # Default: True
 ```
 
-- **`True` (Recommended)**: Frees ~10GB RAM after processing **all** PDFs
+- **`True` (Recommended)**: Frees ~10GB RAM after processing **all** content
   - Lower memory usage after batch completes
-  - During processing: Still uses ~14GB (models stay loaded)
+  - During processing: Still uses ~14GB (models stay loaded for PDFs)
   - After processing: Drops to ~4GB
   - **Best for**: MacBooks with 8-16GB RAM
-  - **Note**: Cleanup happens once at the end, not between PDFs (to prevent crashes)
+  - **Note**: Cleanup happens once at the end, not between items (to prevent crashes)
 
 - **`False`**: Keeps models in memory indefinitely
   - Memory usage: ~14GB remains even after processing
