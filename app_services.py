@@ -750,18 +750,43 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
                         try:
                             # Get image URL (handle multiple lazy-loading patterns)
                             # Medium and other sites use various attributes for lazy loading
-                            img_url = (
-                                img_tag.get('src') or
-                                img_tag.get('data-src') or
-                                img_tag.get('data-lazy-src') or
-                                img_tag.get('data-original') or
-                                img_tag.get('data-srcset', '').split(',')[0].split()[0] if img_tag.get('data-srcset') else None
-                            )
+                            img_url = None
+
+                            # Try standard attributes first
+                            img_url = img_tag.get('src')
+
+                            # Try lazy-loading attributes
+                            if not img_url:
+                                img_url = img_tag.get('data-src') or img_tag.get('data-lazy-src') or img_tag.get('data-original')
+
+                            # Try srcset/srcSet (Medium uses this in <picture> elements)
+                            if not img_url:
+                                srcset = img_tag.get('srcset') or img_tag.get('srcSet')
+                                if srcset:
+                                    # srcset format: "url1 size1, url2 size2, ..."
+                                    # Take the first URL
+                                    first_src = srcset.split(',')[0].strip().split()[0]
+                                    img_url = first_src
+
+                            # For Medium <picture> elements, check parent for <source> tags
+                            if not img_url and img_tag.parent and img_tag.parent.name == 'picture':
+                                sources = img_tag.parent.find_all('source')
+                                for source in sources:
+                                    srcset = source.get('srcset') or source.get('srcSet')
+                                    if srcset:
+                                        # Take the first URL from srcSet
+                                        first_src = srcset.split(',')[0].strip().split()[0]
+                                        img_url = first_src
+                                        logger.info(f"Found image URL in parent <picture> <source> tag")
+                                        break
 
                             if not img_url:
                                 # Debug: Log all attributes to understand what Medium is using
                                 attrs = dict(img_tag.attrs)
-                                logger.warning(f"Image {idx} has no src attribute. Available attributes: {list(attrs.keys())}")
+                                logger.warning(f"Image {idx} has no src. Attributes: {attrs}")
+                                # Also check parent if it's a picture element
+                                if img_tag.parent and img_tag.parent.name == 'picture':
+                                    logger.warning(f"Parent <picture> sources: {[dict(s.attrs) for s in img_tag.parent.find_all('source')]}")
                                 continue
 
                             # Convert relative URLs to absolute
