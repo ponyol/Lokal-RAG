@@ -352,19 +352,22 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
                                 logger.info(f"Loading additional cookies from parent domain: {parent_domain}")
                                 parent_cookies = browser_func(domain_name=parent_domain)
 
-                                # Count parent cookies
-                                parent_cookie_list = list(parent_cookies) if parent_cookies else []
-                                parent_count = len(parent_cookie_list)
-                                logger.info(f"Found {parent_count} cookies from {parent_domain}")
+                                # Check if we got any cookies (without exhausting the jar)
+                                if parent_cookies and len(parent_cookies) > 0:
+                                    # Count before merge
+                                    parent_count = len(parent_cookies)
+                                    logger.info(f"Found {parent_count} cookies from {parent_domain}")
 
-                                # Merge parent cookies into main cookie jar
-                                if parent_count > 0:
+                                    # Merge parent cookies into main cookie jar
+                                    # IMPORTANT: Do this BEFORE converting to list
                                     cookies.update(parent_cookies)
                                     logger.info(f"✓ Merged {parent_count} cookies from parent domain")
                                     # Success - no need to try other formats
                                     break
+                                else:
+                                    logger.info(f"Found 0 cookies from {parent_domain}")
                             except Exception as e:
-                                logger.debug(f"Could not load cookies from {parent_domain}: {e}")
+                                logger.warning(f"Could not load cookies from {parent_domain}: {e}")
                                 # Try next format
 
                     # Count cookies for debugging (don't modify cookies variable!)
