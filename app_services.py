@@ -533,7 +533,8 @@ def fn_translate_text(text: str, config: AppConfig) -> str:
     """
     Translate text from English to Russian using the LLM.
 
-    This is a pure function that composes fn_call_ollama with a specific prompt.
+    For long texts (>2000 chars), splits into chunks by paragraphs to avoid
+    LLM summarization instead of translation.
 
     Args:
         text: The English text to translate
@@ -546,11 +547,58 @@ def fn_translate_text(text: str, config: AppConfig) -> str:
         >>> config = AppConfig()
         >>> russian = fn_translate_text("Hello world", config)
     """
-    return fn_call_ollama(
-        prompt=text,
-        system_prompt=TRANSLATION_SYSTEM_PROMPT,
-        config=config,
-    )
+    CHUNK_SIZE = 2000  # Max characters per chunk
+
+    # If text is short enough, translate directly
+    if len(text) <= CHUNK_SIZE:
+        return fn_call_ollama(
+            prompt=text,
+            system_prompt=TRANSLATION_SYSTEM_PROMPT,
+            config=config,
+        )
+
+    # For long texts, split by paragraphs and translate in chunks
+    logger.info(f"Text is long ({len(text)} chars), splitting into chunks for translation...")
+
+    # Split by double newlines (Markdown paragraphs)
+    paragraphs = text.split('\n\n')
+
+    chunks = []
+    current_chunk = ""
+
+    for para in paragraphs:
+        # If adding this paragraph would exceed chunk size, start a new chunk
+        if len(current_chunk) + len(para) + 2 > CHUNK_SIZE and current_chunk:
+            chunks.append(current_chunk)
+            current_chunk = para
+        else:
+            if current_chunk:
+                current_chunk += "\n\n" + para
+            else:
+                current_chunk = para
+
+    # Add the last chunk
+    if current_chunk:
+        chunks.append(current_chunk)
+
+    logger.info(f"Split into {len(chunks)} chunks")
+
+    # Translate each chunk
+    translated_chunks = []
+    for i, chunk in enumerate(chunks, 1):
+        logger.info(f"Translating chunk {i}/{len(chunks)} ({len(chunk)} chars)...")
+        translated = fn_call_ollama(
+            prompt=chunk,
+            system_prompt=TRANSLATION_SYSTEM_PROMPT,
+            config=config,
+        )
+        translated_chunks.append(translated)
+
+    # Join translated chunks back together
+    final_translation = "\n\n".join(translated_chunks)
+    logger.info(f"Translation complete: {len(final_translation)} chars")
+
+    return final_translation
 
 
 def fn_generate_tags(text: str, config: AppConfig) -> list[str]:
