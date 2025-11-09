@@ -21,7 +21,7 @@ from pathlib import Path
 
 import customtkinter as ctk
 
-from app_config import create_default_config
+from app_config import create_config_from_settings
 from app_controller import AppOrchestrator
 from app_services import fn_check_ollama_availability
 from app_storage import StorageService, fn_ensure_directories_exist
@@ -107,9 +107,13 @@ def main() -> None:
     try:
         # Create configuration
         logger.info("Loading configuration...")
-        config = create_default_config()
+        config = create_config_from_settings()
         logger.info(f"✓ Configuration loaded")
-        logger.info(f"  - LLM Model: {config.LLM_MODEL}")
+        logger.info(f"  - LLM Provider: {config.LLM_PROVIDER}")
+        if config.LLM_PROVIDER == "ollama":
+            logger.info(f"  - Ollama Model: {config.OLLAMA_MODEL}")
+        else:
+            logger.info(f"  - LM Studio Model: {config.LMSTUDIO_MODEL}")
         logger.info(f"  - Embedding Model: {config.EMBEDDING_MODEL}")
         logger.info(f"  - Vector DB Path: {config.VECTOR_DB_PATH}")
 
@@ -137,16 +141,24 @@ def main() -> None:
         view = AppView(root)
         logger.info("✓ GUI created")
 
-        # Show Ollama warning if not available
-        if not ollama_available:
-            view.append_log("⚠️  WARNING: Ollama is not available!")
-            view.append_log("Please ensure Ollama is running: ollama serve")
-            view.append_log("And the model is downloaded: ollama pull qwen2.5:7b-instruct")
-            view.append_log("=" * 50)
-            view.append_log("")
+        # Show LLM status in logs
+        if config.LLM_PROVIDER == "ollama":
+            if not ollama_available:
+                view.append_log("⚠️  WARNING: Ollama is not available!")
+                view.append_log("Please ensure Ollama is running: ollama serve")
+                view.append_log(f"And the model is downloaded: ollama pull {config.OLLAMA_MODEL}")
+                view.append_log("=" * 50)
+                view.append_log("")
+            else:
+                view.append_log("✓ Ollama is running and ready")
+                view.append_log(f"✓ Model available: {config.OLLAMA_MODEL}")
+                view.append_log(f"✓ Documents in database: {doc_count}")
+                view.append_log("=" * 50)
+                view.append_log("")
         else:
-            view.append_log("✓ Ollama is running and ready")
-            view.append_log(f"✓ Model available: {config.LLM_MODEL}")
+            # LM Studio - assume it's configured correctly
+            view.append_log(f"✓ LLM Provider: LM Studio ({config.LMSTUDIO_BASE_URL})")
+            view.append_log(f"✓ Model: {config.LMSTUDIO_MODEL}")
             view.append_log(f"✓ Documents in database: {doc_count}")
             view.append_log("=" * 50)
             view.append_log("")
