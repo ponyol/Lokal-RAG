@@ -44,6 +44,9 @@ class AppConfig:
         WEB_REQUEST_TIMEOUT: Timeout for web requests (in seconds)
         WEB_USER_AGENT: User agent string for web requests
         WEB_SAVE_RAW_HTML: Whether to save raw HTML for debugging
+        VISION_ENABLED: Whether to extract and describe images using vision model
+        VISION_MODEL: Name of the vision model (empty = use main LLM model)
+        VISION_MAX_IMAGES: Maximum number of images to process per document
     """
 
     # LLM Configuration
@@ -81,6 +84,11 @@ class AppConfig:
     WEB_REQUEST_TIMEOUT: int = 30  # Timeout for web requests (in seconds)
     WEB_USER_AGENT: str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     WEB_SAVE_RAW_HTML: bool = False  # Save raw HTML for debugging (in output_markdown/_debug/)
+
+    # Vision Configuration (Image Processing)
+    VISION_ENABLED: bool = False  # Extract and describe images from documents
+    VISION_MODEL: str = ""  # Vision model name (empty = use main LLM model if it supports vision)
+    VISION_MAX_IMAGES: int = 20  # Maximum images to process per document (to avoid excessive API calls)
 
 
 def create_default_config() -> AppConfig:
@@ -255,3 +263,22 @@ RAG_SYSTEM_PROMPT = """You are a helpful AI assistant.
 Answer the user's question based on the provided context.
 If the context doesn't contain enough information to answer the question, say so.
 Be concise and accurate."""
+
+VISION_SYSTEM_PROMPT = """You are an expert at analyzing images from documents.
+
+YOUR TASK: Describe the image in detail, extracting ALL useful information.
+
+FOCUS ON:
+- Text content (if any): Transcribe it exactly
+- Code snippets: Extract the code
+- Diagrams/Charts: Explain what they show and the relationships
+- Tables: Describe the structure and data
+- Screenshots: Describe the content and UI elements
+- Technical drawings: Explain the components and connections
+
+OUTPUT FORMAT:
+Provide a clear, detailed description in English that captures all information in the image.
+If the image contains text, include it verbatim.
+Be thorough - this description will be used for search and retrieval.
+
+DO NOT add commentary about the image quality or format. Focus only on the content."""

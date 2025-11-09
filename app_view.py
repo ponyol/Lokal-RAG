@@ -50,6 +50,7 @@ class AppView:
         self.web_urls_var = ctk.StringVar(value="")
         self.translate_var = ctk.BooleanVar(value=False)
         self.tag_var = ctk.BooleanVar(value=True)
+        self.extract_images_var = ctk.BooleanVar(value=False)
         self.use_cookies_var = ctk.BooleanVar(value=True)
         self.browser_choice_var = ctk.StringVar(value="chrome")
         self.save_raw_html_var = ctk.BooleanVar(value=False)
@@ -239,6 +240,13 @@ class AppView:
             variable=self.tag_var,
         )
         self.tag_checkbox.pack(anchor="w", padx=20, pady=5)
+
+        self.extract_images_checkbox = ctk.CTkCheckBox(
+            options_frame,
+            text="Extract images with vision model (slower, requires vision-capable model)",
+            variable=self.extract_images_var,
+        )
+        self.extract_images_checkbox.pack(anchor="w", padx=20, pady=5)
 
         # Start button
         self.start_button = ctk.CTkButton(
@@ -554,6 +562,7 @@ class AppView:
             "web_urls": web_urls,
             "do_translation": self.translate_var.get(),
             "do_tagging": self.tag_var.get(),
+            "extract_images": self.extract_images_var.get(),
             "use_cookies": self.use_cookies_var.get(),
             "browser_choice": self.browser_choice_var.get(),
             "save_raw_html": self.save_raw_html_var.get(),
