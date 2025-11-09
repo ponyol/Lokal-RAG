@@ -76,6 +76,9 @@ class AppOrchestrator:
         # Bind events
         self.bind_events()
 
+        # Load saved settings into UI
+        self.load_settings_to_ui()
+
         # Start the queue checker
         self.check_view_queue()
 
@@ -88,7 +91,20 @@ class AppOrchestrator:
         self.view.bind_start_button(self.on_start_ingestion)
         self.view.bind_send_button(self.on_send_chat_message)
 
+        # Bind Settings tab buttons
+        self.view.test_connection_button.configure(command=self.on_test_connection)
+        self.view.save_settings_button.configure(command=self.on_save_settings)
+
         logger.info("Events bound successfully")
+
+    def load_settings_to_ui(self) -> None:
+        """Load saved settings from JSON into the UI."""
+        from app_config import load_settings_from_json
+
+        settings = load_settings_from_json()
+        if settings:
+            self.view.set_llm_settings(settings)
+            logger.info("Loaded settings into UI")
 
     # ========================================================================
     # Queue Management (Thread-Safe GUI Updates)
@@ -258,6 +274,99 @@ class AppOrchestrator:
         worker.start()
 
         logger.info(f"Started chat query: {query[:50]}...")
+
+    def on_save_settings(self) -> None:
+        """
+        Handle the "Save Settings" button click.
+
+        Saves LLM configuration to ~/.lokal-rag/settings.json
+        """
+        try:
+            from app_config import save_settings_to_json, create_config_from_settings
+            from dataclasses import replace
+
+            # Get settings from UI
+            settings = self.view.get_llm_settings()
+
+            # Save to JSON
+            save_settings_to_json(settings)
+
+            # Update the controller's config
+            self.config = create_config_from_settings(settings)
+
+            # Show success message
+            self.view.show_settings_status("✓ Settings saved successfully!", is_error=False)
+            logger.info(f"Settings saved: Provider={settings['llm_provider']}")
+
+        except Exception as e:
+            error_msg = f"Failed to save settings: {e}"
+            self.view.show_settings_status(f"✗ {error_msg}", is_error=True)
+            logger.error(error_msg, exc_info=True)
+
+    def on_test_connection(self) -> None:
+        """
+        Handle the "Test Connection" button click.
+
+        Tests connection to the selected LLM provider.
+        """
+        try:
+            from app_config import create_config_from_settings
+
+            # Get settings from UI
+            settings = self.view.get_llm_settings()
+
+            # Create temporary config
+            test_config = create_config_from_settings(settings)
+
+            # Show testing status
+            self.view.show_settings_status("Testing connection...", is_error=False)
+            self.view.master.update()  # Force UI update
+
+            # Test based on provider
+            if test_config.LLM_PROVIDER == "ollama":
+                from app_services import fn_check_ollama_availability
+
+                available, error = fn_check_ollama_availability(test_config)
+                if available:
+                    self.view.show_settings_status(
+                        f"✓ Connected to Ollama! Model: {test_config.OLLAMA_MODEL}",
+                        is_error=False
+                    )
+                    logger.info("Ollama connection test successful")
+                else:
+                    self.view.show_settings_status(
+                        f"✗ Ollama not available: {error}",
+                        is_error=True
+                    )
+                    logger.warning(f"Ollama connection test failed: {error}")
+
+            elif test_config.LLM_PROVIDER == "lmstudio":
+                # Test LM Studio connection
+                import httpx
+                url = f"{test_config.LMSTUDIO_BASE_URL}/models"
+
+                try:
+                    with httpx.Client(timeout=5) as client:
+                        response = client.get(url)
+                        response.raise_for_status()
+
+                    self.view.show_settings_status(
+                        f"✓ Connected to LM Studio! Model: {test_config.LMSTUDIO_MODEL}",
+                        is_error=False
+                    )
+                    logger.info("LM Studio connection test successful")
+
+                except Exception as e:
+                    self.view.show_settings_status(
+                        f"✗ LM Studio not available: {e}",
+                        is_error=True
+                    )
+                    logger.warning(f"LM Studio connection test failed: {e}")
+
+        except Exception as e:
+            error_msg = f"Connection test failed: {e}"
+            self.view.show_settings_status(f"✗ {error_msg}", is_error=True)
+            logger.error(error_msg, exc_info=True)
 
 
 # ============================================================================
