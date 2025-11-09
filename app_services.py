@@ -587,12 +587,12 @@ def fn_translate_text(text: str, config: AppConfig) -> str:
     """
     Translate text from English to Russian using the LLM.
 
-    For long texts (>2000 chars), splits into chunks by paragraphs to avoid
+    For long texts (>TRANSLATION_CHUNK_SIZE chars), splits into chunks by paragraphs to avoid
     LLM summarization instead of translation.
 
     Args:
         text: The English text to translate
-        config: Application configuration
+        config: Application configuration (uses config.TRANSLATION_CHUNK_SIZE)
 
     Returns:
         str: The translated Russian text
@@ -601,10 +601,8 @@ def fn_translate_text(text: str, config: AppConfig) -> str:
         >>> config = AppConfig()
         >>> russian = fn_translate_text("Hello world", config)
     """
-    CHUNK_SIZE = 2000  # Max characters per chunk
-
     # If text is short enough, translate directly
-    if len(text) <= CHUNK_SIZE:
+    if len(text) <= config.TRANSLATION_CHUNK_SIZE:
         return fn_call_llm(
             prompt=text,
             system_prompt=TRANSLATION_SYSTEM_PROMPT,
@@ -622,7 +620,7 @@ def fn_translate_text(text: str, config: AppConfig) -> str:
 
     for para in paragraphs:
         # If adding this paragraph would exceed chunk size, start a new chunk
-        if len(current_chunk) + len(para) + 2 > CHUNK_SIZE and current_chunk:
+        if len(current_chunk) + len(para) + 2 > config.TRANSLATION_CHUNK_SIZE and current_chunk:
             chunks.append(current_chunk)
             current_chunk = para
         else:

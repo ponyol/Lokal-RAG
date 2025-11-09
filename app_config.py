@@ -35,6 +35,7 @@ class AppConfig:
         MARKDOWN_OUTPUT_PATH: Path where processed Markdown files will be saved
         CHUNK_SIZE: Size of text chunks for vector database (in characters)
         CHUNK_OVERLAP: Overlap between consecutive chunks (in characters)
+        TRANSLATION_CHUNK_SIZE: Size of text chunks for translation (in characters)
         MAX_TAGS: Maximum number of tags to generate per document
         RAG_TOP_K: Number of documents to retrieve for RAG context
         CLEANUP_MEMORY_AFTER_PDF: Whether to free memory after batch processing
@@ -63,6 +64,7 @@ class AppConfig:
     # Text Processing Configuration
     CHUNK_SIZE: int = 1500
     CHUNK_OVERLAP: int = 200
+    TRANSLATION_CHUNK_SIZE: int = 2000  # Size of chunks for translation (larger to preserve context)
 
     # Tagging Configuration
     MAX_TAGS: int = 3
@@ -202,6 +204,9 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
 
     if "timeout" in settings:
         overrides["LLM_REQUEST_TIMEOUT"] = settings["timeout"]
+
+    if "translation_chunk_size" in settings:
+        overrides["TRANSLATION_CHUNK_SIZE"] = settings["translation_chunk_size"]
 
     # Create new config with overrides
     if overrides:
