@@ -460,11 +460,37 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
             debug_path.write_text(full_html, encoding="utf-8")
             logger.info(f"Saved raw HTML to: {debug_path}")
 
-        # Step 3: Extract article content using readability
+        # Step 3: Extract article content
         logger.info("Extracting article content...")
-        doc = Document(full_html)
-        article_title = doc.title()
-        article_html = doc.summary()
+
+        # For Medium, use custom extraction that preserves all content
+        # Medium has a complex React-based structure that readability often misinterprets
+        if "medium.com" in domain:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(full_html, 'lxml')
+
+            # Try to find the article element (Medium's main content container)
+            article = soup.find('article')
+
+            if article:
+                logger.info("Using Medium-specific content extraction")
+                article_title_elem = soup.find('h1')
+                article_title = article_title_elem.get_text(strip=True) if article_title_elem else "Untitled"
+
+                # Extract all text content from the article, preserving structure
+                article_html = str(article)
+
+                logger.info(f"Extracted Medium article HTML: {len(article_html):,} bytes")
+            else:
+                logger.warning("Could not find Medium article element, falling back to readability")
+                doc = Document(full_html)
+                article_title = doc.title()
+                article_html = doc.summary()
+        else:
+            # For non-Medium sites, use readability-lxml
+            doc = Document(full_html)
+            article_title = doc.title()
+            article_html = doc.summary()
 
         # Step 4: Convert to Markdown
         logger.info("Converting to Markdown...")
@@ -472,6 +498,8 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
 
         # Add title at the top
         final_markdown = f"# {article_title}\n\n{markdown_text}"
+
+        logger.info(f"Final Markdown: {len(final_markdown):,} chars")
 
         # Validate extracted text
         if not final_markdown or len(final_markdown.strip()) < 100:
