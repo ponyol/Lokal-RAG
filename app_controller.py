@@ -23,6 +23,7 @@ from typing import Optional
 from app_config import AppConfig
 from app_services import (
     fn_call_ollama,
+    fn_cleanup_pdf_memory,
     fn_create_text_chunks,
     fn_extract_markdown,
     fn_find_pdf_files,
@@ -328,6 +329,14 @@ def processing_pipeline_worker(
             view_queue.put(f"LOG:   {str(e)}")
             view_queue.put("LOG: " + "-" * 50)
             error_count += 1
+
+        finally:
+            # Clean up memory after each PDF to reduce RAM usage
+            # This frees ~10GB per file on systems with marker-pdf loaded
+            if config.CLEANUP_MEMORY_AFTER_PDF:
+                view_queue.put(f"LOG:   → Cleaning up memory...")
+                fn_cleanup_pdf_memory()
+                view_queue.put(f"LOG:   ✓ Memory freed")
 
     # Final summary
     view_queue.put("LOG: " + "=" * 50)
