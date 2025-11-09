@@ -41,37 +41,51 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 
-def fn_call_ollama(
+def fn_call_llm(
     prompt: str,
     system_prompt: str,
     config: AppConfig,
 ) -> str:
     """
-    Call the Ollama API with a user prompt and system prompt.
+    Call the LLM API (Ollama or LM Studio) with a user prompt and system prompt.
 
-    This function performs an I/O side effect (HTTP request) but is otherwise pure:
-    given the same inputs, it will produce the same output (assuming Ollama is deterministic).
+    This function routes to the appropriate LLM provider based on config.LLM_PROVIDER.
+    Supports both Ollama and LM Studio (OpenAI-compatible API).
 
     Args:
         prompt: The user's input text to send to the LLM
         system_prompt: The system instructions for the LLM
-        config: Application configuration containing Ollama URL and model name
+        config: Application configuration containing provider, URL, and model name
 
     Returns:
         str: The LLM's response text
 
     Raises:
-        httpx.HTTPError: If the request to Ollama fails
-        ValueError: If the response format is invalid
+        httpx.HTTPError: If the request to the LLM fails
+        ValueError: If the response format is invalid or provider is unsupported
 
     Example:
         >>> config = AppConfig()
-        >>> response = fn_call_ollama("Hello", "You are helpful", config)
+        >>> response = fn_call_llm("Hello", "You are helpful", config)
     """
+    if config.LLM_PROVIDER == "ollama":
+        return _call_ollama(prompt, system_prompt, config)
+    elif config.LLM_PROVIDER == "lmstudio":
+        return _call_lmstudio(prompt, system_prompt, config)
+    else:
+        raise ValueError(f"Unsupported LLM provider: {config.LLM_PROVIDER}")
+
+
+def _call_ollama(
+    prompt: str,
+    system_prompt: str,
+    config: AppConfig,
+) -> str:
+    """Call Ollama API."""
     url = f"{config.OLLAMA_BASE_URL}/api/chat"
 
     payload = {
-        "model": config.LLM_MODEL,
+        "model": config.OLLAMA_MODEL,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
@@ -79,7 +93,7 @@ def fn_call_ollama(
         "stream": False,
     }
 
-    with httpx.Client(timeout=config.OLLAMA_REQUEST_TIMEOUT) as client:
+    with httpx.Client(timeout=config.LLM_REQUEST_TIMEOUT) as client:
         response = client.post(url, json=payload)
         response.raise_for_status()
 
@@ -90,6 +104,46 @@ def fn_call_ollama(
         raise ValueError(f"Invalid Ollama response format: {data}")
 
     return data["message"]["content"].strip()
+
+
+def _call_lmstudio(
+    prompt: str,
+    system_prompt: str,
+    config: AppConfig,
+) -> str:
+    """Call LM Studio API (OpenAI-compatible)."""
+    url = f"{config.LMSTUDIO_BASE_URL}/chat/completions"
+
+    payload = {
+        "model": config.LMSTUDIO_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.7,
+        "max_tokens": -1,  # LM Studio uses -1 for unlimited
+        "stream": False,
+    }
+
+    with httpx.Client(timeout=config.LLM_REQUEST_TIMEOUT) as client:
+        response = client.post(url, json=payload)
+        response.raise_for_status()
+
+    data = response.json()
+
+    # Extract the message content from OpenAI-compatible response
+    if "choices" not in data or len(data["choices"]) == 0:
+        raise ValueError(f"Invalid LM Studio response format: {data}")
+
+    message = data["choices"][0].get("message", {})
+    if "content" not in message:
+        raise ValueError(f"Invalid LM Studio message format: {data}")
+
+    return message["content"].strip()
+
+
+# Backward compatibility alias
+fn_call_ollama = fn_call_llm
 
 
 def fn_check_ollama_availability(config: AppConfig) -> tuple[bool, Optional[str]]:
@@ -551,7 +605,7 @@ def fn_translate_text(text: str, config: AppConfig) -> str:
 
     # If text is short enough, translate directly
     if len(text) <= CHUNK_SIZE:
-        return fn_call_ollama(
+        return fn_call_llm(
             prompt=text,
             system_prompt=TRANSLATION_SYSTEM_PROMPT,
             config=config,
@@ -587,7 +641,7 @@ def fn_translate_text(text: str, config: AppConfig) -> str:
     translated_chunks = []
     for i, chunk in enumerate(chunks, 1):
         logger.info(f"Translating chunk {i}/{len(chunks)} ({len(chunk)} chars)...")
-        translated = fn_call_ollama(
+        translated = fn_call_llm(
             prompt=chunk,
             system_prompt=TRANSLATION_SYSTEM_PROMPT,
             config=config,
@@ -605,7 +659,7 @@ def fn_generate_tags(text: str, config: AppConfig) -> list[str]:
     """
     Generate topic tags for the given text using the LLM.
 
-    This function composes fn_call_ollama and parses the response into a list.
+    This function composes fn_call_llm and parses the response into a list.
     It ensures we return at most MAX_TAGS tags, with a fallback default.
 
     Args:
@@ -625,7 +679,7 @@ def fn_generate_tags(text: str, config: AppConfig) -> list[str]:
     # Limit input text to first 3000 chars to avoid token limits
     sample_text = text[:3000]
 
-    response = fn_call_ollama(
+    response = fn_call_llm(
         prompt=sample_text,
         system_prompt=TAGGING_SYSTEM_PROMPT,
         config=config,
@@ -753,7 +807,7 @@ Question: {query}
 Answer:"""
 
     # Get response from LLM
-    response = fn_call_ollama(
+    response = fn_call_llm(
         prompt=prompt,
         system_prompt=RAG_SYSTEM_PROMPT,
         config=config,
