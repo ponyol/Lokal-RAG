@@ -748,10 +748,20 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
                     image_descriptions = []
                     for idx, img_tag in enumerate(images_to_process, 1):
                         try:
-                            # Get image URL (handle relative URLs)
-                            img_url = img_tag.get('src') or img_tag.get('data-src')
+                            # Get image URL (handle multiple lazy-loading patterns)
+                            # Medium and other sites use various attributes for lazy loading
+                            img_url = (
+                                img_tag.get('src') or
+                                img_tag.get('data-src') or
+                                img_tag.get('data-lazy-src') or
+                                img_tag.get('data-original') or
+                                img_tag.get('data-srcset', '').split(',')[0].split()[0] if img_tag.get('data-srcset') else None
+                            )
+
                             if not img_url:
-                                logger.warning(f"Image {idx} has no src attribute, skipping")
+                                # Debug: Log all attributes to understand what Medium is using
+                                attrs = dict(img_tag.attrs)
+                                logger.warning(f"Image {idx} has no src attribute. Available attributes: {list(attrs.keys())}")
                                 continue
 
                             # Convert relative URLs to absolute
