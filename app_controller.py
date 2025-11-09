@@ -456,6 +456,10 @@ def processing_pipeline_worker(
             # Step 4: Save to disk
             primary_tag = tags[0] if tags else "general"
 
+            # Debug: Log markdown size before saving
+            if extract_images:
+                view_queue.put(f"LOG:   [DEBUG] Markdown size before save: {len(markdown_text)} chars")
+
             # Generate filename based on source type
             if source_type == "pdf":
                 filename = item.stem

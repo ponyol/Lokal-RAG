@@ -432,6 +432,7 @@ def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
                 text += "\n\n---\n\n## Images from Document\n\n"
                 text += "\n".join(image_descriptions)
                 logger.info(f"Added {len(image_descriptions)} image descriptions to markdown")
+                logger.info(f"Final markdown size after adding images: {len(text)} chars")
 
         return text
 
@@ -779,6 +780,7 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
                         final_markdown += "\n\n---\n\n## Images from Article\n\n"
                         final_markdown += "\n".join(image_descriptions)
                         logger.info(f"Added {len(image_descriptions)} image descriptions to markdown")
+                        logger.info(f"Final markdown size after adding images: {len(final_markdown)} chars")
 
             except Exception as e:
                 logger.error(f"Error during image processing: {e}")
