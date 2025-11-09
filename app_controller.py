@@ -329,17 +329,18 @@ def processing_pipeline_worker(
                 view_queue.put(f"LOG:   ✓ Extracted article ({len(markdown_text)} chars)")
 
             # Step 2: Translation (optional)
-            final_text = markdown_text
+            russian_text = None
             if do_translation:
                 view_queue.put(f"LOG:   → Translating to Russian...")
-                final_text = fn_translate_text(markdown_text, config)
+                russian_text = fn_translate_text(markdown_text, config)
                 view_queue.put(f"LOG:   ✓ Translation complete")
 
             # Step 3: Tagging (optional)
+            # Use English text for tagging (tags are in English)
             tags = ["general"]
             if do_tagging:
                 view_queue.put(f"LOG:   → Generating tags...")
-                tags = fn_generate_tags(final_text, config)
+                tags = fn_generate_tags(markdown_text, config)
                 view_queue.put(f"LOG:   ✓ Tags: {', '.join(tags)}")
 
             # Step 4: Save to disk
@@ -365,26 +366,73 @@ def processing_pipeline_worker(
                     filename = f"{parsed.netloc}{parsed.path}".replace("/", "-")[:50]
                 source_name = item
 
-            saved_path = fn_save_markdown_to_disk(
-                text=final_text,
-                tag=primary_tag,
-                filename=filename,
-                config=config,
-            )
-            view_queue.put(f"LOG:   ✓ Saved to: {saved_path}")
+            # Save English version
+            if do_translation:
+                # When translation is enabled, save both languages
+                saved_path_en = fn_save_markdown_to_disk(
+                    text=markdown_text,
+                    tag=primary_tag,
+                    filename=f"{filename}_en",
+                    config=config,
+                )
+                view_queue.put(f"LOG:   ✓ Saved English to: {saved_path_en}")
+
+                saved_path_ru = fn_save_markdown_to_disk(
+                    text=russian_text,
+                    tag=primary_tag,
+                    filename=f"{filename}_ru",
+                    config=config,
+                )
+                view_queue.put(f"LOG:   ✓ Saved Russian to: {saved_path_ru}")
+            else:
+                # When translation is disabled, save only English
+                saved_path = fn_save_markdown_to_disk(
+                    text=markdown_text,
+                    tag=primary_tag,
+                    filename=filename,
+                    config=config,
+                )
+                view_queue.put(f"LOG:   ✓ Saved to: {saved_path}")
 
             # Step 5: Create chunks and add to vector database
-            view_queue.put(f"LOG:   → Creating chunks...")
-            chunks = fn_create_text_chunks(
-                text=final_text,
-                source_file=source_name,
-                config=config,
-            )
-            view_queue.put(f"LOG:   ✓ Created {len(chunks)} chunks")
+            if do_translation:
+                # Bilingual storage: create chunks for both languages
+                view_queue.put(f"LOG:   → Creating English chunks...")
+                chunks_en = fn_create_text_chunks(
+                    text=markdown_text,
+                    source_file=source_name,
+                    config=config,
+                    language="en",
+                )
+                view_queue.put(f"LOG:   ✓ Created {len(chunks_en)} English chunks")
 
-            view_queue.put(f"LOG:   → Adding to vector database...")
-            storage.add_documents(chunks)
-            view_queue.put(f"LOG:   ✓ Added to database")
+                view_queue.put(f"LOG:   → Creating Russian chunks...")
+                chunks_ru = fn_create_text_chunks(
+                    text=russian_text,
+                    source_file=source_name,
+                    config=config,
+                    language="ru",
+                )
+                view_queue.put(f"LOG:   ✓ Created {len(chunks_ru)} Russian chunks")
+
+                view_queue.put(f"LOG:   → Adding to vector database...")
+                storage.add_documents(chunks_en)
+                storage.add_documents(chunks_ru)
+                view_queue.put(f"LOG:   ✓ Added {len(chunks_en)} + {len(chunks_ru)} chunks to database")
+            else:
+                # Monolingual storage: create chunks only for English
+                view_queue.put(f"LOG:   → Creating chunks...")
+                chunks = fn_create_text_chunks(
+                    text=markdown_text,
+                    source_file=source_name,
+                    config=config,
+                    language="en",
+                )
+                view_queue.put(f"LOG:   ✓ Created {len(chunks)} chunks")
+
+                view_queue.put(f"LOG:   → Adding to vector database...")
+                storage.add_documents(chunks)
+                view_queue.put(f"LOG:   ✓ Added to database")
 
             view_queue.put(f"LOG: ✅ SUCCESS: {item_name}")
             view_queue.put("LOG: " + "-" * 50)

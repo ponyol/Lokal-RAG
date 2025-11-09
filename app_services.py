@@ -653,7 +653,12 @@ def fn_generate_tags(text: str, config: AppConfig) -> list[str]:
 # ============================================================================
 
 
-def fn_create_text_chunks(text: str, source_file: str, config: AppConfig) -> list[Document]:
+def fn_create_text_chunks(
+    text: str,
+    source_file: str,
+    config: AppConfig,
+    language: str = "en"
+) -> list[Document]:
     """
     Split text into chunks suitable for embedding and vector storage.
 
@@ -663,15 +668,16 @@ def fn_create_text_chunks(text: str, source_file: str, config: AppConfig) -> lis
         text: The text to split into chunks
         source_file: The name of the source file (for metadata)
         config: Application configuration containing chunk size parameters
+        language: Language code for the text ("en" or "ru")
 
     Returns:
         list[Document]: A list of LangChain Document objects with:
             - page_content: The chunk text
-            - metadata: {"source": source_file}
+            - metadata: {"source": source_file, "language": language}
 
     Example:
         >>> config = AppConfig()
-        >>> chunks = fn_create_text_chunks("Long text...", "doc.pdf", config)
+        >>> chunks = fn_create_text_chunks("Long text...", "doc.pdf", config, language="en")
         >>> print(len(chunks))
         5
     """
@@ -688,7 +694,10 @@ def fn_create_text_chunks(text: str, source_file: str, config: AppConfig) -> lis
     documents = [
         Document(
             page_content=chunk,
-            metadata={"source": source_file},
+            metadata={
+                "source": source_file,
+                "language": language,
+            },
         )
         for chunk in chunks
     ]
