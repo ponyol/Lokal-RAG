@@ -309,62 +309,79 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
         cookies = None
         if config.WEB_USE_BROWSER_COOKIES:
             try:
-                # Try to load cookies from all browsers
-                # For Medium, we need cookies from both 'medium.com' and '.medium.com'
                 logger.info(f"Attempting to load browser cookies for domain: {domain}")
+                logger.info(f"Browser choice: {config.WEB_BROWSER_CHOICE}")
 
-                # Try loading from all browsers first
+                # Select browser function based on config
+                browser_map = {
+                    "chrome": browser_cookie3.chrome,
+                    "firefox": browser_cookie3.firefox,
+                    "safari": browser_cookie3.safari,
+                    "edge": browser_cookie3.edge,
+                    "all": browser_cookie3.load,
+                }
+
+                browser_func = browser_map.get(config.WEB_BROWSER_CHOICE.lower(), browser_cookie3.load)
+                browser_name = config.WEB_BROWSER_CHOICE.capitalize()
+
                 try:
-                    cookies = browser_cookie3.load(domain_name=domain)
+                    logger.info(f"Loading cookies from {browser_name}...")
+                    cookies = browser_func(domain_name=domain)
 
                     # Count cookies for debugging
-                    cookie_count = len(list(cookies)) if cookies else 0
-                    logger.info(f"Loaded {cookie_count} cookies from all browsers")
+                    cookie_list = list(cookies) if cookies else []
+                    cookie_count = len(cookie_list)
+                    logger.info(f"Loaded {cookie_count} cookies from {browser_name}")
 
-                    # Debug: Log cookie names (not values for security)
+                    # Debug: Log cookie names and important values (not sensitive data)
                     if cookie_count > 0:
-                        cookie_names = [c.name for c in cookies]
-                        logger.info(f"Cookie names: {', '.join(cookie_names[:5])}...")
-                    else:
-                        logger.warning("No cookies found! Trying individual browsers...")
+                        cookie_names = [c.name for c in cookie_list]
+                        logger.info(f"Cookie names: {', '.join(cookie_names[:10])}...")
 
-                        # Try each browser individually
-                        for browser_func in [browser_cookie3.chrome, browser_cookie3.firefox,
-                                            browser_cookie3.safari, browser_cookie3.edge]:
-                            try:
-                                browser_name = browser_func.__name__
-                                logger.info(f"Trying {browser_name}...")
-                                cookies = browser_func(domain_name=domain)
-                                cookie_count = len(list(cookies)) if cookies else 0
-                                if cookie_count > 0:
-                                    logger.info(f"Successfully loaded {cookie_count} cookies from {browser_name}")
-                                    break
-                            except Exception as e:
-                                logger.debug(f"{browser_name} failed: {e}")
-                                continue
+                        # Check for Medium-specific authentication cookies
+                        important_cookies = {'sid', 'uid', '__cfduid', 'lightstep_guid'}
+                        found_auth = [name for name in cookie_names if name in important_cookies]
+                        if found_auth:
+                            logger.info(f"✓ Found authentication cookies: {', '.join(found_auth)}")
+
+                        # Recreate cookie jar from list (browser_cookie3 returns RequestsCookieJar)
+                        cookies = cookie_list
+                    else:
+                        logger.warning(f"⚠️  NO COOKIES LOADED from {browser_name}!")
+                        logger.warning("For Medium articles, you need to:")
+                        logger.warning("1. Be logged into Medium in the selected browser")
+                        logger.warning("2. On macOS: Grant Terminal access to browser cookies")
+                        logger.warning("   (System Preferences → Security & Privacy → Full Disk Access)")
+                        logger.info("Proceeding without authentication - only free content will be available")
+                        cookies = None
 
                 except Exception as e:
-                    logger.warning(f"Failed to load cookies: {e}")
+                    logger.warning(f"Failed to load cookies from {browser_name}: {e}")
                     cookies = None
-
-                if not cookies or len(list(cookies)) == 0:
-                    logger.warning("⚠️  NO COOKIES LOADED!")
-                    logger.warning("For Medium articles, you need to:")
-                    logger.warning("1. Be logged into Medium in your browser")
-                    logger.warning("2. On macOS: Grant Terminal access to browser cookies")
-                    logger.warning("   (System Preferences → Security & Privacy → Full Disk Access)")
-                    logger.info("Proceeding without authentication - only free content will be available")
 
             except Exception as e:
                 logger.warning(f"Could not load browser cookies: {e}")
                 logger.info("Proceeding without authentication")
 
         # Step 2: Fetch HTML
+        # Enhanced headers to mimic real browser behavior (important for Medium)
         headers = {
             "User-Agent": config.WEB_USER_AGENT,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Cache-Control": "max-age=0",
         }
+
+        # Add Referer for Medium to avoid anti-scraping measures
+        if "medium.com" in domain:
+            headers["Referer"] = "https://medium.com/"
 
         with httpx.Client(
             cookies=cookies,
@@ -375,6 +392,30 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
             response = client.get(url, headers=headers)
             response.raise_for_status()  # Raise exception for 4xx/5xx
             full_html = response.text
+
+            # Log response details for debugging
+            html_size = len(full_html)
+            logger.info(f"Response: {response.status_code}, Size: {html_size:,} bytes, Encoding: {response.encoding}")
+
+            # Check if response looks like a paywall (too small)
+            if html_size < 5000:
+                logger.warning(f"⚠️  HTML response is suspiciously small ({html_size} bytes)")
+                logger.warning("This may indicate a paywall or authentication failure")
+
+        # Save raw HTML for debugging (if enabled)
+        if config.WEB_SAVE_RAW_HTML:
+            from pathlib import Path
+            debug_dir = config.MARKDOWN_OUTPUT_PATH / "_debug"
+            debug_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create safe filename from URL
+            import hashlib
+            url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+            safe_filename = f"{domain}_{url_hash}.html"
+            debug_path = debug_dir / safe_filename
+
+            debug_path.write_text(full_html, encoding="utf-8")
+            logger.info(f"Saved raw HTML to: {debug_path}")
 
         # Step 3: Extract article content using readability
         logger.info("Extracting article content...")

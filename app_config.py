@@ -58,8 +58,10 @@ class AppConfig:
 
     # Web Scraping Configuration
     WEB_USE_BROWSER_COOKIES: bool = True  # Use browser cookies for authenticated requests (e.g., Medium)
+    WEB_BROWSER_CHOICE: str = "chrome"  # Browser to extract cookies from: "all", "chrome", "firefox", "safari", "edge"
     WEB_REQUEST_TIMEOUT: int = 30  # Timeout for web requests (in seconds)
     WEB_USER_AGENT: str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    WEB_SAVE_RAW_HTML: bool = False  # Save raw HTML for debugging (in output_markdown/_debug/)
 
 
 def create_default_config() -> AppConfig:
