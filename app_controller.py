@@ -203,6 +203,9 @@ class AppOrchestrator:
         self.view_queue.put(f"LOG: Auto-tagging: {'ON' if settings['do_tagging'] else 'OFF'}")
         if source_type == "web":
             self.view_queue.put(f"LOG: Use cookies: {'ON' if settings['use_cookies'] else 'OFF'}")
+            if settings['use_cookies']:
+                self.view_queue.put(f"LOG: Browser: {settings['browser_choice'].upper()}")
+            self.view_queue.put(f"LOG: Save raw HTML: {'ON' if settings['save_raw_html'] else 'OFF'}")
         self.view_queue.put("LOG: " + "=" * 50)
 
         # Spawn worker thread
@@ -292,12 +295,19 @@ def processing_pipeline_worker(
     do_translation = settings.get("do_translation", False)
     do_tagging = settings.get("do_tagging", True)
     use_cookies = settings.get("use_cookies", True)
+    browser_choice = settings.get("browser_choice", "chrome")
+    save_raw_html = settings.get("save_raw_html", False)
 
     # Update config for web scraping if needed
-    if source_type == "web" and not use_cookies:
-        # Create a modified config with cookies disabled
+    if source_type == "web":
+        # Create a modified config with user's web settings
         from dataclasses import replace
-        config = replace(config, WEB_USE_BROWSER_COOKIES=False)
+        config = replace(
+            config,
+            WEB_USE_BROWSER_COOKIES=use_cookies,
+            WEB_BROWSER_CHOICE=browser_choice,
+            WEB_SAVE_RAW_HTML=save_raw_html,
+        )
 
     success_count = 0
     error_count = 0

@@ -51,6 +51,8 @@ class AppView:
         self.translate_var = ctk.BooleanVar(value=False)
         self.tag_var = ctk.BooleanVar(value=True)
         self.use_cookies_var = ctk.BooleanVar(value=True)
+        self.browser_choice_var = ctk.StringVar(value="chrome")
+        self.save_raw_html_var = ctk.BooleanVar(value=False)
 
         # Create the UI
         self._create_widgets()
@@ -156,13 +158,51 @@ class AppView:
         )
         self.url_textbox.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
-        # WEB: Authentication option
+        # WEB: Authentication options
+        auth_frame = ctk.CTkFrame(self.url_frame)
+        auth_frame.pack(fill="x", padx=10, pady=5)
+
         self.cookies_checkbox = ctk.CTkCheckBox(
-            self.url_frame,
-            text="Use browser cookies for authentication (Medium, paywalled sites)",
+            auth_frame,
+            text="Use browser cookies for authentication",
             variable=self.use_cookies_var,
         )
-        self.cookies_checkbox.pack(anchor="w", padx=20, pady=5)
+        self.cookies_checkbox.pack(anchor="w", padx=10, pady=5)
+
+        # Browser selection
+        browser_frame = ctk.CTkFrame(auth_frame)
+        browser_frame.pack(fill="x", padx=20, pady=5)
+
+        browser_label = ctk.CTkLabel(
+            browser_frame,
+            text="Browser:",
+            font=ctk.CTkFont(size=12),
+        )
+        browser_label.pack(side="left", padx=(0, 10))
+
+        self.browser_dropdown = ctk.CTkOptionMenu(
+            browser_frame,
+            variable=self.browser_choice_var,
+            values=["chrome", "firefox", "safari", "edge", "all"],
+            width=120,
+        )
+        self.browser_dropdown.pack(side="left")
+
+        browser_hint = ctk.CTkLabel(
+            browser_frame,
+            text="(Select where you're logged in to the site)",
+            font=ctk.CTkFont(size=10),
+            text_color="gray",
+        )
+        browser_hint.pack(side="left", padx=10)
+
+        # Debug option
+        self.raw_html_checkbox = ctk.CTkCheckBox(
+            auth_frame,
+            text="Save raw HTML for debugging (output_markdown/_debug/)",
+            variable=self.save_raw_html_var,
+        )
+        self.raw_html_checkbox.pack(anchor="w", padx=10, pady=5)
 
         # Options frame
         options_frame = ctk.CTkFrame(tab)
@@ -310,6 +350,8 @@ class AppView:
                 - do_translation: bool
                 - do_tagging: bool
                 - use_cookies: bool (for web sources)
+                - browser_choice: str (for web sources - "chrome", "firefox", "safari", "edge", "all")
+                - save_raw_html: bool (for web sources - save HTML for debugging)
 
         Example:
             >>> settings = view.get_ingestion_settings()
@@ -328,6 +370,8 @@ class AppView:
             "do_translation": self.translate_var.get(),
             "do_tagging": self.tag_var.get(),
             "use_cookies": self.use_cookies_var.get(),
+            "browser_choice": self.browser_choice_var.get(),
+            "save_raw_html": self.save_raw_html_var.get(),
         }
 
     def get_chat_input(self) -> str:
