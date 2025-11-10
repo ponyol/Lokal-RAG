@@ -11,6 +11,7 @@ It manages the lifecycle of heavy objects (embedding model, vector DB client).
 File I/O operations are provided as pure functions where possible.
 """
 
+import atexit
 import logging
 from pathlib import Path
 from typing import Optional
@@ -55,10 +56,14 @@ class StorageService:
         self.config = config
         self._embeddings: Optional[HuggingFaceEmbeddings] = None
         self._vectorstore: Optional[Chroma] = None
+        self._chroma_client = None  # Store reference to underlying ChromaDB client
 
         logger.info("Initializing StorageService")
         self._initialize_embeddings()
         self._initialize_vectorstore()
+
+        # Register cleanup handler to run at program exit
+        atexit.register(self._cleanup_at_exit)
 
     def _initialize_embeddings(self) -> None:
         """
@@ -102,6 +107,10 @@ class StorageService:
                 embedding_function=self._embeddings,
                 persist_directory=str(self.config.VECTOR_DB_PATH),
             )
+
+            # Store reference to underlying ChromaDB client for cleanup
+            if hasattr(self._vectorstore, '_client'):
+                self._chroma_client = self._vectorstore._client
 
             logger.info("Vector database initialized successfully")
 
@@ -234,27 +243,57 @@ class StorageService:
         try:
             logger.info("Cleaning up StorageService resources...")
 
-            # ChromaDB cleanup - close the client if available
-            if self._vectorstore is not None:
+            # ChromaDB cleanup - more aggressive approach
+            if self._chroma_client is not None:
                 try:
-                    # Try to access the underlying ChromaDB client and close it
-                    if hasattr(self._vectorstore, '_client'):
-                        client = self._vectorstore._client
-                        if hasattr(client, 'close'):
-                            client.close()
-                            logger.info("ChromaDB client closed")
+                    # Try multiple cleanup methods
+                    if hasattr(self._chroma_client, 'clear_system_cache'):
+                        self._chroma_client.clear_system_cache()
+                        logger.debug("ChromaDB system cache cleared")
+
+                    if hasattr(self._chroma_client, 'reset'):
+                        # Note: reset() clears the database, so we don't use it
+                        pass
+
+                    # Try to close the client's heartbeat if it exists
+                    if hasattr(self._chroma_client, '_identifier_to_system'):
+                        systems = self._chroma_client._identifier_to_system
+                        if systems:
+                            for system in systems.values():
+                                if hasattr(system, 'stop'):
+                                    system.stop()
+                                    logger.debug("Stopped ChromaDB system component")
+
+                    logger.info("ChromaDB client cleaned up")
                 except Exception as e:
                     logger.warning(f"Could not close ChromaDB client cleanly: {e}")
 
+                self._chroma_client = None
+
+            # Clear vectorstore reference
+            if self._vectorstore is not None:
                 self._vectorstore = None
 
             # Clear embeddings
-            self._embeddings = None
+            if self._embeddings is not None:
+                self._embeddings = None
 
             logger.info("StorageService cleanup complete")
 
         except Exception as e:
             logger.error(f"Error during StorageService cleanup: {e}")
+
+    def _cleanup_at_exit(self) -> None:
+        """
+        Cleanup handler registered with atexit.
+
+        This ensures cleanup happens even if the normal shutdown path fails.
+        """
+        try:
+            self.cleanup()
+        except Exception as e:
+            # Suppress errors during exit to avoid cluttering output
+            pass
 
 
 # ============================================================================
