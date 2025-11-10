@@ -4,6 +4,7 @@ customtkinter==5.2.1
 # HTTP Client
 httpx==0.27.0
 chardet==5.2.0  # Character encoding detection for web scraping
+brotli==1.1.0   # Brotli decompression for web content
 
 # Vector Database
 chromadb==0.4.22

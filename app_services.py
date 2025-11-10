@@ -753,10 +753,24 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
             logger.info(f"Content-Encoding: {content_encoding}")
             logger.info(f"Detected encoding: {response.encoding}")
 
-            # Check if content is gzip-compressed (httpx should auto-decompress, but sometimes fails)
+            # Check if content needs decompression (httpx should auto-decompress, but sometimes fails)
             raw_content = response.content
-            if raw_content[:2] == b'\x1f\x8b':
-                # Content is gzip-compressed but wasn't decompressed
+
+            # Check Content-Encoding header to see what compression was used
+            if content_encoding == 'br':
+                # Brotli compression - need to decompress manually
+                logger.warning("Detected Brotli compression, manually decompressing...")
+                try:
+                    import brotli
+                    raw_content = brotli.decompress(raw_content)
+                    logger.info(f"Successfully decompressed Brotli content: {len(raw_content)} bytes")
+                except ImportError:
+                    logger.error("brotli module not installed. Install with: pip install brotli")
+                    logger.warning("Proceeding with compressed content (will likely fail)")
+                except Exception as e:
+                    logger.error(f"Failed to decompress Brotli: {e}")
+            elif raw_content[:2] == b'\x1f\x8b':
+                # Gzip magic bytes detected
                 logger.warning("Detected gzip-compressed content, manually decompressing...")
                 import gzip
                 try:
