@@ -13,6 +13,7 @@ sentence-transformers==5.1.2
 # LangChain for text splitting and RAG utilities
 langchain==1.0.5  # Stable 1.0 release
 langchain-chroma==1.0.0  # ChromaDB integration for LangChain (replaces langchain-community)
+langchain-text-splitters==1.0.0  # Text splitting utilities
 
 # Data validation
 pydantic==2.12.4
