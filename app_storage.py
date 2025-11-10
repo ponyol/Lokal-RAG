@@ -221,6 +221,41 @@ class StorageService:
             logger.warning(f"Could not get document count: {e}")
             return 0
 
+    def cleanup(self) -> None:
+        """
+        Clean up resources held by the storage service.
+
+        This method should be called when the application is shutting down
+        to properly close ChromaDB connections and free resources.
+
+        NOTE: This prevents the "leaked semaphore objects" warning from
+        multiprocessing.resource_tracker on application exit.
+        """
+        try:
+            logger.info("Cleaning up StorageService resources...")
+
+            # ChromaDB cleanup - close the client if available
+            if self._vectorstore is not None:
+                try:
+                    # Try to access the underlying ChromaDB client and close it
+                    if hasattr(self._vectorstore, '_client'):
+                        client = self._vectorstore._client
+                        if hasattr(client, 'close'):
+                            client.close()
+                            logger.info("ChromaDB client closed")
+                except Exception as e:
+                    logger.warning(f"Could not close ChromaDB client cleanly: {e}")
+
+                self._vectorstore = None
+
+            # Clear embeddings
+            self._embeddings = None
+
+            logger.info("StorageService cleanup complete")
+
+        except Exception as e:
+            logger.error(f"Error during StorageService cleanup: {e}")
+
 
 # ============================================================================
 # File System Operations (Pure Functions)

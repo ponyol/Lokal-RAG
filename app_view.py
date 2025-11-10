@@ -64,6 +64,10 @@ class AppView:
         self.timeout_var = ctk.StringVar(value="300")
         self.translation_chunk_var = ctk.StringVar(value="2000")
 
+        # Storage paths state variables
+        self.vector_db_path_var = ctk.StringVar(value="./lokal_rag_db")
+        self.markdown_output_path_var = ctk.StringVar(value="./output_markdown")
+
         # Create the UI
         self._create_widgets()
 
@@ -502,6 +506,55 @@ class AppView:
         )
         self.translation_chunk_entry.pack(anchor="w", padx=20, pady=(0, 10))
 
+        # Storage paths settings
+        paths_frame = ctk.CTkFrame(scrollable_frame)
+        paths_frame.pack(fill="x", padx=20, pady=10)
+
+        paths_title = ctk.CTkLabel(
+            paths_frame,
+            text="📁 Storage Paths:",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        paths_title.pack(anchor="w", padx=10, pady=(10, 5))
+
+        paths_help = ctk.CTkLabel(
+            paths_frame,
+            text="Paths for storing vector database and markdown files (relative to app directory).",
+            font=ctk.CTkFont(size=10),
+            text_color="gray",
+        )
+        paths_help.pack(anchor="w", padx=10, pady=(0, 10))
+
+        # Vector DB path
+        vector_db_label = ctk.CTkLabel(
+            paths_frame,
+            text="Vector Database Path:",
+            font=ctk.CTkFont(size=12),
+        )
+        vector_db_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.vector_db_path_entry = ctk.CTkEntry(
+            paths_frame,
+            textvariable=self.vector_db_path_var,
+            width=300,
+        )
+        self.vector_db_path_entry.pack(anchor="w", padx=20, pady=(0, 10))
+
+        # Markdown output path
+        markdown_output_label = ctk.CTkLabel(
+            paths_frame,
+            text="Markdown Output Path:",
+            font=ctk.CTkFont(size=12),
+        )
+        markdown_output_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.markdown_output_path_entry = ctk.CTkEntry(
+            paths_frame,
+            textvariable=self.markdown_output_path_var,
+            width=300,
+        )
+        self.markdown_output_path_entry.pack(anchor="w", padx=20, pady=(0, 10))
+
         # Buttons frame
         buttons_frame = ctk.CTkFrame(scrollable_frame)
         buttons_frame.pack(fill="x", padx=20, pady=20)
@@ -616,6 +669,8 @@ class AppView:
             "lmstudio_model": self.lmstudio_model_var.get(),
             "timeout": int(self.timeout_var.get()),
             "translation_chunk_size": int(self.translation_chunk_var.get()),
+            "vector_db_path": self.vector_db_path_var.get(),
+            "markdown_output_path": self.markdown_output_path_var.get(),
         }
 
     def set_llm_settings(self, settings: dict) -> None:
@@ -649,6 +704,12 @@ class AppView:
 
         if "translation_chunk_size" in settings:
             self.translation_chunk_var.set(str(settings["translation_chunk_size"]))
+
+        if "vector_db_path" in settings:
+            self.vector_db_path_var.set(settings["vector_db_path"])
+
+        if "markdown_output_path" in settings:
+            self.markdown_output_path_var.set(settings["markdown_output_path"])
 
     def show_settings_status(self, message: str, is_error: bool = False) -> None:
         """

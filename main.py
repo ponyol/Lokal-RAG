@@ -168,6 +168,17 @@ def main() -> None:
         orchestrator = AppOrchestrator(view, config, storage)
         logger.info("✓ Controller initialized")
 
+        # Define cleanup handler for graceful shutdown
+        def on_closing():
+            """Handle application window close event."""
+            logger.info("Application closing...")
+            orchestrator.cleanup()
+            root.destroy()
+            logger.info("Application closed successfully")
+
+        # Bind cleanup to window close event
+        root.protocol("WM_DELETE_WINDOW", on_closing)
+
         # Start the application
         logger.info("Starting application main loop...")
         logger.info("=" * 60)
