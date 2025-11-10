@@ -61,9 +61,9 @@ class AppConfig:
     LMSTUDIO_BASE_URL: str = "http://localhost:1234/v1"
     LMSTUDIO_MODEL: str = "meta-llama-3.1-8b-instruct"
     CLAUDE_API_KEY: str = ""  # Anthropic API key (get from https://console.anthropic.com/)
-    CLAUDE_MODEL: str = "claude-3-5-sonnet-20241022"  # claude-3-5-sonnet, claude-3-opus, claude-3-haiku
+    CLAUDE_MODEL: str = "claude-3-5-sonnet-20240620"  # claude-3-5-sonnet-20240620, claude-3-opus-20240229, claude-3-haiku-20240307
     GEMINI_API_KEY: str = ""  # Google API key (get from https://makersuite.google.com/app/apikey)
-    GEMINI_MODEL: str = "gemini-1.5-flash"  # gemini-1.5-pro, gemini-1.5-flash, gemini-pro
+    GEMINI_MODEL: str = "gemini-1.5-flash"  # gemini-1.5-flash, gemini-1.5-pro, gemini-2.0-flash-exp
     LLM_REQUEST_TIMEOUT: int = 300  # 5 minutes for large documents
 
     # Embedding Configuration
