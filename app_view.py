@@ -67,6 +67,7 @@ class AppView:
         # Storage paths state variables
         self.vector_db_path_var = ctk.StringVar(value="./lokal_rag_db")
         self.markdown_output_path_var = ctk.StringVar(value="./output_markdown")
+        self.changelog_path_var = ctk.StringVar(value="./changelog")
 
         # Create the UI
         self._create_widgets()
@@ -80,11 +81,13 @@ class AppView:
         # Add tabs
         self.tabview.add("Ingestion")
         self.tabview.add("Chat")
+        self.tabview.add("Changelog")
         self.tabview.add("Settings")
 
         # Setup each tab
         self._setup_ingestion_tab()
         self._setup_chat_tab()
+        self._setup_changelog_tab()
         self._setup_settings_tab()
 
     # ========================================================================
@@ -362,6 +365,146 @@ class AppView:
             self.send_button.cget("command")()
 
     # ========================================================================
+    # Changelog Tab
+    # ========================================================================
+
+    def _setup_changelog_tab(self) -> None:
+        """Setup the Changelog tab UI with file list and content viewer."""
+        tab = self.tabview.tab("Changelog")
+
+        # Create main container with two panels
+        main_frame = ctk.CTkFrame(tab)
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Left panel: File list
+        left_frame = ctk.CTkFrame(main_frame)
+        left_frame.pack(side="left", fill="both", expand=False, padx=(0, 5))
+        left_frame.configure(width=250)
+
+        # Left panel title
+        list_title = ctk.CTkLabel(
+            left_frame,
+            text="📋 История обработки",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        list_title.pack(pady=(10, 5))
+
+        # Refresh button
+        self.refresh_changelog_button = ctk.CTkButton(
+            left_frame,
+            text="🔄 Обновить",
+            width=200,
+            height=30,
+            command=self._on_refresh_changelog,
+        )
+        self.refresh_changelog_button.pack(pady=5)
+
+        # File list (scrollable)
+        self.changelog_listbox = ctk.CTkScrollableFrame(left_frame, width=230, height=500)
+        self.changelog_listbox.pack(fill="both", expand=True, pady=5)
+
+        # Right panel: Content viewer
+        right_frame = ctk.CTkFrame(main_frame)
+        right_frame.pack(side="right", fill="both", expand=True, padx=(5, 0))
+
+        # Right panel title
+        content_title = ctk.CTkLabel(
+            right_frame,
+            text="📄 Содержимое",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        content_title.pack(pady=(10, 5))
+
+        # Content textbox
+        self.changelog_content = ctk.CTkTextbox(
+            right_frame,
+            wrap="word",
+            font=ctk.CTkFont(size=12),
+        )
+        self.changelog_content.pack(fill="both", expand=True, pady=(5, 10), padx=10)
+
+        # Store selected file
+        self.selected_changelog_file = None
+
+        # Load initial changelog files
+        self._load_changelog_files()
+
+    def _on_refresh_changelog(self) -> None:
+        """Handle refresh changelog button click."""
+        self._load_changelog_files()
+
+    def _load_changelog_files(self) -> None:
+        """Load and display changelog files from the changelog directory."""
+        from pathlib import Path
+
+        # Clear existing items
+        for widget in self.changelog_listbox.winfo_children():
+            widget.destroy()
+
+        # Get changelog path from config (we'll pass it from controller later)
+        # For now, use default
+        changelog_path = Path("./changelog")
+
+        if not changelog_path.exists():
+            no_files_label = ctk.CTkLabel(
+                self.changelog_listbox,
+                text="Нет файлов истории\n\nФайлы будут созданы\nпосле обработки\nдокументов",
+                text_color="gray",
+                font=ctk.CTkFont(size=11),
+            )
+            no_files_label.pack(pady=20)
+            return
+
+        # Find all .md files
+        files = sorted(changelog_path.glob("*.md"), reverse=True)  # Newest first
+
+        if not files:
+            no_files_label = ctk.CTkLabel(
+                self.changelog_listbox,
+                text="Нет файлов истории",
+                text_color="gray",
+            )
+            no_files_label.pack(pady=20)
+            return
+
+        # Create button for each file
+        for file_path in files:
+            # Extract date from filename (YYYY-MM-DD_HH-MM-SS.md)
+            filename = file_path.stem
+            try:
+                date_part, time_part = filename.split('_')
+                display_name = f"{date_part}\n{time_part.replace('-', ':')}"
+            except:
+                display_name = filename
+
+            file_button = ctk.CTkButton(
+                self.changelog_listbox,
+                text=display_name,
+                width=200,
+                height=50,
+                command=lambda fp=file_path: self._on_changelog_file_selected(fp),
+            )
+            file_button.pack(pady=2)
+
+    def _on_changelog_file_selected(self, file_path: Path) -> None:
+        """Handle changelog file selection."""
+        try:
+            # Read file content
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # Display in textbox
+            self.changelog_content.delete("1.0", "end")
+            self.changelog_content.insert("1.0", content)
+
+            self.selected_changelog_file = file_path
+
+        except Exception as e:
+            error_text = f"Ошибка при чтении файла:\n{str(e)}"
+            self.changelog_content.delete("1.0", "end")
+            self.changelog_content.insert("1.0", error_text)
+
+    # ========================================================================
     # Settings Tab
     # ========================================================================
 
@@ -555,6 +698,21 @@ class AppView:
         )
         self.markdown_output_path_entry.pack(anchor="w", padx=20, pady=(0, 10))
 
+        # Changelog path
+        changelog_path_label = ctk.CTkLabel(
+            paths_frame,
+            text="Changelog Path:",
+            font=ctk.CTkFont(size=12),
+        )
+        changelog_path_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.changelog_path_entry = ctk.CTkEntry(
+            paths_frame,
+            textvariable=self.changelog_path_var,
+            width=300,
+        )
+        self.changelog_path_entry.pack(anchor="w", padx=20, pady=(0, 10))
+
         # Buttons frame
         buttons_frame = ctk.CTkFrame(scrollable_frame)
         buttons_frame.pack(fill="x", padx=20, pady=20)
@@ -671,6 +829,7 @@ class AppView:
             "translation_chunk_size": int(self.translation_chunk_var.get()),
             "vector_db_path": self.vector_db_path_var.get(),
             "markdown_output_path": self.markdown_output_path_var.get(),
+            "changelog_path": self.changelog_path_var.get(),
         }
 
     def set_llm_settings(self, settings: dict) -> None:
@@ -710,6 +869,9 @@ class AppView:
 
         if "markdown_output_path" in settings:
             self.markdown_output_path_var.set(settings["markdown_output_path"])
+
+        if "changelog_path" in settings:
+            self.changelog_path_var.set(settings["changelog_path"])
 
     def show_settings_status(self, message: str, is_error: bool = False) -> None:
         """

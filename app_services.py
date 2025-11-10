@@ -1260,3 +1260,128 @@ def fn_find_pdf_files(directory: Path) -> list[Path]:
     # Combine and sort
     all_files = sorted(pdf_files + md_files)
     return all_files
+
+
+# ============================================================================
+# Changelog Generation Functions
+# ============================================================================
+
+
+def fn_generate_summary(text: str, config: AppConfig) -> str:
+    """
+    Generate a concise Russian summary of a document using LLM.
+
+    This uses the configured LLM to create a 1-2 sentence summary in Russian
+    that captures the main topic and key information of the document.
+
+    Args:
+        text: The document text to summarize (markdown format)
+        config: Application configuration
+
+    Returns:
+        str: A concise Russian summary (1-2 sentences)
+
+    Raises:
+        Exception: If LLM call fails
+
+    Example:
+        >>> summary = fn_generate_summary(markdown_text, config)
+        >>> print(summary)
+        'Статья о машинном обучении, рассматривает алгоритмы supervised learning.'
+    """
+    from app_config import SUMMARY_SYSTEM_PROMPT
+
+    try:
+        logger.info("Generating document summary...")
+
+        # Truncate text if too long (take first 3000 chars to capture main content)
+        truncated_text = text[:3000] if len(text) > 3000 else text
+
+        # Call LLM with summary prompt
+        summary = fn_call_llm(
+            system_prompt=SUMMARY_SYSTEM_PROMPT,
+            user_message=truncated_text,
+            config=config,
+        )
+
+        # Clean up summary (remove quotes, trim whitespace)
+        summary = summary.strip().strip('"\'')
+
+        logger.info(f"Generated summary: {summary[:100]}...")
+        return summary
+
+    except Exception as e:
+        logger.error(f"Failed to generate summary: {e}")
+        # Return fallback summary if LLM fails
+        return "Не удалось сгенерировать описание документа."
+
+
+def fn_create_changelog_file(
+    processed_items: list[dict],
+    config: AppConfig,
+) -> Path:
+    """
+    Create a changelog markdown file with summaries of processed documents.
+
+    Creates a timestamped file in the changelog directory with a list of all
+    documents processed in this session, including their summaries.
+
+    Args:
+        processed_items: List of dicts with keys:
+            - 'name': str (document name or URL)
+            - 'summary': str (Russian summary of the document)
+        config: Application configuration
+
+    Returns:
+        Path: Path to the created changelog file
+
+    Raises:
+        Exception: If file creation fails
+
+    Example:
+        >>> items = [
+        ...     {'name': 'doc1.pdf', 'summary': 'Статья о ML'},
+        ...     {'name': 'https://example.com', 'summary': 'Руководство по Docker'},
+        ... ]
+        >>> changelog_path = fn_create_changelog_file(items, config)
+    """
+    from datetime import datetime
+
+    try:
+        # Ensure changelog directory exists
+        config.CHANGELOG_PATH.mkdir(parents=True, exist_ok=True)
+
+        # Create filename with current timestamp
+        timestamp = datetime.now()
+        filename = timestamp.strftime("%Y-%m-%d_%H-%M-%S.md")
+        filepath = config.CHANGELOG_PATH / filename
+
+        # Format timestamp for display
+        display_timestamp = timestamp.strftime("%d.%m.%Y %H:%M:%S")
+
+        # Build markdown content
+        lines = [
+            f"# Обработка документов - {display_timestamp}\n",
+            f"\nВсего обработано документов: {len(processed_items)}\n",
+            "\n---\n",
+        ]
+
+        # Add each processed item
+        for idx, item in enumerate(processed_items, 1):
+            name = item.get('name', 'Unknown')
+            summary = item.get('summary', 'Описание отсутствует')
+
+            lines.append(f"\n## {idx}. {name}\n")
+            lines.append(f"\n**Краткое содержание:** {summary}\n")
+
+        # Write to file
+        content = "\n".join(lines)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        logger.info(f"Changelog file created: {filepath}")
+        return filepath
+
+    except Exception as e:
+        logger.error(f"Failed to create changelog file: {e}")
+        raise

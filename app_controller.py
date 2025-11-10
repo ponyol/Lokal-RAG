@@ -443,6 +443,9 @@ def processing_pipeline_worker(
     success_count = 0
     error_count = 0
 
+    # Track processed items for changelog
+    processed_items = []
+
     for item in items:
         try:
             # Step 1: Extract Markdown from source
@@ -588,6 +591,30 @@ def processing_pipeline_worker(
                 view_queue.put(f"LOG:   ✓ Added to database")
 
             view_queue.put(f"LOG: ✅ SUCCESS: {item_name}")
+
+            # Generate summary for changelog
+            view_queue.put(f"LOG:   → Generating summary for changelog...")
+            try:
+                from app_services import fn_generate_summary
+                # Use Russian text if available, otherwise English
+                text_for_summary = russian_text if do_translation and russian_text else markdown_text
+                summary = fn_generate_summary(text_for_summary, config)
+                view_queue.put(f"LOG:   ✓ Summary generated")
+
+                # Add to processed items for changelog
+                processed_items.append({
+                    'name': str(item) if source_type == "web" else item_name,
+                    'summary': summary,
+                })
+            except Exception as summary_error:
+                logger.warning(f"Failed to generate summary (non-fatal): {summary_error}")
+                view_queue.put(f"LOG:   ⚠️  Summary generation skipped")
+                # Add with fallback summary
+                processed_items.append({
+                    'name': str(item) if source_type == "web" else item_name,
+                    'summary': "Не удалось сгенерировать описание документа.",
+                })
+
             view_queue.put("LOG: " + "-" * 50)
 
             success_count += 1
@@ -618,6 +645,17 @@ def processing_pipeline_worker(
         except Exception as e:
             logger.warning(f"Memory cleanup failed (non-fatal): {e}")
             view_queue.put(f"LOG: ⚠️  Memory cleanup skipped (non-fatal error)")
+
+    # Create changelog file with processed documents
+    if processed_items:
+        try:
+            view_queue.put("LOG: → Creating changelog file...")
+            from app_services import fn_create_changelog_file
+            changelog_path = fn_create_changelog_file(processed_items, config)
+            view_queue.put(f"LOG: ✓ Changelog created: {changelog_path.name}")
+        except Exception as e:
+            logger.warning(f"Changelog creation failed (non-fatal): {e}")
+            view_queue.put(f"LOG: ⚠️  Changelog creation skipped (non-fatal error)")
 
     # Signal that processing is complete
     view_queue.put("STOP_PROCESSING")

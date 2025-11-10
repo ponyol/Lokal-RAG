@@ -231,15 +231,54 @@ class StorageService:
         This method should be called when the application is shutting down
         to free memory and close connections gracefully.
 
-        NOTE: ChromaDB 1.3+ uses a modern architecture without multiprocessing,
-        so no special cleanup workarounds are needed (unlike 0.4.x versions).
+        NOTE: Even ChromaDB 1.3+ and sentence-transformers may use multiprocessing
+        internally (PyTorch DataLoader), which can cause semaphore warnings.
+        We clean up what we can, but some warnings may persist - they are harmless.
         """
         try:
             logger.info("Cleaning up StorageService resources...")
 
-            # Clear references to allow garbage collection
-            self._vectorstore = None
-            self._embeddings = None
+            # Clear vectorstore reference
+            if self._vectorstore is not None:
+                # Try to close ChromaDB client if accessible
+                try:
+                    if hasattr(self._vectorstore, '_client'):
+                        client = self._vectorstore._client
+                        if hasattr(client, 'close'):
+                            client.close()
+                            logger.debug("ChromaDB client closed")
+                except Exception as e:
+                    logger.debug(f"ChromaDB client cleanup skipped: {e}")
+
+                self._vectorstore = None
+
+            # Clear embeddings and underlying PyTorch resources
+            if self._embeddings is not None:
+                try:
+                    # Try to cleanup sentence-transformers model
+                    if hasattr(self._embeddings, 'client'):
+                        model = self._embeddings.client
+                        if hasattr(model, 'stop_multi_process_pool'):
+                            model.stop_multi_process_pool()
+                            logger.debug("Sentence-transformers pool stopped")
+                        # Move model to CPU and clear cache
+                        if hasattr(model, 'to'):
+                            model.to('cpu')
+                        # Clear PyTorch CUDA cache if available
+                        try:
+                            import torch
+                            if torch.cuda.is_available():
+                                torch.cuda.empty_cache()
+                        except ImportError:
+                            pass
+                except Exception as e:
+                    logger.debug(f"Embeddings cleanup skipped: {e}")
+
+                self._embeddings = None
+
+            # Force garbage collection
+            import gc
+            gc.collect()
 
             logger.info("StorageService cleanup complete")
 

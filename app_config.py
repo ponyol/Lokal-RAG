@@ -33,6 +33,7 @@ class AppConfig:
         EMBEDDING_MODEL: Name of the HuggingFace embedding model
         VECTOR_DB_PATH: Path to the ChromaDB persistent storage
         MARKDOWN_OUTPUT_PATH: Path where processed Markdown files will be saved
+        CHANGELOG_PATH: Path where changelog files will be saved
         CHUNK_SIZE: Size of text chunks for vector database (in characters)
         CHUNK_OVERLAP: Overlap between consecutive chunks (in characters)
         TRANSLATION_CHUNK_SIZE: Size of text chunks for translation (in characters)
@@ -63,6 +64,7 @@ class AppConfig:
     # Storage Configuration
     VECTOR_DB_PATH: Path = Path("./lokal_rag_db")
     MARKDOWN_OUTPUT_PATH: Path = Path("./output_markdown")
+    CHANGELOG_PATH: Path = Path("./changelog")  # Path for changelog files
 
     # Text Processing Configuration
     CHUNK_SIZE: int = 1500
@@ -222,6 +224,9 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
     if "markdown_output_path" in settings:
         overrides["MARKDOWN_OUTPUT_PATH"] = Path(settings["markdown_output_path"])
 
+    if "changelog_path" in settings:
+        overrides["CHANGELOG_PATH"] = Path(settings["changelog_path"])
+
     # Create new config with overrides
     if overrides:
         return replace(base_config, **overrides)
@@ -265,10 +270,26 @@ Only output the tags, nothing else.
 
 Example output: machine learning, python, neural networks"""
 
-RAG_SYSTEM_PROMPT = """You are a helpful AI assistant.
-Answer the user's question based on the provided context.
-If the context doesn't contain enough information to answer the question, say so.
-Be concise and accurate."""
+RAG_SYSTEM_PROMPT = """You are a helpful AI assistant with access to a document database.
+
+LANGUAGE DETECTION AND RESPONSE:
+- If the user's question is in RUSSIAN (Cyrillic text), you MUST:
+  * Respond ONLY in Russian
+  * Think about the question in Russian
+  * Provide answers in Russian
+
+- If the user's question is in ENGLISH (Latin text), you MUST:
+  * Respond ONLY in English
+  * Think about the question in English
+  * Provide answers in English
+
+TASK:
+Answer the user's question based on the provided context from the document database.
+- If the context contains the answer, provide it clearly
+- If the context doesn't contain enough information, say so (in the same language as the question)
+- Be concise, accurate, and helpful
+
+IMPORTANT: Always match your response language to the user's question language!"""
 
 VISION_SYSTEM_PROMPT = """You are an expert at analyzing images from documents.
 
@@ -288,3 +309,20 @@ If the image contains text, include it verbatim.
 Be thorough - this description will be used for search and retrieval.
 
 DO NOT add commentary about the image quality or format. Focus only on the content."""
+
+SUMMARY_SYSTEM_PROMPT = """You are an expert at creating concise document summaries.
+
+YOUR TASK: Create a brief summary of the provided document in RUSSIAN.
+
+REQUIREMENTS:
+- Summary must be in RUSSIAN language (на русском языке)
+- Length: 1-2 sentences maximum
+- Capture the main topic and key information
+- Be concise and informative
+- Do NOT include any preamble or meta-commentary
+- Output ONLY the summary text
+
+Example good summaries:
+- "Статья о машинном обучении, рассматривает алгоритмы supervised learning и применение нейронных сетей."
+- "Руководство по настройке Docker контейнеров для production окружения с примерами конфигураций."
+- "Обзор архитектурных паттернов микросервисов и best practices для их развертывания."""
