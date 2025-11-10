@@ -62,6 +62,10 @@ class AppView:
         self.ollama_model_var = ctk.StringVar(value="qwen2.5:7b-instruct")
         self.lmstudio_url_var = ctk.StringVar(value="http://localhost:1234/v1")
         self.lmstudio_model_var = ctk.StringVar(value="meta-llama-3.1-8b-instruct")
+        self.claude_api_key_var = ctk.StringVar(value="")
+        self.claude_model_var = ctk.StringVar(value="claude-3-5-sonnet-20241022")
+        self.gemini_api_key_var = ctk.StringVar(value="")
+        self.gemini_model_var = ctk.StringVar(value="gemini-1.5-flash")
         self.timeout_var = ctk.StringVar(value="300")
         self.translation_chunk_var = ctk.StringVar(value="2000")
 
@@ -546,7 +550,7 @@ class AppView:
         self.provider_dropdown = ctk.CTkOptionMenu(
             provider_frame,
             variable=self.llm_provider_var,
-            values=["ollama", "lmstudio"],
+            values=["ollama", "lmstudio", "claude", "gemini"],
             command=self._on_provider_changed,
         )
         self.provider_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
@@ -612,6 +616,96 @@ class AppView:
             width=300,
         )
         self.lmstudio_model_entry.pack(anchor="w", padx=20, pady=(0, 10))
+
+        # Claude settings frame
+        claude_frame = ctk.CTkFrame(scrollable_frame)
+        claude_frame.pack(fill="x", padx=20, pady=10)
+
+        claude_title = ctk.CTkLabel(
+            claude_frame,
+            text="Claude (Anthropic) Settings:",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        claude_title.pack(anchor="w", padx=10, pady=(10, 5))
+
+        claude_api_key_label = ctk.CTkLabel(claude_frame, text="API Key:")
+        claude_api_key_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.claude_api_key_entry = ctk.CTkEntry(
+            claude_frame,
+            textvariable=self.claude_api_key_var,
+            width=400,
+            show="*",  # Hide API key
+        )
+        self.claude_api_key_entry.pack(anchor="w", padx=20, pady=(0, 5))
+
+        claude_hint = ctk.CTkLabel(
+            claude_frame,
+            text="Get your API key from: https://console.anthropic.com/",
+            font=ctk.CTkFont(size=10),
+            text_color="gray",
+        )
+        claude_hint.pack(anchor="w", padx=20, pady=(0, 10))
+
+        claude_model_label = ctk.CTkLabel(claude_frame, text="Model:")
+        claude_model_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.claude_model_dropdown = ctk.CTkOptionMenu(
+            claude_frame,
+            variable=self.claude_model_var,
+            values=[
+                "claude-3-5-sonnet-20241022",
+                "claude-3-opus-20240229",
+                "claude-3-haiku-20240307",
+            ],
+            width=400,
+        )
+        self.claude_model_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
+
+        # Gemini settings frame
+        gemini_frame = ctk.CTkFrame(scrollable_frame)
+        gemini_frame.pack(fill="x", padx=20, pady=10)
+
+        gemini_title = ctk.CTkLabel(
+            gemini_frame,
+            text="Gemini (Google) Settings:",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        gemini_title.pack(anchor="w", padx=10, pady=(10, 5))
+
+        gemini_api_key_label = ctk.CTkLabel(gemini_frame, text="API Key:")
+        gemini_api_key_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.gemini_api_key_entry = ctk.CTkEntry(
+            gemini_frame,
+            textvariable=self.gemini_api_key_var,
+            width=400,
+            show="*",  # Hide API key
+        )
+        self.gemini_api_key_entry.pack(anchor="w", padx=20, pady=(0, 5))
+
+        gemini_hint = ctk.CTkLabel(
+            gemini_frame,
+            text="Get your API key from: https://makersuite.google.com/app/apikey",
+            font=ctk.CTkFont(size=10),
+            text_color="gray",
+        )
+        gemini_hint.pack(anchor="w", padx=20, pady=(0, 10))
+
+        gemini_model_label = ctk.CTkLabel(gemini_frame, text="Model:")
+        gemini_model_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.gemini_model_dropdown = ctk.CTkOptionMenu(
+            gemini_frame,
+            variable=self.gemini_model_var,
+            values=[
+                "gemini-1.5-flash",
+                "gemini-1.5-pro",
+                "gemini-pro",
+            ],
+            width=400,
+        )
+        self.gemini_model_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
 
         # Timeout setting
         timeout_frame = ctk.CTkFrame(scrollable_frame)
@@ -833,6 +927,10 @@ class AppView:
             "ollama_model": self.ollama_model_var.get(),
             "lmstudio_base_url": self.lmstudio_url_var.get(),
             "lmstudio_model": self.lmstudio_model_var.get(),
+            "claude_api_key": self.claude_api_key_var.get(),
+            "claude_model": self.claude_model_var.get(),
+            "gemini_api_key": self.gemini_api_key_var.get(),
+            "gemini_model": self.gemini_model_var.get(),
             "timeout": int(self.timeout_var.get()),
             "translation_chunk_size": int(self.translation_chunk_var.get()),
             "vector_db_path": self.vector_db_path_var.get(),
@@ -865,6 +963,18 @@ class AppView:
 
         if "lmstudio_model" in settings:
             self.lmstudio_model_var.set(settings["lmstudio_model"])
+
+        if "claude_api_key" in settings:
+            self.claude_api_key_var.set(settings["claude_api_key"])
+
+        if "claude_model" in settings:
+            self.claude_model_var.set(settings["claude_model"])
+
+        if "gemini_api_key" in settings:
+            self.gemini_api_key_var.set(settings["gemini_api_key"])
+
+        if "gemini_model" in settings:
+            self.gemini_model_var.set(settings["gemini_model"])
 
         if "timeout" in settings:
             self.timeout_var.set(str(settings["timeout"]))
