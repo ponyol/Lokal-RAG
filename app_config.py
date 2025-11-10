@@ -24,11 +24,15 @@ class AppConfig:
     Immutable configuration for the Lokal-RAG application.
 
     Attributes:
-        LLM_PROVIDER: Which LLM provider to use ("ollama" or "lmstudio")
+        LLM_PROVIDER: Which LLM provider to use ("ollama", "lmstudio", "claude", or "gemini")
         OLLAMA_BASE_URL: URL of the local Ollama instance
         OLLAMA_MODEL: Name of the Ollama model to use for translation, tagging, and RAG
         LMSTUDIO_BASE_URL: URL of the local LM Studio instance
         LMSTUDIO_MODEL: Name of the LM Studio model to use for translation, tagging, and RAG
+        CLAUDE_API_KEY: Anthropic API key for Claude models
+        CLAUDE_MODEL: Claude model to use (claude-3-5-sonnet-20241022, claude-3-opus-20240229, claude-3-haiku-20240307)
+        GEMINI_API_KEY: Google API key for Gemini models
+        GEMINI_MODEL: Gemini model to use (gemini-1.5-pro, gemini-1.5-flash, gemini-pro)
         LLM_REQUEST_TIMEOUT: Timeout for LLM API requests (in seconds)
         EMBEDDING_MODEL: Name of the HuggingFace embedding model
         VECTOR_DB_PATH: Path to the ChromaDB persistent storage
@@ -51,11 +55,15 @@ class AppConfig:
     """
 
     # LLM Configuration
-    LLM_PROVIDER: str = "ollama"  # "ollama" or "lmstudio"
+    LLM_PROVIDER: str = "ollama"  # "ollama", "lmstudio", "claude", or "gemini"
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "qwen2.5:7b-instruct"
     LMSTUDIO_BASE_URL: str = "http://localhost:1234/v1"
     LMSTUDIO_MODEL: str = "meta-llama-3.1-8b-instruct"
+    CLAUDE_API_KEY: str = ""  # Anthropic API key (get from https://console.anthropic.com/)
+    CLAUDE_MODEL: str = "claude-3-5-sonnet-20241022"  # claude-3-5-sonnet, claude-3-opus, claude-3-haiku
+    GEMINI_API_KEY: str = ""  # Google API key (get from https://makersuite.google.com/app/apikey)
+    GEMINI_MODEL: str = "gemini-1.5-flash"  # gemini-1.5-pro, gemini-1.5-flash, gemini-pro
     LLM_REQUEST_TIMEOUT: int = 300  # 5 minutes for large documents
 
     # Embedding Configuration
@@ -211,6 +219,18 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
 
     if "lmstudio_model" in settings:
         overrides["LMSTUDIO_MODEL"] = settings["lmstudio_model"]
+
+    if "claude_api_key" in settings:
+        overrides["CLAUDE_API_KEY"] = settings["claude_api_key"]
+
+    if "claude_model" in settings:
+        overrides["CLAUDE_MODEL"] = settings["claude_model"]
+
+    if "gemini_api_key" in settings:
+        overrides["GEMINI_API_KEY"] = settings["gemini_api_key"]
+
+    if "gemini_model" in settings:
+        overrides["GEMINI_MODEL"] = settings["gemini_model"]
 
     if "timeout" in settings:
         overrides["LLM_REQUEST_TIMEOUT"] = settings["timeout"]

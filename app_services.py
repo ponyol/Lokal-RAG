@@ -48,10 +48,10 @@ def fn_call_llm(
     config: AppConfig,
 ) -> str:
     """
-    Call the LLM API (Ollama or LM Studio) with a user prompt and system prompt.
+    Call the LLM API with a user prompt and system prompt.
 
     This function routes to the appropriate LLM provider based on config.LLM_PROVIDER.
-    Supports both Ollama and LM Studio (OpenAI-compatible API).
+    Supports Ollama, LM Studio, Claude (Anthropic), and Gemini (Google).
 
     Args:
         prompt: The user's input text to send to the LLM
@@ -73,6 +73,10 @@ def fn_call_llm(
         return _call_ollama(prompt, system_prompt, config)
     elif config.LLM_PROVIDER == "lmstudio":
         return _call_lmstudio(prompt, system_prompt, config)
+    elif config.LLM_PROVIDER == "claude":
+        return _call_claude(prompt, system_prompt, config)
+    elif config.LLM_PROVIDER == "gemini":
+        return _call_gemini(prompt, system_prompt, config)
     else:
         raise ValueError(f"Unsupported LLM provider: {config.LLM_PROVIDER}")
 
@@ -304,6 +308,147 @@ def _describe_image_lmstudio(base64_image: str, model: str, config: AppConfig) -
         raise ValueError(f"Invalid LM Studio vision message format: {data}")
 
     return message["content"].strip()
+
+
+def _call_claude(
+    prompt: str,
+    system_prompt: str,
+    config: AppConfig,
+) -> str:
+    """
+    Call Claude API (Anthropic) with the given prompt.
+
+    Uses the official Anthropic Python SDK to interact with Claude models.
+    Requires CLAUDE_API_KEY to be set in config.
+
+    Args:
+        prompt: The user's input text
+        system_prompt: System instructions for Claude
+        config: Application configuration with API key and model
+
+    Returns:
+        str: Claude's response text
+
+    Raises:
+        ImportError: If anthropic package is not installed
+        Exception: If API key is missing or API call fails
+
+    Example:
+        >>> config = AppConfig(CLAUDE_API_KEY="sk-...", CLAUDE_MODEL="claude-3-5-sonnet-20241022")
+        >>> response = _call_claude("Hello", "You are helpful", config)
+    """
+    try:
+        import anthropic
+    except ImportError:
+        raise ImportError(
+            "The 'anthropic' package is required for Claude API. "
+            "Install it with: pip install anthropic"
+        )
+
+    if not config.CLAUDE_API_KEY:
+        raise ValueError(
+            "CLAUDE_API_KEY is not set. Please add your Anthropic API key in Settings."
+        )
+
+    # Initialize Anthropic client
+    client = anthropic.Anthropic(api_key=config.CLAUDE_API_KEY)
+
+    try:
+        # Call Claude API
+        message = client.messages.create(
+            model=config.CLAUDE_MODEL,
+            max_tokens=4096,
+            system=system_prompt,
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            timeout=config.LLM_REQUEST_TIMEOUT,
+        )
+
+        # Extract text content from response
+        if not message.content or len(message.content) == 0:
+            raise ValueError("Empty response from Claude API")
+
+        # Claude returns a list of content blocks, get the first text block
+        return message.content[0].text.strip()
+
+    except anthropic.APIError as e:
+        raise Exception(f"Claude API error: {e}")
+
+
+def _call_gemini(
+    prompt: str,
+    system_prompt: str,
+    config: AppConfig,
+) -> str:
+    """
+    Call Gemini API (Google) with the given prompt.
+
+    Uses the official Google Generative AI Python SDK to interact with Gemini models.
+    Requires GEMINI_API_KEY to be set in config.
+
+    Args:
+        prompt: The user's input text
+        system_prompt: System instructions for Gemini
+        config: Application configuration with API key and model
+
+    Returns:
+        str: Gemini's response text
+
+    Raises:
+        ImportError: If google-generativeai package is not installed
+        Exception: If API key is missing or API call fails
+
+    Example:
+        >>> config = AppConfig(GEMINI_API_KEY="AIza...", GEMINI_MODEL="gemini-1.5-flash")
+        >>> response = _call_gemini("Hello", "You are helpful", config)
+    """
+    try:
+        import google.generativeai as genai
+    except ImportError:
+        raise ImportError(
+            "The 'google-generativeai' package is required for Gemini API. "
+            "Install it with: pip install google-generativeai"
+        )
+
+    if not config.GEMINI_API_KEY:
+        raise ValueError(
+            "GEMINI_API_KEY is not set. Please add your Google API key in Settings."
+        )
+
+    # Configure Gemini API
+    genai.configure(api_key=config.GEMINI_API_KEY)
+
+    try:
+        # Create model instance with system instruction
+        model = genai.GenerativeModel(
+            model_name=config.GEMINI_MODEL,
+            system_instruction=system_prompt,
+        )
+
+        # Configure generation parameters
+        generation_config = {
+            "temperature": 0.7,
+            "top_p": 0.95,
+            "top_k": 40,
+            "max_output_tokens": 8192,
+        }
+
+        # Call Gemini API
+        response = model.generate_content(
+            prompt,
+            generation_config=generation_config,
+            request_options={"timeout": config.LLM_REQUEST_TIMEOUT},
+        )
+
+        # Extract text from response
+        if not response.text:
+            raise ValueError("Empty response from Gemini API")
+
+        return response.text.strip()
+
+    except Exception as e:
+        raise Exception(f"Gemini API error: {e}")
 
 
 # ============================================================================
