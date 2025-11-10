@@ -16,8 +16,8 @@ from pathlib import Path
 from typing import Optional
 
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
-from langchain_community.docstore.document import Document
+from langchain_chroma import Chroma
+from langchain_core.documents import Document
 
 from app_config import AppConfig
 
@@ -90,6 +90,9 @@ class StorageService:
 
         If the database already exists at config.VECTOR_DB_PATH, it will be loaded.
         Otherwise, a new database will be created.
+
+        NOTE: ChromaDB 1.3+ uses a modern architecture without multiprocessing,
+        so no special cleanup is required (unlike 0.4.x versions).
         """
         try:
             # Ensure the directory exists
@@ -226,29 +229,16 @@ class StorageService:
         Clean up resources held by the storage service.
 
         This method should be called when the application is shutting down
-        to properly close ChromaDB connections and free resources.
+        to free memory and close connections gracefully.
 
-        NOTE: This prevents the "leaked semaphore objects" warning from
-        multiprocessing.resource_tracker on application exit.
+        NOTE: ChromaDB 1.3+ uses a modern architecture without multiprocessing,
+        so no special cleanup workarounds are needed (unlike 0.4.x versions).
         """
         try:
             logger.info("Cleaning up StorageService resources...")
 
-            # ChromaDB cleanup - close the client if available
-            if self._vectorstore is not None:
-                try:
-                    # Try to access the underlying ChromaDB client and close it
-                    if hasattr(self._vectorstore, '_client'):
-                        client = self._vectorstore._client
-                        if hasattr(client, 'close'):
-                            client.close()
-                            logger.info("ChromaDB client closed")
-                except Exception as e:
-                    logger.warning(f"Could not close ChromaDB client cleanly: {e}")
-
-                self._vectorstore = None
-
-            # Clear embeddings
+            # Clear references to allow garbage collection
+            self._vectorstore = None
             self._embeddings = None
 
             logger.info("StorageService cleanup complete")

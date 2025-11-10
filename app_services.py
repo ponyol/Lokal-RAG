@@ -22,7 +22,7 @@ from typing import Optional
 
 import httpx
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.docstore.document import Document
+from langchain_core.documents import Document
 
 from app_config import (
     AppConfig,
