@@ -17,6 +17,7 @@ Usage:
 
 import logging
 import sys
+import warnings
 from pathlib import Path
 
 import customtkinter as ctk
@@ -26,6 +27,13 @@ from app_controller import AppOrchestrator
 from app_services import fn_check_ollama_availability
 from app_storage import StorageService, fn_ensure_directories_exist
 from app_view import AppView
+
+# Suppress resource_tracker warnings
+# NOTE: ChromaDB 1.3+ and sentence-transformers (PyTorch) may still use multiprocessing
+# internally for DataLoader/thread pools. Python's resource_tracker is overly aggressive
+# and reports "leaked" semaphores even when they are properly cleaned up.
+# These warnings are harmless - resources are freed when the process exits.
+warnings.filterwarnings("ignore", category=UserWarning, module="multiprocessing.resource_tracker")
 
 
 def setup_logging() -> None:
