@@ -188,14 +188,14 @@ class AppOrchestrator:
                 self.view.show_warning("Invalid Folder", f"Folder does not exist: {folder_path}")
                 return
 
-            # Find PDF files
-            pdf_files = fn_find_pdf_files(folder)
-            if not pdf_files:
-                self.view.show_warning("No PDFs", f"No PDF files found in: {folder_path}")
+            # Find PDF and Markdown files
+            files = fn_find_pdf_files(folder)
+            if not files:
+                self.view.show_warning("No Files", f"No PDF or Markdown files found in: {folder_path}")
                 return
 
-            items = pdf_files
-            item_type = "PDF"
+            items = files
+            item_type = "file"
 
         else:  # web
             # Validate URLs
@@ -426,17 +426,35 @@ def processing_pipeline_worker(
         try:
             # Step 1: Extract Markdown from source
             if source_type == "pdf":
-                # PDF processing
+                # File processing (PDF or MD)
                 item_name = item.name
                 view_queue.put(f"LOG: Processing {item_name}...")
-                markdown_text = fn_extract_markdown(item, config)
-                view_queue.put(f"LOG:   ✓ Extracted Markdown ({len(markdown_text)} chars)")
+
+                # Check file extension
+                if item.suffix.lower() == '.md':
+                    # Markdown file - read directly
+                    from app_services import fn_read_markdown_file
+                    markdown_text = fn_read_markdown_file(item)
+                    view_queue.put(f"LOG:   ✓ Read Markdown file ({len(markdown_text)} chars)")
+                else:
+                    # PDF file - convert with marker-pdf
+                    markdown_text = fn_extract_markdown(item, config)
+                    view_queue.put(f"LOG:   ✓ Extracted Markdown ({len(markdown_text)} chars)")
             else:
-                # Web article processing
+                # Web article processing (HTML or MD URL)
                 item_name = item.split("://")[-1][:50] + "..."  # Shortened URL for display
                 view_queue.put(f"LOG: Fetching {item}...")
-                markdown_text = fn_fetch_web_article(item, config)
-                view_queue.put(f"LOG:   ✓ Extracted article ({len(markdown_text)} chars)")
+
+                # Check if URL ends with .md
+                if item.lower().endswith('.md'):
+                    # Raw Markdown URL - download directly
+                    from app_services import fn_fetch_raw_markdown
+                    markdown_text = fn_fetch_raw_markdown(item, config)
+                    view_queue.put(f"LOG:   ✓ Downloaded Markdown ({len(markdown_text)} chars)")
+                else:
+                    # HTML article - extract and convert
+                    markdown_text = fn_fetch_web_article(item, config)
+                    view_queue.put(f"LOG:   ✓ Extracted article ({len(markdown_text)} chars)")
 
             # Step 2: Translation (optional)
             russian_text = None

@@ -307,6 +307,53 @@ def _describe_image_lmstudio(base64_image: str, model: str, config: AppConfig) -
 
 
 # ============================================================================
+# Markdown File Processing
+# ============================================================================
+
+
+def fn_read_markdown_file(md_path: Path) -> str:
+    """
+    Read a Markdown file directly without any conversion.
+
+    Args:
+        md_path: Path to the Markdown file
+
+    Returns:
+        str: The content of the Markdown file
+
+    Raises:
+        FileNotFoundError: If the file doesn't exist
+        Exception: If reading fails
+
+    Example:
+        >>> md_path = Path("document.md")
+        >>> content = fn_read_markdown_file(md_path)
+    """
+    try:
+        if not md_path.exists():
+            raise FileNotFoundError(f"Markdown file not found: {md_path}")
+
+        # Read the file content
+        with open(md_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Validate content
+        if not content or len(content.strip()) < 10:
+            raise ValueError(
+                f"Markdown file is too short ({len(content)} chars). "
+                "File may be empty or corrupted."
+            )
+
+        logger.info(f"Read Markdown file: {md_path.name} ({len(content)} chars)")
+        return content
+
+    except FileNotFoundError as e:
+        raise
+    except Exception as e:
+        raise Exception(f"Failed to read Markdown from {md_path}: {e}") from e
+
+
+# ============================================================================
 # PDF Processing
 # ============================================================================
 
@@ -482,6 +529,55 @@ def fn_cleanup_pdf_memory() -> None:
 # ============================================================================
 # Web Article Extraction
 # ============================================================================
+
+
+def fn_fetch_raw_markdown(url: str, config: AppConfig) -> str:
+    """
+    Fetch a raw Markdown file from a URL without any conversion.
+
+    This is used for URLs that directly point to .md files (like GitHub raw files).
+
+    Args:
+        url: The URL of the Markdown file
+        config: Application configuration
+
+    Returns:
+        str: The content of the Markdown file
+
+    Raises:
+        Exception: If fetching fails
+
+    Example:
+        >>> config = AppConfig()
+        >>> md = fn_fetch_raw_markdown("https://raw.githubusercontent.com/.../README.md", config)
+    """
+    try:
+        logger.info(f"Fetching raw Markdown from: {url}")
+
+        # Download the file
+        with httpx.Client(timeout=config.WEB_REQUEST_TIMEOUT) as client:
+            response = client.get(url, headers={"User-Agent": config.WEB_USER_AGENT})
+            response.raise_for_status()
+            content = response.text
+
+        logger.info(f"Downloaded Markdown: {len(content)} chars")
+
+        # Validate content
+        if not content or len(content.strip()) < 10:
+            raise ValueError(
+                f"Downloaded Markdown is too short ({len(content)} chars). "
+                "File may be empty or invalid."
+            )
+
+        return content
+
+    except httpx.HTTPStatusError as e:
+        raise Exception(
+            f"Failed to fetch Markdown (HTTP {e.response.status_code}): {url}\n"
+            f"The file may not exist or be restricted."
+        ) from e
+    except Exception as e:
+        raise Exception(f"Failed to fetch Markdown from {url}: {e}") from e
 
 
 def fn_fetch_web_article(url: str, config: AppConfig) -> str:
@@ -1080,7 +1176,7 @@ Answer:"""
 
 def fn_find_pdf_files(directory: Path) -> list[Path]:
     """
-    Recursively find all PDF files in a directory.
+    Recursively find all PDF and Markdown files in a directory.
 
     This is a pure function (aside from the I/O of reading directory contents).
 
@@ -1088,15 +1184,20 @@ def fn_find_pdf_files(directory: Path) -> list[Path]:
         directory: The directory to search
 
     Returns:
-        list[Path]: A sorted list of PDF file paths
+        list[Path]: A sorted list of PDF and MD file paths
 
     Example:
-        >>> pdf_files = fn_find_pdf_files(Path("./documents"))
-        >>> print(len(pdf_files))
+        >>> files = fn_find_pdf_files(Path("./documents"))
+        >>> print(len(files))
         15
     """
     if not directory.exists():
         return []
 
-    pdf_files = sorted(directory.rglob("*.pdf"))
-    return list(pdf_files)
+    # Find both PDF and Markdown files
+    pdf_files = list(directory.rglob("*.pdf"))
+    md_files = list(directory.rglob("*.md"))
+
+    # Combine and sort
+    all_files = sorted(pdf_files + md_files)
+    return all_files

@@ -91,16 +91,20 @@ class AppView:
         """Setup the Ingestion tab UI."""
         tab = self.tabview.tab("Ingestion")
 
+        # Create scrollable frame for all content
+        scrollable_frame = ctk.CTkScrollableFrame(tab)
+        scrollable_frame.pack(fill="both", expand=True, padx=0, pady=0)
+
         # Title
         title = ctk.CTkLabel(
-            tab,
+            scrollable_frame,
             text="📚 Content Ingestion",
             font=ctk.CTkFont(size=20, weight="bold"),
         )
         title.pack(pady=(10, 20))
 
         # Source type selection frame
-        source_type_frame = ctk.CTkFrame(tab)
+        source_type_frame = ctk.CTkFrame(scrollable_frame)
         source_type_frame.pack(fill="x", padx=20, pady=10)
 
         source_label = ctk.CTkLabel(
@@ -112,7 +116,7 @@ class AppView:
 
         self.pdf_radio = ctk.CTkRadioButton(
             source_type_frame,
-            text="📄 PDF Files (from folder)",
+            text="📄 PDF / Markdown Files (from folder)",
             variable=self.source_type_var,
             value="pdf",
             command=self._on_source_type_changed,
@@ -130,7 +134,7 @@ class AppView:
 
         # Create a container frame for source-specific inputs
         # This ensures consistent positioning when switching between sources
-        self.source_container = ctk.CTkFrame(tab)
+        self.source_container = ctk.CTkFrame(scrollable_frame)
         self.source_container.pack(fill="x", padx=20, pady=10)
 
         # PDF: Folder selection frame
@@ -217,7 +221,7 @@ class AppView:
         self.raw_html_checkbox.pack(anchor="w", padx=10, pady=5)
 
         # Options frame
-        options_frame = ctk.CTkFrame(tab)
+        options_frame = ctk.CTkFrame(scrollable_frame)
         options_frame.pack(fill="x", padx=20, pady=10)
 
         options_title = ctk.CTkLabel(
@@ -250,7 +254,7 @@ class AppView:
 
         # Start button
         self.start_button = ctk.CTkButton(
-            tab,
+            scrollable_frame,
             text="Start Processing",
             command=None,  # Will be set by controller
             height=40,
@@ -260,14 +264,14 @@ class AppView:
 
         # Log textbox
         log_label = ctk.CTkLabel(
-            tab,
+            scrollable_frame,
             text="Processing Log:",
             font=ctk.CTkFont(size=14, weight="bold"),
         )
         log_label.pack(anchor="w", padx=20, pady=(10, 5))
 
         self.log_textbox = ctk.CTkTextbox(
-            tab,
+            scrollable_frame,
             height=250,
             wrap="word",
             state="disabled",
@@ -361,16 +365,20 @@ class AppView:
         """Setup the Settings tab UI."""
         tab = self.tabview.tab("Settings")
 
+        # Create scrollable frame for all content
+        scrollable_frame = ctk.CTkScrollableFrame(tab)
+        scrollable_frame.pack(fill="both", expand=True, padx=0, pady=0)
+
         # Title
         title = ctk.CTkLabel(
-            tab,
+            scrollable_frame,
             text="⚙️ LLM Settings",
             font=ctk.CTkFont(size=20, weight="bold"),
         )
         title.pack(pady=(10, 20))
 
         # Provider selection
-        provider_frame = ctk.CTkFrame(tab)
+        provider_frame = ctk.CTkFrame(scrollable_frame)
         provider_frame.pack(fill="x", padx=20, pady=10)
 
         provider_label = ctk.CTkLabel(
@@ -389,7 +397,7 @@ class AppView:
         self.provider_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
 
         # Ollama settings frame
-        ollama_frame = ctk.CTkFrame(tab)
+        ollama_frame = ctk.CTkFrame(scrollable_frame)
         ollama_frame.pack(fill="x", padx=20, pady=10)
 
         ollama_title = ctk.CTkLabel(
@@ -420,7 +428,7 @@ class AppView:
         self.ollama_model_entry.pack(anchor="w", padx=20, pady=(0, 10))
 
         # LM Studio settings frame
-        lmstudio_frame = ctk.CTkFrame(tab)
+        lmstudio_frame = ctk.CTkFrame(scrollable_frame)
         lmstudio_frame.pack(fill="x", padx=20, pady=10)
 
         lmstudio_title = ctk.CTkLabel(
@@ -451,7 +459,7 @@ class AppView:
         self.lmstudio_model_entry.pack(anchor="w", padx=20, pady=(0, 10))
 
         # Timeout setting
-        timeout_frame = ctk.CTkFrame(tab)
+        timeout_frame = ctk.CTkFrame(scrollable_frame)
         timeout_frame.pack(fill="x", padx=20, pady=10)
 
         timeout_label = ctk.CTkLabel(
@@ -469,7 +477,7 @@ class AppView:
         self.timeout_entry.pack(anchor="w", padx=20, pady=(0, 10))
 
         # Translation chunk size setting
-        chunk_frame = ctk.CTkFrame(tab)
+        chunk_frame = ctk.CTkFrame(scrollable_frame)
         chunk_frame.pack(fill="x", padx=20, pady=10)
 
         chunk_label = ctk.CTkLabel(
@@ -495,7 +503,7 @@ class AppView:
         self.translation_chunk_entry.pack(anchor="w", padx=20, pady=(0, 10))
 
         # Buttons frame
-        buttons_frame = ctk.CTkFrame(tab)
+        buttons_frame = ctk.CTkFrame(scrollable_frame)
         buttons_frame.pack(fill="x", padx=20, pady=20)
 
         self.test_connection_button = ctk.CTkButton(
