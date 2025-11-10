@@ -102,6 +102,7 @@ class AppView:
         # Create scrollable frame for all content
         scrollable_frame = ctk.CTkScrollableFrame(tab)
         scrollable_frame.pack(fill="both", expand=True, padx=0, pady=0)
+        self._enable_mousewheel_scrolling(scrollable_frame)
 
         # Title
         title = ctk.CTkLabel(
@@ -181,6 +182,7 @@ class AppView:
             wrap="word",
         )
         self.url_textbox.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        self._enable_mousewheel_scrolling(self.url_textbox)
 
         # WEB: Authentication options
         auth_frame = ctk.CTkFrame(self.url_frame)
@@ -285,6 +287,7 @@ class AppView:
             state="disabled",
         )
         self.log_textbox.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        self._enable_mousewheel_scrolling(self.log_textbox)
 
     def _on_select_folder_clicked(self) -> None:
         """Handle folder selection button click."""
@@ -336,6 +339,7 @@ class AppView:
             state="disabled",
         )
         self.chat_history_textbox.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        self._enable_mousewheel_scrolling(self.chat_history_textbox)
 
         # Input frame
         input_frame = ctk.CTkFrame(tab)
@@ -403,6 +407,7 @@ class AppView:
         # File list (scrollable)
         self.changelog_listbox = ctk.CTkScrollableFrame(left_frame, width=230, height=500)
         self.changelog_listbox.pack(fill="both", expand=True, pady=5)
+        self._enable_mousewheel_scrolling(self.changelog_listbox)
 
         # Right panel: Content viewer
         right_frame = ctk.CTkFrame(main_frame)
@@ -423,6 +428,7 @@ class AppView:
             font=ctk.CTkFont(size=12),
         )
         self.changelog_content.pack(fill="both", expand=True, pady=(5, 10), padx=10)
+        self._enable_mousewheel_scrolling(self.changelog_content)
 
         # Store selected file
         self.selected_changelog_file = None
@@ -516,6 +522,7 @@ class AppView:
         # Create scrollable frame for all content
         scrollable_frame = ctk.CTkScrollableFrame(tab)
         scrollable_frame.pack(fill="both", expand=True, padx=0, pady=0)
+        self._enable_mousewheel_scrolling(scrollable_frame)
 
         # Title
         title = ctk.CTkLabel(
@@ -1023,6 +1030,71 @@ class AppView:
         """
         from tkinter import messagebox
         messagebox.showinfo(title, message)
+
+    # ========================================================================
+    # Utility Methods
+    # ========================================================================
+
+    def _enable_mousewheel_scrolling(self, widget) -> None:
+        """
+        Enable mouse wheel and trackpad scrolling for a scrollable widget.
+
+        This method binds mouse wheel events to allow scrolling with:
+        - macOS trackpad (two-finger swipe)
+        - Windows/Linux mouse wheel
+        - Linux touchpad scroll
+
+        Args:
+            widget: A CTkScrollableFrame or CTkTextbox widget
+
+        Note:
+            This is particularly important for macOS users where trackpad
+            scrolling is not enabled by default in CustomTkinter widgets.
+        """
+        import sys
+
+        def _on_mousewheel(event):
+            """Handle mouse wheel scroll event."""
+            # macOS and Windows use event.delta
+            if sys.platform == "darwin":  # macOS
+                widget._parent_canvas.yview_scroll(-1 * int(event.delta), "units")
+            elif sys.platform == "win32":  # Windows
+                widget._parent_canvas.yview_scroll(-1 * int(event.delta / 120), "units")
+            else:  # Linux
+                if event.num == 4:
+                    widget._parent_canvas.yview_scroll(-1, "units")
+                elif event.num == 5:
+                    widget._parent_canvas.yview_scroll(1, "units")
+
+        def _on_mousewheel_textbox(event):
+            """Handle mouse wheel scroll event for textbox."""
+            # CTkTextbox doesn't have _parent_canvas, use yview directly
+            if sys.platform == "darwin":  # macOS
+                widget.yview_scroll(-1 * int(event.delta), "units")
+            elif sys.platform == "win32":  # Windows
+                widget.yview_scroll(-1 * int(event.delta / 120), "units")
+            else:  # Linux
+                if event.num == 4:
+                    widget.yview_scroll(-1, "units")
+                elif event.num == 5:
+                    widget.yview_scroll(1, "units")
+
+        # Determine widget type and bind appropriate handler
+        if hasattr(widget, '_parent_canvas'):
+            # CTkScrollableFrame
+            handler = _on_mousewheel
+        else:
+            # CTkTextbox
+            handler = _on_mousewheel_textbox
+
+        # Bind mouse wheel events
+        if sys.platform != "linux":
+            # macOS and Windows: use MouseWheel event
+            widget.bind("<MouseWheel>", handler)
+        else:
+            # Linux: use Button-4 and Button-5 events
+            widget.bind("<Button-4>", handler)
+            widget.bind("<Button-5>", handler)
 
     # ========================================================================
     # Public API - Event Binding
