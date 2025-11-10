@@ -748,42 +748,49 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
 
             # Log response details for debugging
             content_type = response.headers.get("content-type", "")
+            content_encoding = response.headers.get("content-encoding", "")
             logger.info(f"Response: {response.status_code}, Content-Type: {content_type}")
+            logger.info(f"Content-Encoding: {content_encoding}")
             logger.info(f"Detected encoding: {response.encoding}")
 
+            # Check if content is gzip-compressed (httpx should auto-decompress, but sometimes fails)
+            raw_content = response.content
+            if raw_content[:2] == b'\x1f\x8b':
+                # Content is gzip-compressed but wasn't decompressed
+                logger.warning("Detected gzip-compressed content, manually decompressing...")
+                import gzip
+                try:
+                    raw_content = gzip.decompress(raw_content)
+                    logger.info(f"Successfully decompressed gzip content: {len(raw_content)} bytes")
+                except Exception as e:
+                    logger.error(f"Failed to decompress gzip: {e}")
+
             # Get HTML content with proper encoding handling
-            # httpx auto-detects encoding from Content-Type or guesses from content
-            # But sometimes it gets it wrong, so we add fallback logic
+            # Try to decode the raw content
             try:
-                full_html = response.text
-                html_size = len(full_html)
-
-                # Check if content looks corrupted (contains replacement characters)
-                # or has unusual amount of non-ASCII characters
-                if '�' in full_html or full_html[:1000].count('\\x') > 10:
-                    logger.warning("Detected potential encoding issue, trying alternative decoding...")
-
-                    # Try with explicit UTF-8
+                # Try UTF-8 first
+                try:
+                    full_html = raw_content.decode('utf-8')
+                    logger.info("Decoded as UTF-8")
+                except UnicodeDecodeError:
+                    # Try to detect encoding
+                    logger.warning("UTF-8 decode failed, trying chardet...")
                     try:
-                        response.encoding = 'utf-8'
-                        full_html = response.text
-                        logger.info("Successfully re-decoded as UTF-8")
-                    except:
-                        # Last resort: use chardet to auto-detect
-                        try:
-                            import chardet
-                            detected = chardet.detect(response.content)
-                            if detected['encoding'] and detected['confidence'] > 0.7:
-                                logger.info(f"chardet detected: {detected['encoding']} (confidence: {detected['confidence']})")
-                                response.encoding = detected['encoding']
-                                full_html = response.text
-                        except ImportError:
-                            logger.warning("chardet not available, using httpx default encoding")
+                        import chardet
+                        detected = chardet.detect(raw_content)
+                        if detected['encoding'] and detected['confidence'] > 0.7:
+                            logger.info(f"chardet detected: {detected['encoding']} (confidence: {detected['confidence']})")
+                            full_html = raw_content.decode(detected['encoding'])
+                        else:
+                            logger.warning("chardet confidence too low, falling back to latin-1")
+                            full_html = raw_content.decode('latin-1')
+                    except ImportError:
+                        logger.warning("chardet not available, using latin-1")
+                        full_html = raw_content.decode('latin-1')
 
             except Exception as e:
                 logger.error(f"Error decoding response: {e}")
-                # Fallback to latin-1 which never fails
-                response.encoding = 'latin-1'
+                # Last resort: use httpx default
                 full_html = response.text
 
             html_size = len(full_html)
