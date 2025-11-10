@@ -67,6 +67,7 @@ class AppView:
         # Storage paths state variables
         self.vector_db_path_var = ctk.StringVar(value="./lokal_rag_db")
         self.markdown_output_path_var = ctk.StringVar(value="./output_markdown")
+        self.changelog_path_var = ctk.StringVar(value="./changelog")
 
         # Create the UI
         self._create_widgets()
@@ -697,6 +698,21 @@ class AppView:
         )
         self.markdown_output_path_entry.pack(anchor="w", padx=20, pady=(0, 10))
 
+        # Changelog path
+        changelog_path_label = ctk.CTkLabel(
+            paths_frame,
+            text="Changelog Path:",
+            font=ctk.CTkFont(size=12),
+        )
+        changelog_path_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.changelog_path_entry = ctk.CTkEntry(
+            paths_frame,
+            textvariable=self.changelog_path_var,
+            width=300,
+        )
+        self.changelog_path_entry.pack(anchor="w", padx=20, pady=(0, 10))
+
         # Buttons frame
         buttons_frame = ctk.CTkFrame(scrollable_frame)
         buttons_frame.pack(fill="x", padx=20, pady=20)
@@ -813,6 +829,7 @@ class AppView:
             "translation_chunk_size": int(self.translation_chunk_var.get()),
             "vector_db_path": self.vector_db_path_var.get(),
             "markdown_output_path": self.markdown_output_path_var.get(),
+            "changelog_path": self.changelog_path_var.get(),
         }
 
     def set_llm_settings(self, settings: dict) -> None:
@@ -852,6 +869,9 @@ class AppView:
 
         if "markdown_output_path" in settings:
             self.markdown_output_path_var.set(settings["markdown_output_path"])
+
+        if "changelog_path" in settings:
+            self.changelog_path_var.set(settings["changelog_path"])
 
     def show_settings_status(self, message: str, is_error: bool = False) -> None:
         """
