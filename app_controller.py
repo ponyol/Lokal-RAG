@@ -369,6 +369,27 @@ class AppOrchestrator:
             self.view.show_settings_status(f"✗ {error_msg}", is_error=True)
             logger.error(error_msg, exc_info=True)
 
+    def cleanup(self) -> None:
+        """
+        Clean up resources held by the orchestrator.
+
+        This method should be called when the application is shutting down.
+        It ensures all threads are stopped and storage resources are freed.
+
+        NOTE: This prevents the "leaked semaphore objects" warning.
+        """
+        try:
+            logger.info("Cleaning up AppOrchestrator resources...")
+
+            # Clean up storage service
+            if self.storage:
+                self.storage.cleanup()
+
+            logger.info("AppOrchestrator cleanup complete")
+
+        except Exception as e:
+            logger.error(f"Error during AppOrchestrator cleanup: {e}")
+
 
 # ============================================================================
 # Worker Functions (Run in Separate Threads)

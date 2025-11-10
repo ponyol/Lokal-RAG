@@ -216,6 +216,12 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
     if "translation_chunk_size" in settings:
         overrides["TRANSLATION_CHUNK_SIZE"] = settings["translation_chunk_size"]
 
+    if "vector_db_path" in settings:
+        overrides["VECTOR_DB_PATH"] = Path(settings["vector_db_path"])
+
+    if "markdown_output_path" in settings:
+        overrides["MARKDOWN_OUTPUT_PATH"] = Path(settings["markdown_output_path"])
+
     # Create new config with overrides
     if overrides:
         return replace(base_config, **overrides)
