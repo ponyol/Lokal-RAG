@@ -16,9 +16,7 @@ Usage:
 """
 
 import logging
-import os
 import sys
-import warnings
 from pathlib import Path
 
 import customtkinter as ctk
@@ -28,11 +26,6 @@ from app_controller import AppOrchestrator
 from app_services import fn_check_ollama_availability
 from app_storage import StorageService, fn_ensure_directories_exist
 from app_view import AppView
-
-# Suppress resource_tracker warnings for ChromaDB
-# ChromaDB uses multiprocessing which can leak semaphores on exit
-# We handle cleanup properly, but Python's resource_tracker is overly aggressive
-warnings.filterwarnings("ignore", category=UserWarning, module="multiprocessing.resource_tracker")
 
 
 def setup_logging() -> None:
@@ -204,13 +197,6 @@ def main() -> None:
 
     finally:
         logger.info("Application shutdown")
-
-        # Force cleanup of multiprocessing resources
-        try:
-            import multiprocessing.util
-            multiprocessing.util._exit_function()
-        except Exception:
-            pass
 
 
 if __name__ == "__main__":

@@ -11,14 +11,13 @@ It manages the lifecycle of heavy objects (embedding model, vector DB client).
 File I/O operations are provided as pure functions where possible.
 """
 
-import atexit
 import logging
 from pathlib import Path
 from typing import Optional
 
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
-from langchain_community.docstore.document import Document
+from langchain_chroma import Chroma
+from langchain_core.documents import Document
 
 from app_config import AppConfig
 
@@ -56,14 +55,10 @@ class StorageService:
         self.config = config
         self._embeddings: Optional[HuggingFaceEmbeddings] = None
         self._vectorstore: Optional[Chroma] = None
-        self._chroma_client = None  # Store reference to underlying ChromaDB client
 
         logger.info("Initializing StorageService")
         self._initialize_embeddings()
         self._initialize_vectorstore()
-
-        # Register cleanup handler to run at program exit
-        atexit.register(self._cleanup_at_exit)
 
     def _initialize_embeddings(self) -> None:
         """
@@ -95,6 +90,9 @@ class StorageService:
 
         If the database already exists at config.VECTOR_DB_PATH, it will be loaded.
         Otherwise, a new database will be created.
+
+        NOTE: ChromaDB 1.3+ uses a modern architecture without multiprocessing,
+        so no special cleanup is required (unlike 0.4.x versions).
         """
         try:
             # Ensure the directory exists
@@ -107,10 +105,6 @@ class StorageService:
                 embedding_function=self._embeddings,
                 persist_directory=str(self.config.VECTOR_DB_PATH),
             )
-
-            # Store reference to underlying ChromaDB client for cleanup
-            if hasattr(self._vectorstore, '_client'):
-                self._chroma_client = self._vectorstore._client
 
             logger.info("Vector database initialized successfully")
 
@@ -235,65 +229,22 @@ class StorageService:
         Clean up resources held by the storage service.
 
         This method should be called when the application is shutting down
-        to properly close ChromaDB connections and free resources.
+        to free memory and close connections gracefully.
 
-        NOTE: This prevents the "leaked semaphore objects" warning from
-        multiprocessing.resource_tracker on application exit.
+        NOTE: ChromaDB 1.3+ uses a modern architecture without multiprocessing,
+        so no special cleanup workarounds are needed (unlike 0.4.x versions).
         """
         try:
             logger.info("Cleaning up StorageService resources...")
 
-            # ChromaDB cleanup - more aggressive approach
-            if self._chroma_client is not None:
-                try:
-                    # Try multiple cleanup methods
-                    if hasattr(self._chroma_client, 'clear_system_cache'):
-                        self._chroma_client.clear_system_cache()
-                        logger.debug("ChromaDB system cache cleared")
-
-                    if hasattr(self._chroma_client, 'reset'):
-                        # Note: reset() clears the database, so we don't use it
-                        pass
-
-                    # Try to close the client's heartbeat if it exists
-                    if hasattr(self._chroma_client, '_identifier_to_system'):
-                        systems = self._chroma_client._identifier_to_system
-                        if systems:
-                            for system in systems.values():
-                                if hasattr(system, 'stop'):
-                                    system.stop()
-                                    logger.debug("Stopped ChromaDB system component")
-
-                    logger.info("ChromaDB client cleaned up")
-                except Exception as e:
-                    logger.warning(f"Could not close ChromaDB client cleanly: {e}")
-
-                self._chroma_client = None
-
-            # Clear vectorstore reference
-            if self._vectorstore is not None:
-                self._vectorstore = None
-
-            # Clear embeddings
-            if self._embeddings is not None:
-                self._embeddings = None
+            # Clear references to allow garbage collection
+            self._vectorstore = None
+            self._embeddings = None
 
             logger.info("StorageService cleanup complete")
 
         except Exception as e:
             logger.error(f"Error during StorageService cleanup: {e}")
-
-    def _cleanup_at_exit(self) -> None:
-        """
-        Cleanup handler registered with atexit.
-
-        This ensures cleanup happens even if the normal shutdown path fails.
-        """
-        try:
-            self.cleanup()
-        except Exception as e:
-            # Suppress errors during exit to avoid cluttering output
-            pass
 
 
 # ============================================================================
