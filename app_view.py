@@ -16,6 +16,7 @@ All heavy operations are delegated to the Controller.
 """
 
 import customtkinter as ctk
+from pathlib import Path
 from tkinter import filedialog
 from typing import Callable, Optional
 
