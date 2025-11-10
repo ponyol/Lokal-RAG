@@ -745,11 +745,49 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
             logger.info(f"Fetching URL: {url}")
             response = client.get(url, headers=headers)
             response.raise_for_status()  # Raise exception for 4xx/5xx
-            full_html = response.text
 
             # Log response details for debugging
+            content_type = response.headers.get("content-type", "")
+            logger.info(f"Response: {response.status_code}, Content-Type: {content_type}")
+            logger.info(f"Detected encoding: {response.encoding}")
+
+            # Get HTML content with proper encoding handling
+            # httpx auto-detects encoding from Content-Type or guesses from content
+            # But sometimes it gets it wrong, so we add fallback logic
+            try:
+                full_html = response.text
+                html_size = len(full_html)
+
+                # Check if content looks corrupted (contains replacement characters)
+                # or has unusual amount of non-ASCII characters
+                if '�' in full_html or full_html[:1000].count('\\x') > 10:
+                    logger.warning("Detected potential encoding issue, trying alternative decoding...")
+
+                    # Try with explicit UTF-8
+                    try:
+                        response.encoding = 'utf-8'
+                        full_html = response.text
+                        logger.info("Successfully re-decoded as UTF-8")
+                    except:
+                        # Last resort: use chardet to auto-detect
+                        try:
+                            import chardet
+                            detected = chardet.detect(response.content)
+                            if detected['encoding'] and detected['confidence'] > 0.7:
+                                logger.info(f"chardet detected: {detected['encoding']} (confidence: {detected['confidence']})")
+                                response.encoding = detected['encoding']
+                                full_html = response.text
+                        except ImportError:
+                            logger.warning("chardet not available, using httpx default encoding")
+
+            except Exception as e:
+                logger.error(f"Error decoding response: {e}")
+                # Fallback to latin-1 which never fails
+                response.encoding = 'latin-1'
+                full_html = response.text
+
             html_size = len(full_html)
-            logger.info(f"Response: {response.status_code}, Size: {html_size:,} bytes, Encoding: {response.encoding}")
+            logger.info(f"Final HTML size: {html_size:,} bytes")
 
             # Check if response looks like a paywall (too small)
             if html_size < 5000:
