@@ -301,7 +301,7 @@ class StorageService:
             )
 
             # Execute hybrid search
-            docs = ensemble_retriever.get_relevant_documents(query)
+            docs = ensemble_retriever.invoke(query)
 
             logger.info(f"Found {len(docs)} documents (hybrid: BM25 + Vector)")
             return docs
