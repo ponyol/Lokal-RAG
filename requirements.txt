@@ -14,6 +14,7 @@ mistralai==1.2.4  # Mistral AI API (mistral-large, mistral-small)
 # Vector Database & Embeddings
 chromadb==1.3.4  # Modern ChromaDB with no multiprocessing (fixes semaphore leaks!)
 sentence-transformers==5.1.2
+rank-bm25==0.2.2  # BM25 algorithm for keyword-based search
 
 # LangChain ecosystem - Modern modular architecture
 langchain==1.0.5  # Main LangChain package
@@ -21,6 +22,7 @@ langchain-core==1.0.4  # Core abstractions and base classes
 langchain-chroma==1.0.0  # ChromaDB integration
 langchain-text-splitters==1.0.0  # Text splitting utilities
 langchain-huggingface==1.0.1  # HuggingFace embeddings integration
+langchain-community==1.0.5  # Community-contributed retrievers (BM25, etc.)
 
 # Data validation
 pydantic==2.12.4
