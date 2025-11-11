@@ -400,7 +400,7 @@ def _call_gemini(
         Exception: If API key is missing or API call fails
 
     Example:
-        >>> config = AppConfig(GEMINI_API_KEY="AIza...", GEMINI_MODEL="gemini-1.5-flash")
+        >>> config = AppConfig(GEMINI_API_KEY="AIza...", GEMINI_MODEL="gemini-2.5-flash")
         >>> response = _call_gemini("Hello", "You are helpful", config)
     """
     try:

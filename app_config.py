@@ -30,9 +30,9 @@ class AppConfig:
         LMSTUDIO_BASE_URL: URL of the local LM Studio instance
         LMSTUDIO_MODEL: Name of the LM Studio model to use for translation, tagging, and RAG
         CLAUDE_API_KEY: Anthropic API key for Claude models
-        CLAUDE_MODEL: Claude model to use (claude-3-5-sonnet-20241022, claude-3-opus-20240229, claude-3-haiku-20240307)
+        CLAUDE_MODEL: Claude model to use (claude-3-5-sonnet-20241022, claude-3-7-sonnet-20250219, claude-3-opus-20240229)
         GEMINI_API_KEY: Google API key for Gemini models
-        GEMINI_MODEL: Gemini model to use (gemini-1.5-pro, gemini-1.5-flash, gemini-pro)
+        GEMINI_MODEL: Gemini model to use (gemini-2.5-flash, gemini-2.5-pro-preview-03-25, gemini-2.0-flash-exp)
         LLM_REQUEST_TIMEOUT: Timeout for LLM API requests (in seconds)
         EMBEDDING_MODEL: Name of the HuggingFace embedding model
         VECTOR_DB_PATH: Path to the ChromaDB persistent storage
@@ -61,9 +61,9 @@ class AppConfig:
     LMSTUDIO_BASE_URL: str = "http://localhost:1234/v1"
     LMSTUDIO_MODEL: str = "meta-llama-3.1-8b-instruct"
     CLAUDE_API_KEY: str = ""  # Anthropic API key (get from https://console.anthropic.com/)
-    CLAUDE_MODEL: str = "claude-3-5-sonnet-20240620"  # claude-3-5-sonnet-20240620, claude-3-opus-20240229, claude-3-haiku-20240307
+    CLAUDE_MODEL: str = "claude-3-5-sonnet-20241022"  # claude-3-5-sonnet-20241022, claude-3-7-sonnet-20250219, claude-3-opus-20240229
     GEMINI_API_KEY: str = ""  # Google API key (get from https://makersuite.google.com/app/apikey)
-    GEMINI_MODEL: str = "gemini-1.5-flash"  # gemini-1.5-flash, gemini-1.5-pro, gemini-2.0-flash-exp
+    GEMINI_MODEL: str = "gemini-2.5-flash"  # gemini-2.5-flash, gemini-2.5-pro-preview-03-25, gemini-2.0-flash-exp
     LLM_REQUEST_TIMEOUT: int = 300  # 5 minutes for large documents
 
     # Embedding Configuration

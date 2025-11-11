@@ -63,9 +63,9 @@ class AppView:
         self.lmstudio_url_var = ctk.StringVar(value="http://localhost:1234/v1")
         self.lmstudio_model_var = ctk.StringVar(value="meta-llama-3.1-8b-instruct")
         self.claude_api_key_var = ctk.StringVar(value="")
-        self.claude_model_var = ctk.StringVar(value="claude-3-5-sonnet-20240620")
+        self.claude_model_var = ctk.StringVar(value="claude-3-5-sonnet-20241022")
         self.gemini_api_key_var = ctk.StringVar(value="")
-        self.gemini_model_var = ctk.StringVar(value="gemini-1.5-flash")
+        self.gemini_model_var = ctk.StringVar(value="gemini-2.5-flash")
         self.timeout_var = ctk.StringVar(value="300")
         self.translation_chunk_var = ctk.StringVar(value="2000")
 
@@ -654,9 +654,9 @@ class AppView:
             claude_frame,
             variable=self.claude_model_var,
             values=[
-                "claude-3-5-sonnet-20240620",  # Claude 3.5 Sonnet (latest stable)
+                "claude-3-5-sonnet-20241022",  # Claude 3.5 Sonnet (October 2024)
+                "claude-3-7-sonnet-20250219",  # Claude 3.7 Sonnet (February 2025) - Latest
                 "claude-3-opus-20240229",      # Claude 3 Opus
-                "claude-3-haiku-20240307",     # Claude 3 Haiku
             ],
             width=400,
         )
@@ -699,9 +699,9 @@ class AppView:
             gemini_frame,
             variable=self.gemini_model_var,
             values=[
-                "gemini-1.5-flash",        # Fast and versatile (recommended)
-                "gemini-1.5-pro",          # More powerful, slower
-                "gemini-2.0-flash-exp",    # Experimental 2.0 (if available)
+                "gemini-2.5-flash",                # Fast and versatile (recommended)
+                "gemini-2.5-pro-preview-03-25",    # More powerful, slower
+                "gemini-2.0-flash-exp",            # Experimental 2.0 (if available)
             ],
             width=400,
         )
