@@ -1226,44 +1226,17 @@ class AppView:
         if hasattr(widget, '_parent_canvas'):
             canvas = widget._parent_canvas
 
-            # Use a mutable container to track if mouse is over this specific frame
-            mouse_over = {'active': False}
+            # HACK: Override CustomTkinter's check_if_master_is_canvas to always return True
+            # This fixes the broken hierarchy checking when frame is created inside a class
+            def patched_check(w):
+                """Always return True to enable scrolling."""
+                return True
 
-            def _on_enter(event):
-                """Track when mouse enters the scrollable frame."""
-                mouse_over['active'] = True
+            # Replace the broken method with our patched version
+            widget.check_if_master_is_canvas = patched_check
 
-            def _on_leave(event):
-                """Track when mouse leaves the scrollable frame."""
-                mouse_over['active'] = False
-
-            def _on_mousewheel(event):
-                """Handle mouse wheel scroll event for scrollable frame."""
-                # Only scroll if mouse is over this specific frame
-                if mouse_over['active']:
-                    if sys.platform == "darwin":  # macOS
-                        # macOS trackpad: use event.delta directly
-                        canvas.yview_scroll(int(-1 * event.delta), "units")
-                    elif sys.platform == "win32":  # Windows
-                        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-                    else:  # Linux
-                        if event.num == 4:
-                            canvas.yview_scroll(-1, "units")
-                        elif event.num == 5:
-                            canvas.yview_scroll(1, "units")
-
-            # Bind enter/leave events to track mouse position
-            widget.bind("<Enter>", _on_enter, add="+")
-            widget.bind("<Leave>", _on_leave, add="+")
-
-            # Bind mousewheel with bind_all (not just to canvas)
-            if sys.platform != "linux":
-                # macOS and Windows: MouseWheel event
-                widget.bind_all("<MouseWheel>", _on_mousewheel, add="+")
-            else:
-                # Linux: Button-4 and Button-5 events
-                widget.bind_all("<Button-4>", _on_mousewheel, add="+")
-                widget.bind_all("<Button-5>", _on_mousewheel, add="+")
+            # That's it! CustomTkinter's existing _mouse_wheel_all will now work
+            # because check_if_master_is_canvas always returns True
 
         else:
             # CTkTextbox - bind directly to the textbox
