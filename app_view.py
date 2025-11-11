@@ -1224,117 +1224,54 @@ class AppView:
 
         # Check if this is a CTkScrollableFrame with internal canvas
         if hasattr(widget, '_parent_canvas'):
-            import logging
-            logger = logging.getLogger(__name__)
             canvas = widget._parent_canvas
 
-            logger.info(f"🔧 Setting up DIRECT mousewheel binding for CTkScrollableFrame")
-            logger.info(f"   Platform: {sys.platform}")
-            logger.info(f"   Canvas: {canvas}")
-
-            # CRITICAL: Make canvas and widget focusable (required for macOS mousewheel events)
+            # Make canvas and widget focusable (required for macOS mousewheel events)
             try:
                 canvas.config(takefocus=1)
                 widget.configure(takefocus=1)
-                logger.info(f"✓ Configured canvas and widget to accept focus")
-            except Exception as e:
-                logger.warning(f"⚠️  Could not configure takefocus: {e}")
+            except Exception:
+                pass
 
             # Track which widget has mouse focus
-            mouse_over_canvas = [False]  # Use list to allow modification in nested functions
-
-            def on_mousewheel(event):
-                """Handle mousewheel event - only scroll if mouse is over THIS canvas."""
-                logger.info(f"🖱️  MouseWheel event received: delta={event.delta}, widget={event.widget}, mouse_over={mouse_over_canvas[0]}")
-
-                # CRITICAL: Only scroll if mouse is over THIS specific canvas
-                if not mouse_over_canvas[0]:
-                    logger.info(f"   ⏭️  Skipping - mouse not over this canvas")
-                    return
-
-                # Calculate scroll amount (macOS uses event.delta directly)
-                if sys.platform == "darwin":
-                    # macOS: delta is already in correct units
-                    scroll_amount = -1 * int(event.delta)
-                elif sys.platform == "win32":
-                    # Windows: delta is in multiples of 120
-                    scroll_amount = -1 * int(event.delta / 120)
-                else:
-                    # Linux: delta is typically +/-1
-                    scroll_amount = -1 * int(event.delta)
-
-                logger.info(f"   → Scrolling {scroll_amount} units")
-
-                try:
-                    canvas.yview_scroll(scroll_amount, "units")
-                    logger.info(f"   ✓ Scroll executed successfully")
-                except Exception as e:
-                    logger.error(f"   ✗ Scroll failed: {e}")
-
-                return "break"  # Prevent event propagation
+            mouse_over_canvas = [False]
 
             def on_enter(event):
                 """Mouse entered the canvas area."""
                 mouse_over_canvas[0] = True
-                # CRITICAL: On macOS, mousewheel events only fire if widget has focus
-                widget.focus_set()  # Set focus to the scrollable frame itself
-                logger.info(f"🔵 Mouse ENTERED canvas area (focus set on widget)")
-                # Verify focus was actually set
-                focused = self.master.focus_get()
-                logger.info(f"   Current focus: {focused}")
+                widget.focus_set()
 
             def on_leave(event):
                 """Mouse left the canvas area."""
                 mouse_over_canvas[0] = False
-                logger.info(f"🔴 Mouse LEFT canvas area")
 
-            # CRITICAL FIX: Use CustomTkinter's own _mouse_wheel_all method
-            # but only when mouse is over THIS canvas
-
+            # Use CustomTkinter's own _mouse_wheel_all method
             if hasattr(widget, '_mouse_wheel_all'):
                 original_handler = widget._mouse_wheel_all
 
                 def wrapped_handler(event):
                     """Wrapper that only scrolls if mouse is over this canvas"""
-                    logger.info(f"🖱️  _mouse_wheel_all called: delta={event.delta}, mouse_over={mouse_over_canvas[0]}")
-
                     if not mouse_over_canvas[0]:
-                        logger.info(f"   ⏭️  Skipping - mouse not over this canvas")
                         return
+                    return original_handler(event)
 
-                    logger.info(f"   → Calling original CustomTkinter handler")
-                    try:
-                        result = original_handler(event)
-                        logger.info(f"   ✓ Scroll executed via CustomTkinter")
-                        return result
-                    except Exception as e:
-                        logger.error(f"   ✗ Scroll failed: {e}")
-
-                # CRITICAL: Use bind_all like CustomTkinter does
+                # Use bind_all like CustomTkinter does
                 self.master.bind_all("<MouseWheel>", wrapped_handler, add="+")
-                logger.info(f"✓ Bound <MouseWheel> via bind_all with CustomTkinter's handler")
             else:
-                logger.warning(f"⚠️  Widget does not have _mouse_wheel_all method!")
-
                 # Fallback: direct scrolling
                 def on_mousewheel(event):
                     if not mouse_over_canvas[0]:
                         return
-                    logger.info(f"🖱️  MouseWheel fallback: delta={event.delta}")
                     scroll_amount = -1 * int(event.delta)
                     canvas.yview_scroll(scroll_amount, "units")
 
                 self.master.bind_all("<MouseWheel>", on_mousewheel, add="+")
-                logger.info(f"✓ Bound <MouseWheel> via bind_all (fallback)")
 
             # Bind Enter/Leave to track mouse position
             canvas.bind("<Enter>", on_enter, add="+")
             canvas.bind("<Leave>", on_leave, add="+")
             widget.bind("<Enter>", on_enter, add="+")
             widget.bind("<Leave>", on_leave, add="+")
-            logger.info(f"✓ Bound <Enter>/<Leave> to canvas and widget")
-
-            logger.info(f"✓ Mousewheel setup complete for CTkScrollableFrame")
 
         else:
             # CTkTextbox - bind directly to the textbox
