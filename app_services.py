@@ -1473,27 +1473,31 @@ def fn_get_rag_response(
     query: str,
     retrieved_docs: list[Document],
     config: AppConfig,
+    chat_history: Optional[list[dict]] = None,
 ) -> str:
     """
     Generate a response to a query using retrieved documents as context.
 
     This is a pure function that composes:
     1. Context formatting (joining retrieved documents)
-    2. Prompt construction
-    3. LLM call
+    2. Chat history formatting (previous messages)
+    3. Prompt construction
+    4. LLM call
 
     Args:
         query: The user's question
         retrieved_docs: Documents retrieved from the vector store
         config: Application configuration
+        chat_history: Previous chat messages (list of {"role": "user"/"assistant", "content": "..."})
 
     Returns:
-        str: The LLM's answer based on the retrieved context
+        str: The LLM's answer based on the retrieved context and chat history
 
     Example:
         >>> config = AppConfig()
         >>> docs = [Document(page_content="Python is a programming language")]
-        >>> answer = fn_get_rag_response("What is Python?", docs, config)
+        >>> history = [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello!"}]
+        >>> answer = fn_get_rag_response("What is Python?", docs, config, history)
     """
     # Format the context from retrieved documents
     context = "\n\n".join(
@@ -1503,9 +1507,23 @@ def fn_get_rag_response(
         ]
     )
 
+    # Format chat history if available
+    history_text = ""
+    if chat_history:
+        history_lines = []
+        for msg in chat_history:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            if role == "user":
+                history_lines.append(f"User: {content}")
+            elif role == "assistant":
+                history_lines.append(f"Assistant: {content}")
+        if history_lines:
+            history_text = "\n\nPrevious conversation:\n" + "\n".join(history_lines) + "\n"
+
     # Construct the prompt
     prompt = f"""Context:
-{context}
+{context}{history_text}
 
 Question: {query}
 
@@ -1677,4 +1695,66 @@ def fn_create_changelog_file(
 
     except Exception as e:
         logger.error(f"Failed to create changelog file: {e}")
+        raise
+
+
+def fn_save_note(note_text: str, config: AppConfig) -> Path:
+    """
+    Save a user note to a timestamped markdown file.
+
+    Creates a markdown file with the current date/time as a header,
+    followed by the user's note text.
+
+    Args:
+        note_text: The text content of the note
+        config: Application configuration
+
+    Returns:
+        Path: Path to the created note file
+
+    Raises:
+        Exception: If file creation fails
+
+    Example:
+        >>> note = "Нужно добавить поддержку экспорта в PDF"
+        >>> note_path = fn_save_note(note, config)
+    """
+    from datetime import datetime
+
+    try:
+        # Ensure notes directory exists
+        config.NOTES_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Create filename with current timestamp
+        timestamp = datetime.now()
+        filename = timestamp.strftime("note_%Y-%m-%d_%H-%M-%S.md")
+        filepath = config.NOTES_DIR / filename
+
+        # Format timestamp for display in Russian format
+        display_timestamp = timestamp.strftime("%d %B %Y г., %H:%M:%S")
+
+        # Russian month names mapping
+        months_ru = {
+            "January": "января", "February": "февраля", "March": "марта",
+            "April": "апреля", "May": "мая", "June": "июня",
+            "July": "июля", "August": "августа", "September": "сентября",
+            "October": "октября", "November": "ноября", "December": "декабря"
+        }
+
+        # Replace English month with Russian
+        for eng, rus in months_ru.items():
+            display_timestamp = display_timestamp.replace(eng, rus)
+
+        # Build markdown content
+        content = f"# Заметка от {display_timestamp}\n\n{note_text.strip()}\n"
+
+        # Write to file
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        logger.info(f"Note saved: {filepath}")
+        return filepath
+
+    except Exception as e:
+        logger.error(f"Failed to save note: {e}")
         raise

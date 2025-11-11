@@ -31,6 +31,7 @@ from app_services import (
     fn_find_pdf_files,
     fn_generate_tags,
     fn_get_rag_response,
+    fn_save_note,
     fn_translate_text,
 )
 from app_storage import StorageService, fn_save_markdown_to_disk
@@ -70,6 +71,9 @@ class AppOrchestrator:
         self.is_processing = False
         self.is_chatting = False
 
+        # Chat history for context (list of {"role": "user"/"assistant", "content": "..."})
+        self.chat_history: list[dict] = []
+
         # Queue for worker threads to send messages to the GUI
         # This is the ONLY thread-safe way to update CustomTkinter widgets
         self.view_queue: queue.Queue = queue.Queue()
@@ -91,6 +95,12 @@ class AppOrchestrator:
         """
         self.view.bind_start_button(self.on_start_ingestion)
         self.view.bind_send_button(self.on_send_chat_message)
+
+        # Bind Chat tab buttons
+        self.view.clear_chat_button.configure(command=self.on_clear_chat)
+
+        # Bind Notes tab buttons
+        self.view.save_note_button.configure(command=self.on_save_note)
 
         # Bind Settings tab buttons
         self.view.test_connection_button.configure(command=self.on_test_connection)
@@ -267,15 +277,69 @@ class AppOrchestrator:
         # Display user message
         self.view.append_chat_message("user", query)
 
+        # Get search type from view
+        search_type = self.view.get_search_type()
+
         # Spawn worker thread
         worker = threading.Thread(
             target=rag_chat_worker,
-            args=(query, self.config, self.storage, self.view_queue),
+            args=(query, self.config, self.storage, self.view_queue, search_type, self.chat_history),
             daemon=True,
         )
         worker.start()
 
-        logger.info(f"Started chat query: {query[:50]}...")
+        logger.info(f"Started chat query: {query[:50]}... (search_type: {search_type})")
+
+    def on_save_note(self) -> None:
+        """
+        Handle the "Save Note" button click.
+
+        This method:
+        1. Gets the note text from the view
+        2. Saves it to a markdown file
+        3. Adds it to the vector database
+        """
+        # Get note text from view
+        note_text = self.view.get_note_text()
+
+        # Validate input
+        if not note_text or not note_text.strip():
+            self.view.show_note_status("Note is empty", is_error=True)
+            return
+
+        try:
+            # Save note to markdown file
+            note_path = fn_save_note(note_text, self.config)
+            logger.info(f"Note saved to: {note_path}")
+
+            # Read the saved file content (includes the header with date/time)
+            with open(note_path, 'r', encoding='utf-8') as f:
+                full_content = f.read()
+
+            # Add note to vector database
+            self.storage.add_note(full_content, note_path)
+
+            # Show success message
+            self.view.show_note_status("✓ Note saved successfully!", is_error=False)
+
+            # Clear note input
+            self.view.clear_note_text()
+
+        except Exception as e:
+            error_msg = f"Failed to save note: {e}"
+            self.view.show_note_status(f"✗ {error_msg}", is_error=True)
+            logger.error(error_msg, exc_info=True)
+
+    def on_clear_chat(self) -> None:
+        """
+        Handle the "Clear" button click in chat.
+
+        Clears the chat history (context).
+        """
+        self.chat_history.clear()
+        logger.info("Chat history cleared")
+        # Optionally show a visual confirmation
+        self.view.append_chat_message("system", "Chat history cleared")
 
     def on_save_settings(self) -> None:
         """
@@ -667,20 +731,24 @@ def rag_chat_worker(
     config: AppConfig,
     storage: StorageService,
     view_queue: queue.Queue,
+    search_type: Optional[str] = None,
+    chat_history: Optional[list[dict]] = None,
 ) -> None:
     """
     Worker function to handle RAG chat queries.
 
     This function runs in a separate thread and performs:
     1. Expand query with date variations (for better semantic search)
-    2. Retrieve relevant documents from vector database
-    3. Generate response using LLM with context
+    2. Retrieve relevant documents from vector database (filtered by type)
+    3. Generate response using LLM with context and chat history
 
     Args:
         query: The user's question
         config: Application configuration
         storage: Storage service instance
         view_queue: Queue for sending updates to the GUI
+        search_type: Filter search by type ("document", "note", or None for all)
+        chat_history: Previous chat messages for context (list of {"role": "...", "content": "..."})
     """
     try:
         # Step 1: Expand query with date variations for better search
@@ -688,9 +756,12 @@ def rag_chat_worker(
         if expanded_query != query:
             logger.info(f"Expanded query: '{query}' → '{expanded_query}'")
 
-        # Step 2: Search for relevant documents
-        logger.info(f"Searching for documents relevant to: {query[:50]}...")
-        retrieved_docs = storage.search_similar_documents(expanded_query, k=config.RAG_TOP_K)
+        # Step 2: Search for relevant documents (with type filter)
+        search_desc = f"{search_type}s" if search_type else "all documents"
+        logger.info(f"Searching {search_desc} for: {query[:50]}...")
+        retrieved_docs = storage.search_similar_documents(
+            expanded_query, k=config.RAG_TOP_K, search_type=search_type
+        )
 
         if not retrieved_docs:
             response = "I don't have any relevant information in my knowledge base to answer this question."
@@ -699,11 +770,20 @@ def rag_chat_worker(
             logger.info(f"Generating response with {len(retrieved_docs)} context documents")
             for i, doc in enumerate(retrieved_docs, 1):
                 source = doc.metadata.get('source', 'unknown')
+                doc_type = doc.metadata.get('type', 'unknown')
                 preview = doc.page_content[:100].replace('\n', ' ')
-                logger.info(f"  Doc {i}: {source} | Preview: {preview}...")
+                logger.info(f"  Doc {i} [{doc_type}]: {source} | Preview: {preview}...")
 
-            # Step 3: Generate response with context
-            response = fn_get_rag_response(query, retrieved_docs, config)
+            # Step 3: Generate response with context and history
+            response = fn_get_rag_response(query, retrieved_docs, config, chat_history or [])
+
+        # Step 4: Update chat history
+        if chat_history is not None:
+            chat_history.append({"role": "user", "content": query})
+            chat_history.append({"role": "assistant", "content": response})
+            # Keep only last 10 messages (5 exchanges) to avoid context overflow
+            if len(chat_history) > 10:
+                chat_history[:] = chat_history[-10:]
 
         # Send response to view
         view_queue.put(f"CHAT: assistant: {response}")

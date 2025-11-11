@@ -76,6 +76,9 @@ class AppView:
         self.markdown_output_path_var = ctk.StringVar(value="./output_markdown")
         self.changelog_path_var = ctk.StringVar(value="./changelog")
 
+        # Chat search type state variable
+        self.search_type_var = ctk.StringVar(value="all")  # "document", "note", or "all"
+
         # Create the UI
         self._create_widgets()
 
@@ -88,12 +91,14 @@ class AppView:
         # Add tabs
         self.tabview.add("Ingestion")
         self.tabview.add("Chat")
+        self.tabview.add("Notes")
         self.tabview.add("Changelog")
         self.tabview.add("Settings")
 
         # Setup each tab
         self._setup_ingestion_tab()
         self._setup_chat_tab()
+        self._setup_notes_tab()
         self._setup_changelog_tab()
         self._setup_settings_tab()
 
@@ -328,7 +333,37 @@ class AppView:
             text="💬 Chat with Your Knowledge Base",
             font=ctk.CTkFont(size=20, weight="bold"),
         )
-        title.pack(pady=(10, 20))
+        title.pack(pady=(10, 10))
+
+        # Search type selector frame
+        search_type_frame = ctk.CTkFrame(tab)
+        search_type_frame.pack(fill="x", padx=20, pady=(0, 10))
+
+        search_label = ctk.CTkLabel(
+            search_type_frame,
+            text="Искать в:",
+            font=ctk.CTkFont(size=12),
+        )
+        search_label.pack(side="left", padx=(10, 10))
+
+        self.search_type_selector = ctk.CTkSegmentedButton(
+            search_type_frame,
+            values=["Всё", "Документы", "Заметки"],
+            variable=self.search_type_var,
+            command=self._on_search_type_changed,
+        )
+        self.search_type_selector.pack(side="left", padx=10)
+        self.search_type_selector.set("Всё")
+
+        # Clear button
+        self.clear_chat_button = ctk.CTkButton(
+            search_type_frame,
+            text="Очистить историю",
+            command=None,  # Will be set by controller
+            width=150,
+            height=28,
+        )
+        self.clear_chat_button.pack(side="right", padx=10)
 
         # Chat history textbox
         history_label = ctk.CTkLabel(
@@ -374,6 +409,76 @@ class AppView:
         """Programmatically trigger the send button."""
         if self.send_button.cget("command"):
             self.send_button.cget("command")()
+
+    def _on_search_type_changed(self, value: str) -> None:
+        """Handle search type selector change."""
+        # Map Russian labels to internal values
+        mapping = {
+            "Всё": "all",
+            "Документы": "document",
+            "Заметки": "note",
+        }
+        self.search_type_var.set(mapping.get(value, "all"))
+
+    # ========================================================================
+    # Notes Tab
+    # ========================================================================
+
+    def _setup_notes_tab(self) -> None:
+        """Setup the Notes tab UI."""
+        tab = self.tabview.tab("Notes")
+
+        # Title
+        title = ctk.CTkLabel(
+            tab,
+            text="📝 Заметки",
+            font=ctk.CTkFont(size=20, weight="bold"),
+        )
+        title.pack(pady=(10, 20))
+
+        # Description
+        desc = ctk.CTkLabel(
+            tab,
+            text="Создавайте заметки, которые будут доступны для поиска в чате",
+            font=ctk.CTkFont(size=12),
+            text_color="gray",
+        )
+        desc.pack(pady=(0, 10))
+
+        # Note input frame
+        input_frame = ctk.CTkFrame(tab)
+        input_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+
+        # Note text area
+        self.note_textbox = ctk.CTkTextbox(
+            input_frame,
+            height=400,
+            wrap="word",
+        )
+        self.note_textbox.pack(fill="both", expand=True, padx=10, pady=10)
+        self._enable_mousewheel_scrolling(self.note_textbox)
+
+        # Button and status frame
+        control_frame = ctk.CTkFrame(tab)
+        control_frame.pack(fill="x", padx=20, pady=(0, 20))
+
+        # Save button
+        self.save_note_button = ctk.CTkButton(
+            control_frame,
+            text="💾 Сохранить заметку",
+            command=None,  # Will be set by controller
+            width=200,
+            height=40,
+        )
+        self.save_note_button.pack(side="left", padx=10, pady=10)
+
+        # Status label
+        self.note_status_label = ctk.CTkLabel(
+            control_frame,
+            text="",
+            font=ctk.CTkFont(size=12),
+        )
+        self.note_status_label.pack(side="left", padx=10)
 
     # ========================================================================
     # Changelog Tab
@@ -956,6 +1061,59 @@ class AppView:
             >>> view.clear_chat_input()
         """
         self.chat_entry.delete(0, "end")
+
+    def get_search_type(self) -> Optional[str]:
+        """
+        Get the current search type filter.
+
+        Returns:
+            Optional[str]: "document", "note", or None (for "all")
+
+        Example:
+            >>> search_type = view.get_search_type()
+        """
+        value = self.search_type_var.get()
+        if value == "all":
+            return None
+        return value
+
+    def get_note_text(self) -> str:
+        """
+        Get the current text in the note input field.
+
+        Returns:
+            str: The note text
+
+        Example:
+            >>> note = view.get_note_text()
+        """
+        return self.note_textbox.get("1.0", "end-1c")
+
+    def clear_note_text(self) -> None:
+        """
+        Clear the note input field.
+
+        Example:
+            >>> view.clear_note_text()
+        """
+        self.note_textbox.delete("1.0", "end")
+
+    def show_note_status(self, message: str, is_error: bool = False) -> None:
+        """
+        Display a status message for note operations.
+
+        Args:
+            message: The status message to display
+            is_error: Whether this is an error message
+
+        Example:
+            >>> view.show_note_status("✓ Note saved!", is_error=False)
+            >>> view.show_note_status("✗ Failed to save", is_error=True)
+        """
+        self.note_status_label.configure(
+            text=message,
+            text_color="red" if is_error else "green"
+        )
 
     def get_llm_settings(self) -> dict:
         """
