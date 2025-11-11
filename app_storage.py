@@ -159,12 +159,15 @@ class StorageService:
         try:
             logger.info(f"Adding {len(docs)} documents to vector database")
 
-            # Log first 200 chars of each document for debugging
+            # Log first 500 chars of each document for debugging
             for i, doc in enumerate(docs[:5], 1):  # Only log first 5 to avoid spam
                 source = doc.metadata.get('source', 'unknown')
-                preview = doc.page_content[:200].replace('\n', ' ')
+                preview = doc.page_content[:500].replace('\n', ' ')
                 logger.info(f"  Chunk {i}/{len(docs)}: {source}")
                 logger.info(f"    Content preview: {preview}...")
+                # Check if date keywords present
+                if any(month in doc.page_content.lower() for month in ['август', 'august', 'июль', 'july', 'сентябр', 'september']):
+                    logger.info(f"    ✅ Contains date keywords!")
 
             # Add documents and generate embeddings
             self._vectorstore.add_documents(docs)
