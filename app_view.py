@@ -1288,21 +1288,44 @@ class AppView:
                 mouse_over_canvas[0] = False
                 logger.info(f"🔴 Mouse LEFT canvas area")
 
-            # CRITICAL: Bind to widget (which has focus), not canvas
-            # On macOS, mousewheel events only fire on focused widget
+            # CRITICAL FIX: Use CustomTkinter's own _mouse_wheel_all method
+            # but only when mouse is over THIS canvas
 
-            # Approach 1: Direct binding to widget with focus
-            widget.bind("<MouseWheel>", on_mousewheel)
-            logger.info(f"✓ Bound <MouseWheel> to widget (focused widget)")
+            if hasattr(widget, '_mouse_wheel_all'):
+                original_handler = widget._mouse_wheel_all
 
-            # Approach 2: Also bind to canvas as fallback
-            canvas.bind("<MouseWheel>", on_mousewheel, add="+")
-            logger.info(f"✓ Bound <MouseWheel> to canvas")
+                def wrapped_handler(event):
+                    """Wrapper that only scrolls if mouse is over this canvas"""
+                    logger.info(f"🖱️  _mouse_wheel_all called: delta={event.delta}, mouse_over={mouse_over_canvas[0]}")
 
-            # Approach 3: Try Button-4/Button-5 for Linux compatibility
-            widget.bind("<Button-4>", lambda e: on_mousewheel(type('Event', (), {'delta': 1, 'widget': e.widget})()))
-            widget.bind("<Button-5>", lambda e: on_mousewheel(type('Event', (), {'delta': -1, 'widget': e.widget})()))
-            logger.info(f"✓ Bound <Button-4>/<Button-5> to widget")
+                    if not mouse_over_canvas[0]:
+                        logger.info(f"   ⏭️  Skipping - mouse not over this canvas")
+                        return
+
+                    logger.info(f"   → Calling original CustomTkinter handler")
+                    try:
+                        result = original_handler(event)
+                        logger.info(f"   ✓ Scroll executed via CustomTkinter")
+                        return result
+                    except Exception as e:
+                        logger.error(f"   ✗ Scroll failed: {e}")
+
+                # CRITICAL: Use bind_all like CustomTkinter does
+                self.master.bind_all("<MouseWheel>", wrapped_handler, add="+")
+                logger.info(f"✓ Bound <MouseWheel> via bind_all with CustomTkinter's handler")
+            else:
+                logger.warning(f"⚠️  Widget does not have _mouse_wheel_all method!")
+
+                # Fallback: direct scrolling
+                def on_mousewheel(event):
+                    if not mouse_over_canvas[0]:
+                        return
+                    logger.info(f"🖱️  MouseWheel fallback: delta={event.delta}")
+                    scroll_amount = -1 * int(event.delta)
+                    canvas.yview_scroll(scroll_amount, "units")
+
+                self.master.bind_all("<MouseWheel>", on_mousewheel, add="+")
+                logger.info(f"✓ Bound <MouseWheel> via bind_all (fallback)")
 
             # Bind Enter/Leave to track mouse position
             canvas.bind("<Enter>", on_enter, add="+")
