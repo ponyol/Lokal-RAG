@@ -25,6 +25,7 @@ from app_services import (
     fn_call_ollama,
     fn_cleanup_pdf_memory,
     fn_create_text_chunks,
+    fn_expand_query_with_dates,
     fn_extract_markdown,
     fn_fetch_web_article,
     fn_find_pdf_files,
@@ -671,8 +672,9 @@ def rag_chat_worker(
     Worker function to handle RAG chat queries.
 
     This function runs in a separate thread and performs:
-    1. Retrieve relevant documents from vector database
-    2. Generate response using LLM with context
+    1. Expand query with date variations (for better semantic search)
+    2. Retrieve relevant documents from vector database
+    3. Generate response using LLM with context
 
     Args:
         query: The user's question
@@ -681,14 +683,19 @@ def rag_chat_worker(
         view_queue: Queue for sending updates to the GUI
     """
     try:
-        # Step 1: Search for relevant documents
+        # Step 1: Expand query with date variations for better search
+        expanded_query = fn_expand_query_with_dates(query)
+        if expanded_query != query:
+            logger.info(f"Expanded query: '{query}' → '{expanded_query}'")
+
+        # Step 2: Search for relevant documents
         logger.info(f"Searching for documents relevant to: {query[:50]}...")
-        retrieved_docs = storage.search_similar_documents(query, k=config.RAG_TOP_K)
+        retrieved_docs = storage.search_similar_documents(expanded_query, k=config.RAG_TOP_K)
 
         if not retrieved_docs:
             response = "I don't have any relevant information in my knowledge base to answer this question."
         else:
-            # Step 2: Generate response with context
+            # Step 3: Generate response with context
             logger.info(f"Generating response with {len(retrieved_docs)} context documents")
             response = fn_get_rag_response(query, retrieved_docs, config)
 
