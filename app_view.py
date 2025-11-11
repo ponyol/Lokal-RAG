@@ -1226,51 +1226,44 @@ class AppView:
         if hasattr(widget, '_parent_canvas'):
             canvas = widget._parent_canvas
 
-            # CRITICAL FIX: Reset master to canvas to fix widget hierarchy
-            # This allows check_if_master_is_canvas() to properly validate
-            # the widget chain and enable mousewheel scrolling
-            widget.master = canvas
+            # Use a mutable container to track if mouse is over this specific frame
+            mouse_over = {'active': False}
+
+            def _on_enter(event):
+                """Track when mouse enters the scrollable frame."""
+                mouse_over['active'] = True
+
+            def _on_leave(event):
+                """Track when mouse leaves the scrollable frame."""
+                mouse_over['active'] = False
 
             def _on_mousewheel(event):
                 """Handle mouse wheel scroll event for scrollable frame."""
-                if sys.platform == "darwin":  # macOS
-                    # macOS trackpad: use event.delta directly
-                    canvas.yview_scroll(-1 * int(event.delta), "units")
-                elif sys.platform == "win32":  # Windows
-                    canvas.yview_scroll(-1 * int(event.delta / 120), "units")
-                else:  # Linux
-                    if event.num == 4:
-                        canvas.yview_scroll(-1, "units")
-                    elif event.num == 5:
-                        canvas.yview_scroll(1, "units")
+                # Only scroll if mouse is over this specific frame
+                if mouse_over['active']:
+                    if sys.platform == "darwin":  # macOS
+                        # macOS trackpad: use event.delta directly
+                        canvas.yview_scroll(int(-1 * event.delta), "units")
+                    elif sys.platform == "win32":  # Windows
+                        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+                    else:  # Linux
+                        if event.num == 4:
+                            canvas.yview_scroll(-1, "units")
+                        elif event.num == 5:
+                            canvas.yview_scroll(1, "units")
 
-            def _bind_tree(w):
-                """Recursively bind to widget and all children."""
-                if sys.platform != "linux":
-                    w.bind("<MouseWheel>", _on_mousewheel, add="+")
-                else:
-                    w.bind("<Button-4>", _on_mousewheel, add="+")
-                    w.bind("<Button-5>", _on_mousewheel, add="+")
+            # Bind enter/leave events to track mouse position
+            widget.bind("<Enter>", _on_enter, add="+")
+            widget.bind("<Leave>", _on_leave, add="+")
 
-                # Bind to all children
-                try:
-                    for child in w.winfo_children():
-                        _bind_tree(child)
-                except:
-                    pass
-
-            # Bind to canvas, frame, and all current children
-            _bind_tree(canvas)
-            _bind_tree(widget)
-
-            # Also schedule a delayed bind to catch dynamically created widgets
-            def _delayed_bind():
-                try:
-                    _bind_tree(widget)
-                except:
-                    pass
-
-            widget.after(100, _delayed_bind)
+            # Bind mousewheel with bind_all (not just to canvas)
+            if sys.platform != "linux":
+                # macOS and Windows: MouseWheel event
+                widget.bind_all("<MouseWheel>", _on_mousewheel, add="+")
+            else:
+                # Linux: Button-4 and Button-5 events
+                widget.bind_all("<Button-4>", _on_mousewheel, add="+")
+                widget.bind_all("<Button-5>", _on_mousewheel, add="+")
 
         else:
             # CTkTextbox - bind directly to the textbox
