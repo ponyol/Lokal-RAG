@@ -9,6 +9,7 @@ brotli==1.2.0   # Brotli decompression for web content
 # LLM Providers
 anthropic==0.40.0  # Claude API (claude-3-5-sonnet, claude-3-opus, claude-3-haiku)
 google-generativeai==0.8.3  # Gemini API (gemini-1.5-pro, gemini-1.5-flash)
+mistralai==1.2.4  # Mistral AI API (mistral-large, mistral-small)
 
 # Vector Database & Embeddings
 chromadb==1.3.4  # Modern ChromaDB with no multiprocessing (fixes semaphore leaks!)

@@ -24,15 +24,17 @@ class AppConfig:
     Immutable configuration for the Lokal-RAG application.
 
     Attributes:
-        LLM_PROVIDER: Which LLM provider to use ("ollama", "lmstudio", "claude", or "gemini")
+        LLM_PROVIDER: Which LLM provider to use ("ollama", "lmstudio", "claude", "gemini", or "mistral")
         OLLAMA_BASE_URL: URL of the local Ollama instance
         OLLAMA_MODEL: Name of the Ollama model to use for translation, tagging, and RAG
         LMSTUDIO_BASE_URL: URL of the local LM Studio instance
         LMSTUDIO_MODEL: Name of the LM Studio model to use for translation, tagging, and RAG
         CLAUDE_API_KEY: Anthropic API key for Claude models
-        CLAUDE_MODEL: Claude model to use (claude-3-5-sonnet-20241022, claude-3-opus-20240229, claude-3-haiku-20240307)
+        CLAUDE_MODEL: Claude model to use (claude-3-5-sonnet-20241022, claude-3-7-sonnet-20250219, claude-3-opus-20240229)
         GEMINI_API_KEY: Google API key for Gemini models
-        GEMINI_MODEL: Gemini model to use (gemini-1.5-pro, gemini-1.5-flash, gemini-pro)
+        GEMINI_MODEL: Gemini model to use (gemini-2.5-flash, gemini-2.5-pro-preview-03-25, gemini-2.0-flash-exp)
+        MISTRAL_API_KEY: Mistral AI API key for Mistral models
+        MISTRAL_MODEL: Mistral model to use (mistral-large-2411, mistral-small-2506, mistral-small-latest)
         LLM_REQUEST_TIMEOUT: Timeout for LLM API requests (in seconds)
         EMBEDDING_MODEL: Name of the HuggingFace embedding model
         VECTOR_DB_PATH: Path to the ChromaDB persistent storage
@@ -55,15 +57,17 @@ class AppConfig:
     """
 
     # LLM Configuration
-    LLM_PROVIDER: str = "ollama"  # "ollama", "lmstudio", "claude", or "gemini"
+    LLM_PROVIDER: str = "ollama"  # "ollama", "lmstudio", "claude", "gemini", or "mistral"
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "qwen2.5:7b-instruct"
     LMSTUDIO_BASE_URL: str = "http://localhost:1234/v1"
     LMSTUDIO_MODEL: str = "meta-llama-3.1-8b-instruct"
     CLAUDE_API_KEY: str = ""  # Anthropic API key (get from https://console.anthropic.com/)
-    CLAUDE_MODEL: str = "claude-3-5-sonnet-20240620"  # claude-3-5-sonnet-20240620, claude-3-opus-20240229, claude-3-haiku-20240307
+    CLAUDE_MODEL: str = "claude-3-5-sonnet-20241022"  # claude-3-5-sonnet-20241022, claude-3-7-sonnet-20250219, claude-3-opus-20240229
     GEMINI_API_KEY: str = ""  # Google API key (get from https://makersuite.google.com/app/apikey)
-    GEMINI_MODEL: str = "gemini-1.5-flash"  # gemini-1.5-flash, gemini-1.5-pro, gemini-2.0-flash-exp
+    GEMINI_MODEL: str = "gemini-2.5-flash"  # gemini-2.5-flash, gemini-2.5-pro-preview-03-25, gemini-2.0-flash-exp
+    MISTRAL_API_KEY: str = ""  # Mistral AI API key (get from https://console.mistral.ai/)
+    MISTRAL_MODEL: str = "mistral-small-latest"  # mistral-large-2411, mistral-small-2506, mistral-small-latest
     LLM_REQUEST_TIMEOUT: int = 300  # 5 minutes for large documents
 
     # Embedding Configuration
@@ -231,6 +235,12 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
 
     if "gemini_model" in settings:
         overrides["GEMINI_MODEL"] = settings["gemini_model"]
+
+    if "mistral_api_key" in settings:
+        overrides["MISTRAL_API_KEY"] = settings["mistral_api_key"]
+
+    if "mistral_model" in settings:
+        overrides["MISTRAL_MODEL"] = settings["mistral_model"]
 
     if "timeout" in settings:
         overrides["LLM_REQUEST_TIMEOUT"] = settings["timeout"]

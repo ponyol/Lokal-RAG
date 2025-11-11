@@ -63,9 +63,11 @@ class AppView:
         self.lmstudio_url_var = ctk.StringVar(value="http://localhost:1234/v1")
         self.lmstudio_model_var = ctk.StringVar(value="meta-llama-3.1-8b-instruct")
         self.claude_api_key_var = ctk.StringVar(value="")
-        self.claude_model_var = ctk.StringVar(value="claude-3-5-sonnet-20240620")
+        self.claude_model_var = ctk.StringVar(value="claude-3-5-sonnet-20241022")
         self.gemini_api_key_var = ctk.StringVar(value="")
-        self.gemini_model_var = ctk.StringVar(value="gemini-1.5-flash")
+        self.gemini_model_var = ctk.StringVar(value="gemini-2.5-pro-preview-03-25")
+        self.mistral_api_key_var = ctk.StringVar(value="")
+        self.mistral_model_var = ctk.StringVar(value="mistral-small-latest")
         self.timeout_var = ctk.StringVar(value="300")
         self.translation_chunk_var = ctk.StringVar(value="2000")
 
@@ -550,7 +552,7 @@ class AppView:
         self.provider_dropdown = ctk.CTkOptionMenu(
             provider_frame,
             variable=self.llm_provider_var,
-            values=["ollama", "lmstudio", "claude", "gemini"],
+            values=["ollama", "lmstudio", "claude", "gemini", "mistral"],
             command=self._on_provider_changed,
         )
         self.provider_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
@@ -654,9 +656,9 @@ class AppView:
             claude_frame,
             variable=self.claude_model_var,
             values=[
-                "claude-3-5-sonnet-20240620",  # Claude 3.5 Sonnet (latest stable)
+                "claude-3-5-sonnet-20241022",  # Claude 3.5 Sonnet (October 2024)
+                "claude-3-7-sonnet-20250219",  # Claude 3.7 Sonnet (February 2025) - Latest
                 "claude-3-opus-20240229",      # Claude 3 Opus
-                "claude-3-haiku-20240307",     # Claude 3 Haiku
             ],
             width=400,
         )
@@ -699,13 +701,58 @@ class AppView:
             gemini_frame,
             variable=self.gemini_model_var,
             values=[
-                "gemini-1.5-flash",        # Fast and versatile (recommended)
-                "gemini-1.5-pro",          # More powerful, slower
-                "gemini-2.0-flash-exp",    # Experimental 2.0 (if available)
+                "gemini-2.5-pro-preview-03-25",        # Fast and versatile (recommended)
+                "gemini-2.5-flash-preview-09-2025",    # More powerful, slower
+                "gemini-2.5-pro-preview-03-25",        # Experimental 2.0 (if available)
             ],
             width=400,
         )
         self.gemini_model_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
+
+        # Mistral settings frame
+        mistral_frame = ctk.CTkFrame(scrollable_frame)
+        mistral_frame.pack(fill="x", padx=20, pady=10)
+
+        mistral_title = ctk.CTkLabel(
+            mistral_frame,
+            text="Mistral AI Settings:",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        mistral_title.pack(anchor="w", padx=10, pady=(10, 5))
+
+        mistral_api_key_label = ctk.CTkLabel(mistral_frame, text="API Key:")
+        mistral_api_key_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.mistral_api_key_entry = ctk.CTkEntry(
+            mistral_frame,
+            textvariable=self.mistral_api_key_var,
+            width=400,
+            show="*",
+        )
+        self.mistral_api_key_entry.pack(anchor="w", padx=20, pady=(0, 5))
+
+        mistral_help = ctk.CTkLabel(
+            mistral_frame,
+            text="Get your API key from: https://console.mistral.ai/",
+            font=ctk.CTkFont(size=10),
+            text_color="gray",
+        )
+        mistral_help.pack(anchor="w", padx=20, pady=(0, 5))
+
+        mistral_model_label = ctk.CTkLabel(mistral_frame, text="Model:")
+        mistral_model_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.mistral_model_dropdown = ctk.CTkOptionMenu(
+            mistral_frame,
+            variable=self.mistral_model_var,
+            values=[
+                "mistral-small-latest",       # Small, fast (recommended)
+                "mistral-large-2411",         # Large, powerful (Nov 2024)
+                "mistral-small-2506",         # Small 3.2 (June 2025)
+            ],
+            width=400,
+        )
+        self.mistral_model_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
 
         # Timeout setting
         timeout_frame = ctk.CTkFrame(scrollable_frame)
@@ -931,6 +978,8 @@ class AppView:
             "claude_model": self.claude_model_var.get(),
             "gemini_api_key": self.gemini_api_key_var.get(),
             "gemini_model": self.gemini_model_var.get(),
+            "mistral_api_key": self.mistral_api_key_var.get(),
+            "mistral_model": self.mistral_model_var.get(),
             "timeout": int(self.timeout_var.get()),
             "translation_chunk_size": int(self.translation_chunk_var.get()),
             "vector_db_path": self.vector_db_path_var.get(),
@@ -975,6 +1024,12 @@ class AppView:
 
         if "gemini_model" in settings:
             self.gemini_model_var.set(settings["gemini_model"])
+
+        if "mistral_api_key" in settings:
+            self.mistral_api_key_var.set(settings["mistral_api_key"])
+
+        if "mistral_model" in settings:
+            self.mistral_model_var.set(settings["mistral_model"])
 
         if "timeout" in settings:
             self.timeout_var.set(str(settings["timeout"]))
@@ -1160,6 +1215,9 @@ class AppView:
         Note:
             This is particularly important for macOS users where trackpad
             scrolling is not enabled by default in CustomTkinter widgets.
+
+            The bind is applied recursively to all child widgets to ensure
+            scrolling works even when the cursor is over buttons, labels, etc.
         """
         import sys
 
@@ -1189,6 +1247,21 @@ class AppView:
                 elif event.num == 5:
                     widget.yview_scroll(1, "units")
 
+        def _bind_to_widget(w):
+            """Recursively bind scroll events to widget and all its children."""
+            # Bind mouse wheel events
+            if sys.platform != "linux":
+                # macOS and Windows: use MouseWheel event
+                w.bind("<MouseWheel>", handler, add="+")
+            else:
+                # Linux: use Button-4 and Button-5 events
+                w.bind("<Button-4>", handler, add="+")
+                w.bind("<Button-5>", handler, add="+")
+
+            # Recursively bind to all children
+            for child in w.winfo_children():
+                _bind_to_widget(child)
+
         # Determine widget type and bind appropriate handler
         if hasattr(widget, '_parent_canvas'):
             # CTkScrollableFrame
@@ -1197,14 +1270,8 @@ class AppView:
             # CTkTextbox
             handler = _on_mousewheel_textbox
 
-        # Bind mouse wheel events
-        if sys.platform != "linux":
-            # macOS and Windows: use MouseWheel event
-            widget.bind("<MouseWheel>", handler)
-        else:
-            # Linux: use Button-4 and Button-5 events
-            widget.bind("<Button-4>", handler)
-            widget.bind("<Button-5>", handler)
+        # Bind to the widget and all its children
+        _bind_to_widget(widget)
 
     # ========================================================================
     # Public API - Event Binding

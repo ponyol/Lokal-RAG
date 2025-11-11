@@ -77,6 +77,8 @@ def fn_call_llm(
         return _call_claude(prompt, system_prompt, config)
     elif config.LLM_PROVIDER == "gemini":
         return _call_gemini(prompt, system_prompt, config)
+    elif config.LLM_PROVIDER == "mistral":
+        return _call_mistral(prompt, system_prompt, config)
     else:
         raise ValueError(f"Unsupported LLM provider: {config.LLM_PROVIDER}")
 
@@ -400,7 +402,7 @@ def _call_gemini(
         Exception: If API key is missing or API call fails
 
     Example:
-        >>> config = AppConfig(GEMINI_API_KEY="AIza...", GEMINI_MODEL="gemini-1.5-flash")
+        >>> config = AppConfig(GEMINI_API_KEY="AIza...", GEMINI_MODEL="gemini-2.5-flash")
         >>> response = _call_gemini("Hello", "You are helpful", config)
     """
     try:
@@ -449,6 +451,78 @@ def _call_gemini(
 
     except Exception as e:
         raise Exception(f"Gemini API error: {e}")
+
+
+def _call_mistral(
+    prompt: str,
+    system_prompt: str,
+    config: AppConfig,
+) -> str:
+    """
+    Call Mistral AI API with the given prompt.
+
+    Uses the official Mistral AI Python SDK to interact with Mistral models.
+    Requires MISTRAL_API_KEY to be set in config.
+
+    Args:
+        prompt: The user's input text
+        system_prompt: System instructions for Mistral
+        config: Application configuration with API key and model
+
+    Returns:
+        str: Mistral's response text
+
+    Raises:
+        ImportError: If mistralai package is not installed
+        Exception: If API key is missing or API call fails
+
+    Example:
+        >>> config = AppConfig(MISTRAL_API_KEY="...", MISTRAL_MODEL="mistral-small-latest")
+        >>> response = _call_mistral("Hello", "You are helpful", config)
+    """
+    try:
+        from mistralai import Mistral
+    except ImportError:
+        raise ImportError(
+            "The 'mistralai' package is required for Mistral API. "
+            "Install it with: pip install mistralai"
+        )
+
+    if not config.MISTRAL_API_KEY:
+        raise ValueError(
+            "MISTRAL_API_KEY is not set. Please add your Mistral AI API key in Settings."
+        )
+
+    try:
+        # Create Mistral client
+        client = Mistral(api_key=config.MISTRAL_API_KEY)
+
+        # Build messages list with system prompt
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ]
+
+        # Call Mistral API
+        response = client.chat.complete(
+            model=config.MISTRAL_MODEL,
+            messages=messages,
+            temperature=0.7,
+            max_tokens=8192,
+        )
+
+        # Extract text from response
+        if not response.choices or len(response.choices) == 0:
+            raise ValueError("Empty response from Mistral API")
+
+        message = response.choices[0].message
+        if not message.content:
+            raise ValueError("Empty message content from Mistral API")
+
+        return message.content.strip()
+
+    except Exception as e:
+        raise Exception(f"Mistral API error: {e}")
 
 
 # ============================================================================
@@ -1444,8 +1518,8 @@ def fn_generate_summary(text: str, config: AppConfig) -> str:
 
         # Call LLM with summary prompt
         summary = fn_call_llm(
+            prompt=truncated_text,
             system_prompt=SUMMARY_SYSTEM_PROMPT,
-            user_message=truncated_text,
             config=config,
         )
 
