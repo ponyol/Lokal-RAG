@@ -1270,14 +1270,14 @@ class AppView:
                 mouse_over_canvas[0] = False
                 logger.info(f"🔴 Mouse LEFT canvas area")
 
-            # CRITICAL: Use bind_all for mousewheel events (they don't propagate normally on macOS)
+            # CRITICAL: Use bind_all on root window for mousewheel events (they don't propagate normally on macOS)
             # This is how CustomTkinter does it internally
-            self.bind_all("<MouseWheel>", on_mousewheel, add="+")
+            self.root.bind_all("<MouseWheel>", on_mousewheel, add="+")
             logger.info(f"✓ Bound <MouseWheel> with bind_all")
 
             # Also try Button-4/Button-5 for Linux-style scrolling (may work on macOS)
-            self.bind_all("<Button-4>", lambda e: on_mousewheel(type('Event', (), {'delta': 1, 'widget': e.widget})()), add="+")
-            self.bind_all("<Button-5>", lambda e: on_mousewheel(type('Event', (), {'delta': -1, 'widget': e.widget})()), add="+")
+            self.root.bind_all("<Button-4>", lambda e: on_mousewheel(type('Event', (), {'delta': 1, 'widget': e.widget})()), add="+")
+            self.root.bind_all("<Button-5>", lambda e: on_mousewheel(type('Event', (), {'delta': -1, 'widget': e.widget})()), add="+")
             logger.info(f"✓ Bound <Button-4>/<Button-5> with bind_all")
 
             # Bind Enter/Leave to track mouse position
