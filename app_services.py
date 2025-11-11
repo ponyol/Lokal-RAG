@@ -443,14 +443,64 @@ def _call_gemini(
             request_options={"timeout": config.LLM_REQUEST_TIMEOUT},
         )
 
-        # Extract text from response
-        if not response.text:
-            raise ValueError("Empty response from Gemini API")
+        # Check if response has candidates
+        if not response.candidates:
+            raise ValueError("Gemini API returned no candidates in response")
 
-        return response.text.strip()
+        # Check finish reason
+        candidate = response.candidates[0]
+        finish_reason = candidate.finish_reason
+
+        # Map finish_reason enum to string for logging
+        finish_reason_name = str(finish_reason).split('.')[-1] if finish_reason else "UNKNOWN"
+
+        # Handle different finish reasons
+        if finish_reason_name == "STOP" or finish_reason == 1:
+            # Success case
+            if response.text:
+                return response.text.strip()
+            else:
+                raise ValueError("Gemini response marked as STOP but has no text")
+
+        elif finish_reason_name == "SAFETY" or finish_reason == 2:
+            # Content blocked by safety filters
+            safety_ratings = candidate.safety_ratings if hasattr(candidate, 'safety_ratings') else []
+            blocked_categories = [
+                f"{rating.category.name}: {rating.probability.name}"
+                for rating in safety_ratings
+                if hasattr(rating, 'category') and hasattr(rating, 'probability')
+            ]
+            detail = f" ({', '.join(blocked_categories)})" if blocked_categories else ""
+            raise ValueError(
+                f"Gemini blocked content due to safety filters{detail}. "
+                "Try with different content or use another LLM provider."
+            )
+
+        elif finish_reason_name == "MAX_TOKENS" or finish_reason == 3:
+            # Reached max tokens limit
+            raise ValueError(
+                "Gemini reached maximum token limit. Try splitting content into smaller chunks."
+            )
+
+        elif finish_reason_name == "RECITATION" or finish_reason == 4:
+            # Content blocked due to recitation of training data
+            raise ValueError(
+                "Gemini blocked content due to recitation detection. "
+                "Try rephrasing or use another LLM provider."
+            )
+
+        else:
+            # Unknown or other finish reason
+            raise ValueError(
+                f"Gemini stopped generation with reason: {finish_reason_name} (code: {finish_reason})"
+            )
 
     except Exception as e:
-        raise Exception(f"Gemini API error: {e}")
+        # Re-raise with more context
+        error_msg = str(e)
+        if "safety filters" in error_msg.lower() or "SAFETY" in error_msg:
+            logger.warning(f"Gemini safety filter triggered: {error_msg}")
+        raise Exception(f"Gemini API error: {error_msg}")
 
 
 def _call_mistral(
