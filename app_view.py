@@ -1224,19 +1224,46 @@ class AppView:
 
         # Check if this is a CTkScrollableFrame with internal canvas
         if hasattr(widget, '_parent_canvas'):
+            import logging
+            logger = logging.getLogger(__name__)
             canvas = widget._parent_canvas
 
+            logger.info(f"🔧 Setting up mousewheel for CTkScrollableFrame")
+            logger.info(f"   Platform: {sys.platform}")
+            logger.info(f"   Canvas: {canvas}")
+
+            # Store original method for logging
+            original_check = widget.check_if_master_is_canvas
+
             # HACK: Override CustomTkinter's check_if_master_is_canvas to always return True
-            # This fixes the broken hierarchy checking when frame is created inside a class
             def patched_check(w):
                 """Always return True to enable scrolling."""
+                logger.info(f"✓ check_if_master_is_canvas called for widget: {w}")
                 return True
 
             # Replace the broken method with our patched version
             widget.check_if_master_is_canvas = patched_check
 
-            # That's it! CustomTkinter's existing _mouse_wheel_all will now work
-            # because check_if_master_is_canvas always returns True
+            # Also wrap _mouse_wheel_all to add logging
+            if hasattr(widget, '_mouse_wheel_all'):
+                original_wheel = widget._mouse_wheel_all
+
+                def logged_wheel(event):
+                    logger.info(f"🖱️  MouseWheel event: delta={event.delta}, widget={event.widget}")
+                    try:
+                        result = original_wheel(event)
+                        logger.info(f"   → Scroll executed successfully")
+                        return result
+                    except Exception as e:
+                        logger.error(f"   ✗ Scroll failed: {e}")
+                        raise
+
+                widget._mouse_wheel_all = logged_wheel
+                logger.info(f"✓ Wrapped _mouse_wheel_all with logging")
+            else:
+                logger.warning(f"⚠️  Widget does not have _mouse_wheel_all method!")
+
+            logger.info(f"✓ Mousewheel setup complete for CTkScrollableFrame")
 
         else:
             # CTkTextbox - bind directly to the textbox
