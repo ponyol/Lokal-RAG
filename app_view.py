@@ -1216,62 +1216,67 @@ class AppView:
             This is particularly important for macOS users where trackpad
             scrolling is not enabled by default in CustomTkinter widgets.
 
-            The bind is applied recursively to all child widgets to ensure
-            scrolling works even when the cursor is over buttons, labels, etc.
+            For CTkScrollableFrame, we bind directly to the internal canvas
+            and use <Enter>/<Leave> events to enable/disable scrolling when
+            the mouse enters/leaves the widget area.
         """
         import sys
 
-        def _on_mousewheel(event):
-            """Handle mouse wheel scroll event."""
-            # macOS and Windows use event.delta
-            if sys.platform == "darwin":  # macOS
-                widget._parent_canvas.yview_scroll(-1 * int(event.delta), "units")
-            elif sys.platform == "win32":  # Windows
-                widget._parent_canvas.yview_scroll(-1 * int(event.delta / 120), "units")
-            else:  # Linux
-                if event.num == 4:
-                    widget._parent_canvas.yview_scroll(-1, "units")
-                elif event.num == 5:
-                    widget._parent_canvas.yview_scroll(1, "units")
-
-        def _on_mousewheel_textbox(event):
-            """Handle mouse wheel scroll event for textbox."""
-            # CTkTextbox doesn't have _parent_canvas, use yview directly
-            if sys.platform == "darwin":  # macOS
-                widget.yview_scroll(-1 * int(event.delta), "units")
-            elif sys.platform == "win32":  # Windows
-                widget.yview_scroll(-1 * int(event.delta / 120), "units")
-            else:  # Linux
-                if event.num == 4:
-                    widget.yview_scroll(-1, "units")
-                elif event.num == 5:
-                    widget.yview_scroll(1, "units")
-
-        def _bind_to_widget(w):
-            """Recursively bind scroll events to widget and all its children."""
-            # Bind mouse wheel events
-            if sys.platform != "linux":
-                # macOS and Windows: use MouseWheel event
-                w.bind("<MouseWheel>", handler, add="+")
-            else:
-                # Linux: use Button-4 and Button-5 events
-                w.bind("<Button-4>", handler, add="+")
-                w.bind("<Button-5>", handler, add="+")
-
-            # Recursively bind to all children
-            for child in w.winfo_children():
-                _bind_to_widget(child)
-
-        # Determine widget type and bind appropriate handler
+        # Check if this is a CTkScrollableFrame with internal canvas
         if hasattr(widget, '_parent_canvas'):
-            # CTkScrollableFrame
-            handler = _on_mousewheel
-        else:
-            # CTkTextbox
-            handler = _on_mousewheel_textbox
+            canvas = widget._parent_canvas
 
-        # Bind to the widget and all its children
-        _bind_to_widget(widget)
+            def _on_mousewheel(event):
+                """Handle mouse wheel scroll event for scrollable frame."""
+                if sys.platform == "darwin":  # macOS
+                    canvas.yview_scroll(-1 * int(event.delta), "units")
+                elif sys.platform == "win32":  # Windows
+                    canvas.yview_scroll(-1 * int(event.delta / 120), "units")
+                else:  # Linux
+                    if event.num == 4:
+                        canvas.yview_scroll(-1, "units")
+                    elif event.num == 5:
+                        canvas.yview_scroll(1, "units")
+
+            def _bind_mousewheel(event):
+                """Bind mousewheel events when mouse enters the widget."""
+                if sys.platform != "linux":
+                    canvas.bind_all("<MouseWheel>", _on_mousewheel)
+                else:
+                    canvas.bind_all("<Button-4>", _on_mousewheel)
+                    canvas.bind_all("<Button-5>", _on_mousewheel)
+
+            def _unbind_mousewheel(event):
+                """Unbind mousewheel events when mouse leaves the widget."""
+                if sys.platform != "linux":
+                    canvas.unbind_all("<MouseWheel>")
+                else:
+                    canvas.unbind_all("<Button-4>")
+                    canvas.unbind_all("<Button-5>")
+
+            # Bind enter/leave events to widget
+            widget.bind("<Enter>", _bind_mousewheel)
+            widget.bind("<Leave>", _unbind_mousewheel)
+
+        else:
+            # CTkTextbox - bind directly to the textbox
+            def _on_mousewheel_textbox(event):
+                """Handle mouse wheel scroll event for textbox."""
+                if sys.platform == "darwin":  # macOS
+                    widget.yview_scroll(-1 * int(event.delta), "units")
+                elif sys.platform == "win32":  # Windows
+                    widget.yview_scroll(-1 * int(event.delta / 120), "units")
+                else:  # Linux
+                    if event.num == 4:
+                        widget.yview_scroll(-1, "units")
+                    elif event.num == 5:
+                        widget.yview_scroll(1, "units")
+
+            if sys.platform != "linux":
+                widget.bind("<MouseWheel>", _on_mousewheel_textbox)
+            else:
+                widget.bind("<Button-4>", _on_mousewheel_textbox)
+                widget.bind("<Button-5>", _on_mousewheel_textbox)
 
     # ========================================================================
     # Public API - Event Binding
