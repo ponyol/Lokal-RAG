@@ -23,6 +23,7 @@ langchain-chroma==1.0.0  # ChromaDB integration
 langchain-text-splitters==1.0.0  # Text splitting utilities
 langchain-huggingface==1.0.1  # HuggingFace embeddings integration
 langchain-community==0.4.1  # Community-contributed retrievers (BM25, etc.)
+langchain-classic==1.0.1  # Legacy retrievers (EnsembleRetriever, etc.)
 
 # Data validation
 pydantic==2.12.4
