@@ -65,7 +65,7 @@ class AppView:
         self.claude_api_key_var = ctk.StringVar(value="")
         self.claude_model_var = ctk.StringVar(value="claude-3-5-sonnet-20241022")
         self.gemini_api_key_var = ctk.StringVar(value="")
-        self.gemini_model_var = ctk.StringVar(value="gemini-2.5-flash")
+        self.gemini_model_var = ctk.StringVar(value="gemini-2.5-pro-preview-03-25")
         self.timeout_var = ctk.StringVar(value="300")
         self.translation_chunk_var = ctk.StringVar(value="2000")
 
@@ -699,9 +699,9 @@ class AppView:
             gemini_frame,
             variable=self.gemini_model_var,
             values=[
-                "gemini-2.5-flash",                # Fast and versatile (recommended)
-                "gemini-2.5-pro-preview-03-25",    # More powerful, slower
-                "gemini-2.0-flash-exp",            # Experimental 2.0 (if available)
+                "gemini-2.5-pro-preview-03-25",        # Fast and versatile (recommended)
+                "gemini-2.5-flash-preview-09-2025",    # More powerful, slower
+                "gemini-2.5-pro-preview-03-25",        # Experimental 2.0 (if available)
             ],
             width=400,
         )
@@ -1160,6 +1160,9 @@ class AppView:
         Note:
             This is particularly important for macOS users where trackpad
             scrolling is not enabled by default in CustomTkinter widgets.
+
+            The bind is applied recursively to all child widgets to ensure
+            scrolling works even when the cursor is over buttons, labels, etc.
         """
         import sys
 
@@ -1189,6 +1192,21 @@ class AppView:
                 elif event.num == 5:
                     widget.yview_scroll(1, "units")
 
+        def _bind_to_widget(w):
+            """Recursively bind scroll events to widget and all its children."""
+            # Bind mouse wheel events
+            if sys.platform != "linux":
+                # macOS and Windows: use MouseWheel event
+                w.bind("<MouseWheel>", handler, add="+")
+            else:
+                # Linux: use Button-4 and Button-5 events
+                w.bind("<Button-4>", handler, add="+")
+                w.bind("<Button-5>", handler, add="+")
+
+            # Recursively bind to all children
+            for child in w.winfo_children():
+                _bind_to_widget(child)
+
         # Determine widget type and bind appropriate handler
         if hasattr(widget, '_parent_canvas'):
             # CTkScrollableFrame
@@ -1197,14 +1215,8 @@ class AppView:
             # CTkTextbox
             handler = _on_mousewheel_textbox
 
-        # Bind mouse wheel events
-        if sys.platform != "linux":
-            # macOS and Windows: use MouseWheel event
-            widget.bind("<MouseWheel>", handler)
-        else:
-            # Linux: use Button-4 and Button-5 events
-            widget.bind("<Button-4>", handler)
-            widget.bind("<Button-5>", handler)
+        # Bind to the widget and all its children
+        _bind_to_widget(widget)
 
     # ========================================================================
     # Public API - Event Binding

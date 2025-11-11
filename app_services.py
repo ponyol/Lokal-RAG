@@ -1444,8 +1444,8 @@ def fn_generate_summary(text: str, config: AppConfig) -> str:
 
         # Call LLM with summary prompt
         summary = fn_call_llm(
+            prompt=truncated_text,
             system_prompt=SUMMARY_SYSTEM_PROMPT,
-            user_message=truncated_text,
             config=config,
         )
 
