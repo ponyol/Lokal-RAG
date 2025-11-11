@@ -1216,14 +1216,20 @@ class AppView:
             This is particularly important for macOS users where trackpad
             scrolling is not enabled by default in CustomTkinter widgets.
 
-            For CTkScrollableFrame, we bind directly to the underlying canvas
-            and the frame itself to ensure scrolling works everywhere.
+            CRITICAL FIX: For CTkScrollableFrame created inside a class,
+            we must fix the master reference to enable mousewheel event
+            propagation. See: https://github.com/TomSchimansky/CustomTkinter/issues/1816
         """
         import sys
 
         # Check if this is a CTkScrollableFrame with internal canvas
         if hasattr(widget, '_parent_canvas'):
             canvas = widget._parent_canvas
+
+            # CRITICAL FIX: Reset master to canvas to fix widget hierarchy
+            # This allows check_if_master_is_canvas() to properly validate
+            # the widget chain and enable mousewheel scrolling
+            widget.master = canvas
 
             def _on_mousewheel(event):
                 """Handle mouse wheel scroll event for scrollable frame."""
