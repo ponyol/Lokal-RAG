@@ -695,8 +695,14 @@ def rag_chat_worker(
         if not retrieved_docs:
             response = "I don't have any relevant information in my knowledge base to answer this question."
         else:
-            # Step 3: Generate response with context
+            # Log retrieved document sources for debugging
             logger.info(f"Generating response with {len(retrieved_docs)} context documents")
+            for i, doc in enumerate(retrieved_docs, 1):
+                source = doc.metadata.get('source', 'unknown')
+                preview = doc.page_content[:100].replace('\n', ' ')
+                logger.info(f"  Doc {i}: {source} | Preview: {preview}...")
+
+            # Step 3: Generate response with context
             response = fn_get_rag_response(query, retrieved_docs, config)
 
         # Send response to view
