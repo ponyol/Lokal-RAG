@@ -1270,39 +1270,22 @@ class AppView:
                 mouse_over_canvas[0] = False
                 logger.info(f"🔴 Mouse LEFT canvas area")
 
-            # Bind mousewheel directly to canvas
-            canvas.bind("<MouseWheel>", on_mousewheel, add="+")
-            logger.info(f"✓ Bound <MouseWheel> to canvas")
+            # CRITICAL: Use bind_all for mousewheel events (they don't propagate normally on macOS)
+            # This is how CustomTkinter does it internally
+            self.bind_all("<MouseWheel>", on_mousewheel, add="+")
+            logger.info(f"✓ Bound <MouseWheel> with bind_all")
+
+            # Also try Button-4/Button-5 for Linux-style scrolling (may work on macOS)
+            self.bind_all("<Button-4>", lambda e: on_mousewheel(type('Event', (), {'delta': 1, 'widget': e.widget})()), add="+")
+            self.bind_all("<Button-5>", lambda e: on_mousewheel(type('Event', (), {'delta': -1, 'widget': e.widget})()), add="+")
+            logger.info(f"✓ Bound <Button-4>/<Button-5> with bind_all")
 
             # Bind Enter/Leave to track mouse position
             canvas.bind("<Enter>", on_enter, add="+")
             canvas.bind("<Leave>", on_leave, add="+")
-            logger.info(f"✓ Bound <Enter>/<Leave> to canvas")
-
-            # Also bind to all child widgets recursively
-            def bind_to_children(parent):
-                """Recursively bind mousewheel to all children."""
-                for child in parent.winfo_children():
-                    try:
-                        child.bind("<MouseWheel>", on_mousewheel, add="+")
-                        child.bind("<Enter>", on_enter, add="+")
-                        child.bind("<Leave>", on_leave, add="+")
-                        logger.info(f"   ✓ Bound to child: {child}")
-                        bind_to_children(child)  # Recurse
-                    except Exception as e:
-                        logger.warning(f"   ⚠️  Could not bind to child {child}: {e}")
-
-            # Bind to the scrollable frame itself
-            try:
-                widget.bind("<MouseWheel>", on_mousewheel, add="+")
-                widget.bind("<Enter>", on_enter, add="+")
-                widget.bind("<Leave>", on_leave, add="+")
-                logger.info(f"✓ Bound to CTkScrollableFrame widget itself")
-            except Exception as e:
-                logger.warning(f"⚠️  Could not bind to CTkScrollableFrame: {e}")
-
-            # Bind to all children
-            bind_to_children(widget)
+            widget.bind("<Enter>", on_enter, add="+")
+            widget.bind("<Leave>", on_leave, add="+")
+            logger.info(f"✓ Bound <Enter>/<Leave> to canvas and widget")
 
             logger.info(f"✓ DIRECT mousewheel setup complete for CTkScrollableFrame")
 
