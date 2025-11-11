@@ -212,6 +212,10 @@ class StorageService:
         try:
             logger.info(f"Adding {len(docs)} documents to vector database")
 
+            # Add type metadata to all documents
+            for doc in docs:
+                doc.metadata["type"] = "document"
+
             # Log first 500 chars of each document for debugging
             for i, doc in enumerate(docs[:5], 1):  # Only log first 5 to avoid spam
                 source = doc.metadata.get('source', 'unknown')
@@ -244,8 +248,69 @@ class StorageService:
             logger.error(f"Failed to add documents to vector database: {e}")
             raise
 
+    def add_note(self, note_content: str, note_path: Path) -> None:
+        """
+        Add a note to the vector database.
+
+        Notes are stored with metadata type="note" to distinguish them from
+        regular documents (type="document").
+
+        Args:
+            note_content: The text content of the note
+            note_path: Path to the note file (for metadata)
+
+        Raises:
+            RuntimeError: If vector store is not initialized
+            Exception: If note addition fails
+
+        Example:
+            >>> storage = StorageService(config)
+            >>> storage.add_note("Заметка о проекте", Path("notes/note_2025-11-11.md"))
+        """
+        if self._vectorstore is None:
+            raise RuntimeError("Vector store not initialized")
+
+        if not note_content.strip():
+            logger.warning("Empty note content, skipping")
+            return
+
+        try:
+            logger.info(f"Adding note to vector database: {note_path.name}")
+
+            # Create Document with type="note" metadata
+            doc = Document(
+                page_content=note_content,
+                metadata={
+                    "source": str(note_path),
+                    "type": "note",
+                    "filename": note_path.name,
+                }
+            )
+
+            # Add note to vector store
+            self._vectorstore.add_documents([doc])
+
+            # Add note to BM25 index
+            self._all_documents.append(doc)
+            logger.info(f"Total documents in BM25 index: {len(self._all_documents)}")
+
+            # Rebuild BM25 retriever with updated document list
+            try:
+                self._bm25_retriever = BM25Retriever.from_documents(self._all_documents)
+                self._bm25_retriever.k = self.config.RAG_TOP_K
+                logger.info("BM25 retriever rebuilt successfully")
+            except Exception as bm25_error:
+                logger.warning(f"Failed to rebuild BM25 retriever: {bm25_error}")
+                self._bm25_retriever = None
+
+            logger.info("Note added successfully (vector + BM25)")
+
+        except Exception as e:
+            logger.error(f"Failed to add note to vector database: {e}")
+            raise
+
     def search_similar_documents(
-        self, query: str, k: Optional[int] = None
+        self, query: str, k: Optional[int] = None, search_type: Optional[str] = None
     ) -> list[Document]:
         """
         Search for documents using hybrid search (BM25 + Vector).
@@ -260,6 +325,7 @@ class StorageService:
         Args:
             query: The search query text
             k: Number of documents to retrieve (defaults to config.RAG_TOP_K)
+            search_type: Filter by type - "document", "note", or None (all)
 
         Returns:
             list[Document]: List of similar documents, sorted by relevance
@@ -267,6 +333,7 @@ class StorageService:
         Example:
             >>> storage = StorageService(config)
             >>> docs = storage.search_similar_documents("документы за август", k=10)
+            >>> notes = storage.search_similar_documents("проект", k=5, search_type="note")
         """
         if self._vectorstore is None:
             raise RuntimeError("Vector store not initialized")
@@ -275,28 +342,53 @@ class StorageService:
             k = self.config.RAG_TOP_K
 
         try:
-            # If BM25 retriever is not available, fallback to vector-only search
-            if self._bm25_retriever is None or not self._all_documents:
-                logger.info("BM25 not available, using vector-only search")
-                docs = self._vectorstore.similarity_search(query, k=k)
+            # Filter documents by type if needed
+            if search_type:
+                filtered_docs = [
+                    doc for doc in self._all_documents
+                    if doc.metadata.get("type") == search_type
+                ]
+                logger.info(f"Filtered to {len(filtered_docs)} documents of type '{search_type}'")
+            else:
+                filtered_docs = self._all_documents
+                logger.info(f"Searching all {len(filtered_docs)} documents (no type filter)")
+
+            # If BM25 retriever is not available or no filtered docs, fallback to vector-only search
+            if self._bm25_retriever is None or not filtered_docs:
+                logger.info("BM25 not available or no filtered docs, using vector-only search")
+
+                # Use ChromaDB filtering for vector search
+                if search_type:
+                    docs = self._vectorstore.similarity_search(
+                        query, k=k, filter={"type": search_type}
+                    )
+                else:
+                    docs = self._vectorstore.similarity_search(query, k=k)
+
                 logger.info(f"Found {len(docs)} documents (vector-only)")
                 return docs
 
             # Hybrid search: BM25 + Vector
             logger.info(f"Using hybrid search (BM25 + Vector) for query: {query[:50]}...")
 
-            # Create vector retriever
-            vector_retriever = self._vectorstore.as_retriever(
-                search_kwargs={"k": k}
-            )
+            # Create filtered BM25 retriever
+            filtered_bm25_retriever = BM25Retriever.from_documents(filtered_docs)
+            filtered_bm25_retriever.k = k
 
-            # Update BM25 retriever k
-            self._bm25_retriever.k = k
+            # Create vector retriever with filter
+            if search_type:
+                vector_retriever = self._vectorstore.as_retriever(
+                    search_kwargs={"k": k, "filter": {"type": search_type}}
+                )
+            else:
+                vector_retriever = self._vectorstore.as_retriever(
+                    search_kwargs={"k": k}
+                )
 
             # Create ensemble retriever (hybrid)
             # Weights: 30% BM25 (keyword), 70% Vector (semantic)
             ensemble_retriever = EnsembleRetriever(
-                retrievers=[self._bm25_retriever, vector_retriever],
+                retrievers=[filtered_bm25_retriever, vector_retriever],
                 weights=[0.3, 0.7]
             )
 

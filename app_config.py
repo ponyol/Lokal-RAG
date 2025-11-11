@@ -40,6 +40,7 @@ class AppConfig:
         VECTOR_DB_PATH: Path to the ChromaDB persistent storage
         MARKDOWN_OUTPUT_PATH: Path where processed Markdown files will be saved
         CHANGELOG_PATH: Path where changelog files will be saved
+        NOTES_DIR: Path where user notes will be saved
         CHUNK_SIZE: Size of text chunks for vector database (in characters)
         CHUNK_OVERLAP: Overlap between consecutive chunks (in characters)
         TRANSLATION_CHUNK_SIZE: Size of text chunks for translation (in characters)
@@ -77,6 +78,7 @@ class AppConfig:
     VECTOR_DB_PATH: Path = Path("./lokal_rag_db")
     MARKDOWN_OUTPUT_PATH: Path = Path("./output_markdown")
     CHANGELOG_PATH: Path = Path("./changelog")  # Path for changelog files
+    NOTES_DIR: Path = Path("./notes")  # Path for user notes
 
     # Text Processing Configuration
     CHUNK_SIZE: int = 1500
