@@ -66,6 +66,8 @@ class AppView:
         self.claude_model_var = ctk.StringVar(value="claude-3-5-sonnet-20241022")
         self.gemini_api_key_var = ctk.StringVar(value="")
         self.gemini_model_var = ctk.StringVar(value="gemini-2.5-pro-preview-03-25")
+        self.mistral_api_key_var = ctk.StringVar(value="")
+        self.mistral_model_var = ctk.StringVar(value="mistral-small-latest")
         self.timeout_var = ctk.StringVar(value="300")
         self.translation_chunk_var = ctk.StringVar(value="2000")
 
@@ -550,7 +552,7 @@ class AppView:
         self.provider_dropdown = ctk.CTkOptionMenu(
             provider_frame,
             variable=self.llm_provider_var,
-            values=["ollama", "lmstudio", "claude", "gemini"],
+            values=["ollama", "lmstudio", "claude", "gemini", "mistral"],
             command=self._on_provider_changed,
         )
         self.provider_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
@@ -706,6 +708,51 @@ class AppView:
             width=400,
         )
         self.gemini_model_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
+
+        # Mistral settings frame
+        mistral_frame = ctk.CTkFrame(scrollable_frame)
+        mistral_frame.pack(fill="x", padx=20, pady=10)
+
+        mistral_title = ctk.CTkLabel(
+            mistral_frame,
+            text="Mistral AI Settings:",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        mistral_title.pack(anchor="w", padx=10, pady=(10, 5))
+
+        mistral_api_key_label = ctk.CTkLabel(mistral_frame, text="API Key:")
+        mistral_api_key_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.mistral_api_key_entry = ctk.CTkEntry(
+            mistral_frame,
+            textvariable=self.mistral_api_key_var,
+            width=400,
+            show="*",
+        )
+        self.mistral_api_key_entry.pack(anchor="w", padx=20, pady=(0, 5))
+
+        mistral_help = ctk.CTkLabel(
+            mistral_frame,
+            text="Get your API key from: https://console.mistral.ai/",
+            font=ctk.CTkFont(size=10),
+            text_color="gray",
+        )
+        mistral_help.pack(anchor="w", padx=20, pady=(0, 5))
+
+        mistral_model_label = ctk.CTkLabel(mistral_frame, text="Model:")
+        mistral_model_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.mistral_model_dropdown = ctk.CTkOptionMenu(
+            mistral_frame,
+            variable=self.mistral_model_var,
+            values=[
+                "mistral-small-latest",       # Small, fast (recommended)
+                "mistral-large-2411",         # Large, powerful (Nov 2024)
+                "mistral-small-2506",         # Small 3.2 (June 2025)
+            ],
+            width=400,
+        )
+        self.mistral_model_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
 
         # Timeout setting
         timeout_frame = ctk.CTkFrame(scrollable_frame)
@@ -931,6 +978,8 @@ class AppView:
             "claude_model": self.claude_model_var.get(),
             "gemini_api_key": self.gemini_api_key_var.get(),
             "gemini_model": self.gemini_model_var.get(),
+            "mistral_api_key": self.mistral_api_key_var.get(),
+            "mistral_model": self.mistral_model_var.get(),
             "timeout": int(self.timeout_var.get()),
             "translation_chunk_size": int(self.translation_chunk_var.get()),
             "vector_db_path": self.vector_db_path_var.get(),
@@ -975,6 +1024,12 @@ class AppView:
 
         if "gemini_model" in settings:
             self.gemini_model_var.set(settings["gemini_model"])
+
+        if "mistral_api_key" in settings:
+            self.mistral_api_key_var.set(settings["mistral_api_key"])
+
+        if "mistral_model" in settings:
+            self.mistral_model_var.set(settings["mistral_model"])
 
         if "timeout" in settings:
             self.timeout_var.set(str(settings["timeout"]))
