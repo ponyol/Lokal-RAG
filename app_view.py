@@ -1228,42 +1228,83 @@ class AppView:
             logger = logging.getLogger(__name__)
             canvas = widget._parent_canvas
 
-            logger.info(f"🔧 Setting up mousewheel for CTkScrollableFrame")
+            logger.info(f"🔧 Setting up DIRECT mousewheel binding for CTkScrollableFrame")
             logger.info(f"   Platform: {sys.platform}")
             logger.info(f"   Canvas: {canvas}")
 
-            # Store original method for logging
-            original_check = widget.check_if_master_is_canvas
+            # Track which widget has mouse focus
+            mouse_over_canvas = [False]  # Use list to allow modification in nested functions
 
-            # HACK: Override CustomTkinter's check_if_master_is_canvas to always return True
-            def patched_check(w):
-                """Always return True to enable scrolling."""
-                logger.info(f"✓ check_if_master_is_canvas called for widget: {w}")
-                return True
+            def on_mousewheel(event):
+                """Handle mousewheel event on macOS."""
+                logger.info(f"🖱️  DIRECT MouseWheel event: delta={event.delta}, widget={event.widget}")
 
-            # Replace the broken method with our patched version
-            widget.check_if_master_is_canvas = patched_check
+                # Calculate scroll amount (macOS uses event.delta directly)
+                if sys.platform == "darwin":
+                    # macOS: delta is already in correct units, but may need scaling
+                    scroll_amount = -1 * int(event.delta)
+                elif sys.platform == "win32":
+                    # Windows: delta is in multiples of 120
+                    scroll_amount = -1 * int(event.delta / 120)
+                else:
+                    # Linux: delta is typically +/-1
+                    scroll_amount = -1 * int(event.delta)
 
-            # Also wrap _mouse_wheel_all to add logging
-            if hasattr(widget, '_mouse_wheel_all'):
-                original_wheel = widget._mouse_wheel_all
+                logger.info(f"   → Scrolling {scroll_amount} units")
 
-                def logged_wheel(event):
-                    logger.info(f"🖱️  MouseWheel event: delta={event.delta}, widget={event.widget}")
+                try:
+                    canvas.yview_scroll(scroll_amount, "units")
+                    logger.info(f"   ✓ Scroll executed successfully")
+                except Exception as e:
+                    logger.error(f"   ✗ Scroll failed: {e}")
+
+                return "break"  # Prevent event propagation
+
+            def on_enter(event):
+                """Mouse entered the canvas area."""
+                mouse_over_canvas[0] = True
+                logger.info(f"🔵 Mouse ENTERED canvas area")
+
+            def on_leave(event):
+                """Mouse left the canvas area."""
+                mouse_over_canvas[0] = False
+                logger.info(f"🔴 Mouse LEFT canvas area")
+
+            # Bind mousewheel directly to canvas
+            canvas.bind("<MouseWheel>", on_mousewheel, add="+")
+            logger.info(f"✓ Bound <MouseWheel> to canvas")
+
+            # Bind Enter/Leave to track mouse position
+            canvas.bind("<Enter>", on_enter, add="+")
+            canvas.bind("<Leave>", on_leave, add="+")
+            logger.info(f"✓ Bound <Enter>/<Leave> to canvas")
+
+            # Also bind to all child widgets recursively
+            def bind_to_children(parent):
+                """Recursively bind mousewheel to all children."""
+                for child in parent.winfo_children():
                     try:
-                        result = original_wheel(event)
-                        logger.info(f"   → Scroll executed successfully")
-                        return result
+                        child.bind("<MouseWheel>", on_mousewheel, add="+")
+                        child.bind("<Enter>", on_enter, add="+")
+                        child.bind("<Leave>", on_leave, add="+")
+                        logger.info(f"   ✓ Bound to child: {child}")
+                        bind_to_children(child)  # Recurse
                     except Exception as e:
-                        logger.error(f"   ✗ Scroll failed: {e}")
-                        raise
+                        logger.warning(f"   ⚠️  Could not bind to child {child}: {e}")
 
-                widget._mouse_wheel_all = logged_wheel
-                logger.info(f"✓ Wrapped _mouse_wheel_all with logging")
-            else:
-                logger.warning(f"⚠️  Widget does not have _mouse_wheel_all method!")
+            # Bind to the scrollable frame itself
+            try:
+                widget.bind("<MouseWheel>", on_mousewheel, add="+")
+                widget.bind("<Enter>", on_enter, add="+")
+                widget.bind("<Leave>", on_leave, add="+")
+                logger.info(f"✓ Bound to CTkScrollableFrame widget itself")
+            except Exception as e:
+                logger.warning(f"⚠️  Could not bind to CTkScrollableFrame: {e}")
 
-            logger.info(f"✓ Mousewheel setup complete for CTkScrollableFrame")
+            # Bind to all children
+            bind_to_children(widget)
+
+            logger.info(f"✓ DIRECT mousewheel setup complete for CTkScrollableFrame")
 
         else:
             # CTkTextbox - bind directly to the textbox
