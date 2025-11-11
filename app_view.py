@@ -1232,6 +1232,14 @@ class AppView:
             logger.info(f"   Platform: {sys.platform}")
             logger.info(f"   Canvas: {canvas}")
 
+            # CRITICAL: Make canvas and widget focusable (required for macOS mousewheel events)
+            try:
+                canvas.config(takefocus=1)
+                widget.configure(takefocus=1)
+                logger.info(f"✓ Configured canvas and widget to accept focus")
+            except Exception as e:
+                logger.warning(f"⚠️  Could not configure takefocus: {e}")
+
             # Track which widget has mouse focus
             mouse_over_canvas = [False]  # Use list to allow modification in nested functions
 
@@ -1268,28 +1276,33 @@ class AppView:
             def on_enter(event):
                 """Mouse entered the canvas area."""
                 mouse_over_canvas[0] = True
-                canvas.focus_set()  # Set focus to canvas for keyboard events
-                logger.info(f"🔵 Mouse ENTERED canvas area (focus set)")
+                # CRITICAL: On macOS, mousewheel events only fire if widget has focus
+                widget.focus_set()  # Set focus to the scrollable frame itself
+                logger.info(f"🔵 Mouse ENTERED canvas area (focus set on widget)")
+                # Verify focus was actually set
+                focused = self.master.focus_get()
+                logger.info(f"   Current focus: {focused}")
 
             def on_leave(event):
                 """Mouse left the canvas area."""
                 mouse_over_canvas[0] = False
                 logger.info(f"🔴 Mouse LEFT canvas area")
 
-            # Try multiple approaches for maximum compatibility
+            # CRITICAL: Bind to widget (which has focus), not canvas
+            # On macOS, mousewheel events only fire on focused widget
 
-            # Approach 1: Direct binding to canvas (HIGHEST PRIORITY - no add="+")
-            canvas.bind("<MouseWheel>", on_mousewheel)
-            logger.info(f"✓ Bound <MouseWheel> DIRECTLY to canvas (replaced existing)")
+            # Approach 1: Direct binding to widget with focus
+            widget.bind("<MouseWheel>", on_mousewheel)
+            logger.info(f"✓ Bound <MouseWheel> to widget (focused widget)")
 
-            # Approach 2: Also use bind_all as fallback
-            self.master.bind_all("<MouseWheel>", on_mousewheel, add="+")
-            logger.info(f"✓ Bound <MouseWheel> with bind_all (added)")
+            # Approach 2: Also bind to canvas as fallback
+            canvas.bind("<MouseWheel>", on_mousewheel, add="+")
+            logger.info(f"✓ Bound <MouseWheel> to canvas")
 
-            # Approach 3: Try Button-4/Button-5 for compatibility
-            canvas.bind("<Button-4>", lambda e: on_mousewheel(type('Event', (), {'delta': 1, 'widget': e.widget})()))
-            canvas.bind("<Button-5>", lambda e: on_mousewheel(type('Event', (), {'delta': -1, 'widget': e.widget})()))
-            logger.info(f"✓ Bound <Button-4>/<Button-5> to canvas")
+            # Approach 3: Try Button-4/Button-5 for Linux compatibility
+            widget.bind("<Button-4>", lambda e: on_mousewheel(type('Event', (), {'delta': 1, 'widget': e.widget})()))
+            widget.bind("<Button-5>", lambda e: on_mousewheel(type('Event', (), {'delta': -1, 'widget': e.widget})()))
+            logger.info(f"✓ Bound <Button-4>/<Button-5> to widget")
 
             # Bind Enter/Leave to track mouse position
             canvas.bind("<Enter>", on_enter, add="+")
