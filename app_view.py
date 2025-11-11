@@ -1236,12 +1236,17 @@ class AppView:
             mouse_over_canvas = [False]  # Use list to allow modification in nested functions
 
             def on_mousewheel(event):
-                """Handle mousewheel event on macOS."""
-                logger.info(f"🖱️  DIRECT MouseWheel event: delta={event.delta}, widget={event.widget}")
+                """Handle mousewheel event - only scroll if mouse is over THIS canvas."""
+                logger.info(f"🖱️  MouseWheel event received: delta={event.delta}, widget={event.widget}, mouse_over={mouse_over_canvas[0]}")
+
+                # CRITICAL: Only scroll if mouse is over THIS specific canvas
+                if not mouse_over_canvas[0]:
+                    logger.info(f"   ⏭️  Skipping - mouse not over this canvas")
+                    return
 
                 # Calculate scroll amount (macOS uses event.delta directly)
                 if sys.platform == "darwin":
-                    # macOS: delta is already in correct units, but may need scaling
+                    # macOS: delta is already in correct units
                     scroll_amount = -1 * int(event.delta)
                 elif sys.platform == "win32":
                     # Windows: delta is in multiples of 120
@@ -1263,22 +1268,28 @@ class AppView:
             def on_enter(event):
                 """Mouse entered the canvas area."""
                 mouse_over_canvas[0] = True
-                logger.info(f"🔵 Mouse ENTERED canvas area")
+                canvas.focus_set()  # Set focus to canvas for keyboard events
+                logger.info(f"🔵 Mouse ENTERED canvas area (focus set)")
 
             def on_leave(event):
                 """Mouse left the canvas area."""
                 mouse_over_canvas[0] = False
                 logger.info(f"🔴 Mouse LEFT canvas area")
 
-            # CRITICAL: Use bind_all on master window for mousewheel events (they don't propagate normally on macOS)
-            # This is how CustomTkinter does it internally
-            self.master.bind_all("<MouseWheel>", on_mousewheel, add="+")
-            logger.info(f"✓ Bound <MouseWheel> with bind_all")
+            # Try multiple approaches for maximum compatibility
 
-            # Also try Button-4/Button-5 for Linux-style scrolling (may work on macOS)
-            self.master.bind_all("<Button-4>", lambda e: on_mousewheel(type('Event', (), {'delta': 1, 'widget': e.widget})()), add="+")
-            self.master.bind_all("<Button-5>", lambda e: on_mousewheel(type('Event', (), {'delta': -1, 'widget': e.widget})()), add="+")
-            logger.info(f"✓ Bound <Button-4>/<Button-5> with bind_all")
+            # Approach 1: Direct binding to canvas (HIGHEST PRIORITY - no add="+")
+            canvas.bind("<MouseWheel>", on_mousewheel)
+            logger.info(f"✓ Bound <MouseWheel> DIRECTLY to canvas (replaced existing)")
+
+            # Approach 2: Also use bind_all as fallback
+            self.master.bind_all("<MouseWheel>", on_mousewheel, add="+")
+            logger.info(f"✓ Bound <MouseWheel> with bind_all (added)")
+
+            # Approach 3: Try Button-4/Button-5 for compatibility
+            canvas.bind("<Button-4>", lambda e: on_mousewheel(type('Event', (), {'delta': 1, 'widget': e.widget})()))
+            canvas.bind("<Button-5>", lambda e: on_mousewheel(type('Event', (), {'delta': -1, 'widget': e.widget})()))
+            logger.info(f"✓ Bound <Button-4>/<Button-5> to canvas")
 
             # Bind Enter/Leave to track mouse position
             canvas.bind("<Enter>", on_enter, add="+")
@@ -1287,7 +1298,7 @@ class AppView:
             widget.bind("<Leave>", on_leave, add="+")
             logger.info(f"✓ Bound <Enter>/<Leave> to canvas and widget")
 
-            logger.info(f"✓ DIRECT mousewheel setup complete for CTkScrollableFrame")
+            logger.info(f"✓ Mousewheel setup complete for CTkScrollableFrame")
 
         else:
             # CTkTextbox - bind directly to the textbox
