@@ -18,6 +18,8 @@ from typing import Optional
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
+from langchain_community.retrievers import BM25Retriever
+from langchain.retrievers import EnsembleRetriever
 
 from app_config import AppConfig
 
@@ -55,10 +57,13 @@ class StorageService:
         self.config = config
         self._embeddings: Optional[HuggingFaceEmbeddings] = None
         self._vectorstore: Optional[Chroma] = None
+        self._bm25_retriever: Optional[BM25Retriever] = None
+        self._all_documents: list[Document] = []  # Store all docs for BM25
 
         logger.info("Initializing StorageService")
         self._initialize_embeddings()
         self._initialize_vectorstore()
+        self._initialize_bm25_retriever()
 
     def _initialize_embeddings(self) -> None:
         """
@@ -111,6 +116,54 @@ class StorageService:
         except Exception as e:
             logger.error(f"Failed to initialize vector database: {e}")
             raise
+
+    def _initialize_bm25_retriever(self) -> None:
+        """
+        Initialize the BM25 retriever for keyword-based search.
+
+        This method loads all existing documents from ChromaDB and creates
+        a BM25Retriever for hybrid search (BM25 + Vector).
+
+        NOTE: BM25 requires all documents in memory, so this may be slow
+        for large databases (10k+ documents).
+        """
+        try:
+            if self._vectorstore is None:
+                logger.warning("Vector store not initialized, skipping BM25 initialization")
+                return
+
+            # Load all documents from ChromaDB
+            logger.info("Loading all documents for BM25 index...")
+
+            # Get all documents from ChromaDB (without similarity search)
+            collection = self._vectorstore._collection
+            results = collection.get(include=["documents", "metadatas"])
+
+            if results and results["documents"]:
+                # Reconstruct Document objects
+                self._all_documents = [
+                    Document(
+                        page_content=content,
+                        metadata=metadata or {}
+                    )
+                    for content, metadata in zip(results["documents"], results["metadatas"])
+                ]
+
+                logger.info(f"Loaded {len(self._all_documents)} documents for BM25")
+
+                # Create BM25 retriever
+                if self._all_documents:
+                    self._bm25_retriever = BM25Retriever.from_documents(self._all_documents)
+                    self._bm25_retriever.k = self.config.RAG_TOP_K
+                    logger.info("BM25 retriever initialized successfully")
+                else:
+                    logger.info("No documents found, BM25 retriever will be created when documents are added")
+            else:
+                logger.info("No documents in database yet, BM25 retriever will be created when documents are added")
+
+        except Exception as e:
+            logger.warning(f"Failed to initialize BM25 retriever: {e}. Will continue with vector-only search.")
+            self._bm25_retriever = None
 
     def get_vectorstore(self) -> Chroma:
         """
@@ -169,10 +222,23 @@ class StorageService:
                 if any(month in doc.page_content.lower() for month in ['август', 'august', 'июль', 'july', 'сентябр', 'september']):
                     logger.info(f"    ✅ Contains date keywords!")
 
-            # Add documents and generate embeddings
+            # Add documents and generate embeddings to vector store
             self._vectorstore.add_documents(docs)
 
-            logger.info("Documents added successfully")
+            # Add documents to BM25 index
+            self._all_documents.extend(docs)
+            logger.info(f"Total documents in BM25 index: {len(self._all_documents)}")
+
+            # Rebuild BM25 retriever with updated document list
+            try:
+                self._bm25_retriever = BM25Retriever.from_documents(self._all_documents)
+                self._bm25_retriever.k = self.config.RAG_TOP_K
+                logger.info("BM25 retriever rebuilt successfully")
+            except Exception as bm25_error:
+                logger.warning(f"Failed to rebuild BM25 retriever: {bm25_error}")
+                self._bm25_retriever = None
+
+            logger.info("Documents added successfully (vector + BM25)")
 
         except Exception as e:
             logger.error(f"Failed to add documents to vector database: {e}")
@@ -182,7 +248,14 @@ class StorageService:
         self, query: str, k: Optional[int] = None
     ) -> list[Document]:
         """
-        Search for documents similar to the query.
+        Search for documents using hybrid search (BM25 + Vector).
+
+        This method combines keyword-based search (BM25) and semantic search (vector)
+        to improve retrieval quality, especially for queries with:
+        - Exact matches (dates, numbers, codes, names)
+        - Semantic meaning (concepts, topics)
+
+        The results are fused using weighted ensemble (30% BM25, 70% Vector).
 
         Args:
             query: The search query text
@@ -193,7 +266,7 @@ class StorageService:
 
         Example:
             >>> storage = StorageService(config)
-            >>> docs = storage.search_similar_documents("machine learning", k=4)
+            >>> docs = storage.search_similar_documents("документы за август", k=10)
         """
         if self._vectorstore is None:
             raise RuntimeError("Vector store not initialized")
@@ -202,9 +275,35 @@ class StorageService:
             k = self.config.RAG_TOP_K
 
         try:
-            logger.debug(f"Searching for {k} similar documents for query: {query[:50]}...")
-            docs = self._vectorstore.similarity_search(query, k=k)
-            logger.debug(f"Found {len(docs)} documents")
+            # If BM25 retriever is not available, fallback to vector-only search
+            if self._bm25_retriever is None or not self._all_documents:
+                logger.info("BM25 not available, using vector-only search")
+                docs = self._vectorstore.similarity_search(query, k=k)
+                logger.info(f"Found {len(docs)} documents (vector-only)")
+                return docs
+
+            # Hybrid search: BM25 + Vector
+            logger.info(f"Using hybrid search (BM25 + Vector) for query: {query[:50]}...")
+
+            # Create vector retriever
+            vector_retriever = self._vectorstore.as_retriever(
+                search_kwargs={"k": k}
+            )
+
+            # Update BM25 retriever k
+            self._bm25_retriever.k = k
+
+            # Create ensemble retriever (hybrid)
+            # Weights: 30% BM25 (keyword), 70% Vector (semantic)
+            ensemble_retriever = EnsembleRetriever(
+                retrievers=[self._bm25_retriever, vector_retriever],
+                weights=[0.3, 0.7]
+            )
+
+            # Execute hybrid search
+            docs = ensemble_retriever.get_relevant_documents(query)
+
+            logger.info(f"Found {len(docs)} documents (hybrid: BM25 + Vector)")
             return docs
 
         except Exception as e:
