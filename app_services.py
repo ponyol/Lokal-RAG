@@ -1449,20 +1449,21 @@ def fn_expand_query_with_dates(query: str) -> str:
 
     expanded_query = query
 
-    # Expand Russian months
+    # Expand Russian months with common date patterns
     for nominative, genitive in russian_months.items():
         # Add genitive case after nominative (e.g., "август" → "август августа")
         if nominative in query.lower():
             # Use word boundary to avoid partial matches
             pattern = r'\b' + re.escape(nominative) + r'\b'
-            replacement = f"{nominative} {genitive}"
+            # Add: genitive form + common date patterns with numbers
+            replacement = f"{nominative} {genitive} 1 {genitive} 2 {genitive} дат {genitive}"
             expanded_query = re.sub(pattern, replacement, expanded_query, flags=re.IGNORECASE)
 
     # Expand English months
     for full_month, abbrev in english_months.items():
         if full_month in query.lower():
             pattern = r'\b' + re.escape(full_month) + r'\b'
-            replacement = f"{full_month} {abbrev}"
+            replacement = f"{full_month} {abbrev} 1 {full_month} 2 {full_month}"
             expanded_query = re.sub(pattern, replacement, expanded_query, flags=re.IGNORECASE)
 
     return expanded_query

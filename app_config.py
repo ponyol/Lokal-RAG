@@ -87,7 +87,7 @@ class AppConfig:
     MAX_TAGS: int = 3
 
     # RAG Configuration
-    RAG_TOP_K: int = 4  # Number of documents to retrieve for context
+    RAG_TOP_K: int = 10  # Number of documents to retrieve for context (increased for better date recall)
 
     # Performance Configuration
     CLEANUP_MEMORY_AFTER_PDF: bool = True  # Free memory after batch completes (not between PDFs)
