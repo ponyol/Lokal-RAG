@@ -303,24 +303,27 @@ def fn_describe_image_with_paddleocr(image_bytes: bytes) -> str:
 
 def fn_describe_image(image_bytes: bytes, config: AppConfig) -> str:
     """
-    Describe an image using the best available vision method.
+    Describe an image using the configured vision mode.
 
-    Priority order:
+    Vision modes:
+    - "disabled": Skip image extraction entirely
+    - "auto": Smart fallback (PaddleOCR-VL → main LLM provider's vision)
+    - "local": Use dedicated local vision provider (Ollama/LM Studio with vision model)
+
+    Priority order for "auto" mode:
     1. PaddleOCR-VL (if available) - local, specialized for documents
-    2. LLM Vision API (Ollama, LM Studio) - requires vision-capable model
+    2. Main LLM Vision API (Claude, Gemini, Ollama, LM Studio)
 
-    PaddleOCR-VL is preferred for document images because it:
-    - Runs locally (no API costs)
-    - Supports 109 languages
-    - Excels at OCR, tables, formulas, and document structure
-    - Uses only 0.9B parameters (lightweight)
+    Priority order for "local" mode:
+    1. PaddleOCR-VL (if available)
+    2. Dedicated vision provider (config.VISION_PROVIDER with config.VISION_MODEL)
 
     Args:
         image_bytes: The image data as bytes (PNG, JPEG, etc.)
-        config: Application configuration containing vision model settings
+        config: Application configuration containing vision settings
 
     Returns:
-        str: A detailed description of the image content
+        str: A detailed description of the image content (or empty string if disabled)
 
     Raises:
         httpx.HTTPError: If the request to the vision API fails
@@ -329,43 +332,65 @@ def fn_describe_image(image_bytes: bytes, config: AppConfig) -> str:
     Example:
         >>> with open("diagram.png", "rb") as f:
         ...     image_data = f.read()
-        >>> config = AppConfig(VISION_ENABLED=True)
+        >>> config = AppConfig(VISION_MODE="local", VISION_MODEL="granite-docling:258m")
         >>> description = fn_describe_image(image_data, config)
     """
-    # Try PaddleOCR-VL first (local, specialized for documents)
+    # Check if vision extraction is disabled
+    if config.VISION_MODE == "disabled":
+        logger.info("Vision extraction is disabled, skipping image")
+        return ""
+
+    # Try PaddleOCR-VL first (works for both "auto" and "local" modes)
     if fn_check_paddleocr_availability():
         try:
             return fn_describe_image_with_paddleocr(image_bytes)
         except Exception as paddle_error:
-            logger.warning(f"PaddleOCR-VL failed, falling back to LLM vision: {paddle_error}")
+            logger.warning(f"PaddleOCR-VL failed, falling back to vision LLM: {paddle_error}")
             # Continue to fallback
 
-    # Fallback to LLM vision API
     import base64
-
-    # Convert image to base64
     base64_image = base64.b64encode(image_bytes).decode('utf-8')
 
-    # Determine which model to use
-    vision_model = config.VISION_MODEL if config.VISION_MODEL else (
-        config.OLLAMA_MODEL if config.LLM_PROVIDER == "ollama"
-        else config.LMSTUDIO_MODEL if config.LLM_PROVIDER == "lmstudio"
-        else config.CLAUDE_MODEL if config.LLM_PROVIDER == "claude"
-        else config.GEMINI_MODEL
-    )
+    # Determine provider and model based on vision mode
+    if config.VISION_MODE == "local":
+        # Use dedicated local vision provider (separate from main LLM)
+        provider = config.VISION_PROVIDER
+        base_url = config.VISION_BASE_URL
+        model = config.VISION_MODEL
 
-    logger.info(f"Describing image using {config.LLM_PROVIDER} with model {vision_model}")
+        logger.info(f"Describing image using local vision provider {provider} with model {model}")
 
-    if config.LLM_PROVIDER == "ollama":
-        return _describe_image_ollama(base64_image, vision_model, config)
-    elif config.LLM_PROVIDER == "lmstudio":
-        return _describe_image_lmstudio(base64_image, vision_model, config)
-    elif config.LLM_PROVIDER == "claude":
-        return _describe_image_claude(image_bytes, vision_model, config)
-    elif config.LLM_PROVIDER == "gemini":
-        return _describe_image_gemini(image_bytes, vision_model, config)
-    else:
-        raise ValueError(f"Unsupported LLM provider for vision: {config.LLM_PROVIDER}")
+        if provider == "ollama":
+            return _describe_image_ollama_with_url(base64_image, model, base_url, config)
+        elif provider == "lmstudio":
+            return _describe_image_lmstudio_with_url(base64_image, model, base_url, config)
+        else:
+            raise ValueError(f"Unsupported vision provider: {provider}")
+
+    else:  # config.VISION_MODE == "auto"
+        # Use main LLM provider's vision capability
+        provider = config.LLM_PROVIDER
+
+        # Determine model - prefer VISION_MODEL if set, otherwise use main model
+        vision_model = config.VISION_MODEL if config.VISION_MODEL else (
+            config.OLLAMA_MODEL if provider == "ollama"
+            else config.LMSTUDIO_MODEL if provider == "lmstudio"
+            else config.CLAUDE_MODEL if provider == "claude"
+            else config.GEMINI_MODEL
+        )
+
+        logger.info(f"Describing image using main LLM provider {provider} with model {vision_model}")
+
+        if provider == "ollama":
+            return _describe_image_ollama(base64_image, vision_model, config)
+        elif provider == "lmstudio":
+            return _describe_image_lmstudio(base64_image, vision_model, config)
+        elif provider == "claude":
+            return _describe_image_claude(image_bytes, vision_model, config)
+        elif provider == "gemini":
+            return _describe_image_gemini(image_bytes, vision_model, config)
+        else:
+            raise ValueError(f"Unsupported LLM provider for vision: {provider}")
 
 
 def _describe_image_ollama(base64_image: str, model: str, config: AppConfig) -> str:
@@ -394,6 +419,70 @@ def _describe_image_ollama(base64_image: str, model: str, config: AppConfig) -> 
 def _describe_image_lmstudio(base64_image: str, model: str, config: AppConfig) -> str:
     """Describe image using LM Studio vision API (OpenAI-compatible)."""
     url = f"{config.LMSTUDIO_BASE_URL}/chat/completions"
+
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": VISION_SYSTEM_PROMPT},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}"
+                        }
+                    }
+                ]
+            }
+        ],
+        "temperature": 0.7,
+        "max_tokens": -1,
+        "stream": False,
+    }
+
+    with httpx.Client(timeout=config.LLM_REQUEST_TIMEOUT) as client:
+        response = client.post(url, json=payload)
+        response.raise_for_status()
+
+    data = response.json()
+
+    if "choices" not in data or len(data["choices"]) == 0:
+        raise ValueError(f"Invalid LM Studio vision response format: {data}")
+
+    message = data["choices"][0].get("message", {})
+    if "content" not in message:
+        raise ValueError(f"Invalid LM Studio vision message format: {data}")
+
+    return message["content"].strip()
+
+
+def _describe_image_ollama_with_url(base64_image: str, model: str, base_url: str, config: AppConfig) -> str:
+    """Describe image using Ollama vision API with custom base URL (for local vision provider)."""
+    url = f"{base_url}/api/generate"
+
+    payload = {
+        "model": model,
+        "prompt": VISION_SYSTEM_PROMPT,
+        "images": [base64_image],
+        "stream": False,
+    }
+
+    with httpx.Client(timeout=config.LLM_REQUEST_TIMEOUT) as client:
+        response = client.post(url, json=payload)
+        response.raise_for_status()
+
+    data = response.json()
+
+    if "response" not in data:
+        raise ValueError(f"Invalid Ollama vision response format: {data}")
+
+    return data["response"].strip()
+
+
+def _describe_image_lmstudio_with_url(base64_image: str, model: str, base_url: str, config: AppConfig) -> str:
+    """Describe image using LM Studio vision API with custom base URL (for local vision provider)."""
+    url = f"{base_url}/chat/completions"
 
     payload = {
         "model": model,
@@ -915,8 +1004,8 @@ def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
     IMPORTANT: This function uses aggressive OCR settings to handle PDFs with
     corrupted or missing text layers (common with Medium articles saved as PDF).
 
-    If config.VISION_ENABLED is True, extracts images and describes them using
-    a vision model, appending descriptions to the markdown.
+    If config.VISION_MODE is not "disabled", extracts images and describes them using
+    a vision model (local or API), appending descriptions to the markdown.
 
     Args:
         pdf_path: Path to the PDF file to convert
@@ -931,7 +1020,7 @@ def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
 
     Example:
         >>> pdf_path = Path("document.pdf")
-        >>> config = AppConfig(VISION_ENABLED=True)
+        >>> config = AppConfig(VISION_MODE="local", VISION_MODEL="granite-docling:258m")
         >>> markdown = fn_extract_markdown(pdf_path, config)
     """
     try:
@@ -988,9 +1077,9 @@ def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
                 "PDF may be corrupted or contain only images."
             )
 
-        # Process images if vision is enabled
-        if config.VISION_ENABLED and images:
-            logger.info(f"Found {len(images)} images in PDF, processing with vision model...")
+        # Process images if vision mode is not disabled
+        if config.VISION_MODE != "disabled" and images:
+            logger.info(f"Found {len(images)} images in PDF, processing with vision model (mode: {config.VISION_MODE})...")
 
             # Limit number of images to process
             images_to_process = images[:config.VISION_MAX_IMAGES]
@@ -1426,8 +1515,8 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
                 "Page may be blocked or content extraction failed."
             )
 
-        # Process images if vision is enabled
-        if config.VISION_ENABLED:
+        # Process images if vision mode is not disabled
+        if config.VISION_MODE != "disabled":
             try:
                 from bs4 import BeautifulSoup
                 from urllib.parse import urljoin

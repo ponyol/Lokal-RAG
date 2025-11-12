@@ -52,8 +52,10 @@ class AppConfig:
         WEB_REQUEST_TIMEOUT: Timeout for web requests (in seconds)
         WEB_USER_AGENT: User agent string for web requests
         WEB_SAVE_RAW_HTML: Whether to save raw HTML for debugging
-        VISION_ENABLED: Whether to extract and describe images using vision model
-        VISION_MODEL: Name of the vision model (empty = use main LLM model)
+        VISION_MODE: Vision extraction mode ("disabled", "auto", "local")
+        VISION_PROVIDER: Vision provider ("ollama" or "lmstudio") for local vision model
+        VISION_BASE_URL: URL of the vision provider instance
+        VISION_MODEL: Name of the vision model for local extraction
         VISION_MAX_IMAGES: Maximum number of images to process per document
     """
 
@@ -102,8 +104,10 @@ class AppConfig:
     WEB_SAVE_RAW_HTML: bool = False  # Save raw HTML for debugging (in output_markdown/_debug/)
 
     # Vision Configuration (Image Processing)
-    VISION_ENABLED: bool = False  # Extract and describe images from documents
-    VISION_MODEL: str = ""  # Vision model name (empty = use main LLM model if it supports vision)
+    VISION_MODE: str = "auto"  # "disabled", "auto" (smart fallback), or "local" (use dedicated vision provider)
+    VISION_PROVIDER: str = "ollama"  # Vision provider for local mode: "ollama" or "lmstudio"
+    VISION_BASE_URL: str = "http://localhost:11434"  # URL of the vision provider instance
+    VISION_MODEL: str = "granite-docling:258m"  # Vision model name for local extraction
     VISION_MAX_IMAGES: int = 20  # Maximum images to process per document (to avoid excessive API calls)
 
 
@@ -258,6 +262,19 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
 
     if "changelog_path" in settings:
         overrides["CHANGELOG_PATH"] = Path(settings["changelog_path"])
+
+    # Vision settings
+    if "vision_mode" in settings:
+        overrides["VISION_MODE"] = settings["vision_mode"]
+
+    if "vision_provider" in settings:
+        overrides["VISION_PROVIDER"] = settings["vision_provider"]
+
+    if "vision_base_url" in settings:
+        overrides["VISION_BASE_URL"] = settings["vision_base_url"]
+
+    if "vision_model" in settings:
+        overrides["VISION_MODEL"] = settings["vision_model"]
 
     # Create new config with overrides
     if overrides:
