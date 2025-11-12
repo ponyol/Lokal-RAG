@@ -371,13 +371,18 @@ def fn_describe_image(image_bytes: bytes, config: AppConfig) -> str:
         # Use main LLM provider's vision capability
         provider = config.LLM_PROVIDER
 
-        # Determine model - prefer VISION_MODEL if set, otherwise use main model
-        vision_model = config.VISION_MODEL if config.VISION_MODEL else (
-            config.OLLAMA_MODEL if provider == "ollama"
-            else config.LMSTUDIO_MODEL if provider == "lmstudio"
-            else config.CLAUDE_MODEL if provider == "claude"
-            else config.GEMINI_MODEL
-        )
+        # In "auto" mode, always use the main provider's model
+        # (VISION_MODEL is only used in "local" mode)
+        if provider == "ollama":
+            vision_model = config.OLLAMA_MODEL
+        elif provider == "lmstudio":
+            vision_model = config.LMSTUDIO_MODEL
+        elif provider == "claude":
+            vision_model = config.CLAUDE_MODEL
+        elif provider == "gemini":
+            vision_model = config.GEMINI_MODEL
+        else:
+            raise ValueError(f"Unsupported LLM provider for vision: {provider}")
 
         logger.info(f"Describing image using main LLM provider {provider} with model {vision_model}")
 
