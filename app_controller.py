@@ -547,18 +547,43 @@ def processing_pipeline_worker(
 
             # Step 2: Translation (optional)
             russian_text = None
+            translation_failed = False
             if do_translation:
                 view_queue.put(f"LOG:   → Translating to Russian...")
-                russian_text = fn_translate_text(markdown_text, config)
-                view_queue.put(f"LOG:   ✓ Translation complete")
+                try:
+                    russian_text = fn_translate_text(markdown_text, config)
+                    view_queue.put(f"LOG:   ✓ Translation complete")
+                except Exception as trans_error:
+                    translation_failed = True
+                    error_msg = str(trans_error)
+                    logger.error(f"Translation failed: {error_msg}")
+
+                    # Show user-friendly error in UI
+                    if "safety filters" in error_msg.lower():
+                        view_queue.put(f"LOG:   ⚠️  Translation failed: Content blocked by LLM safety filters")
+                        view_queue.put(f"LOG:   ℹ️  Continuing with English version only...")
+                    elif "max" in error_msg.lower() and "token" in error_msg.lower():
+                        view_queue.put(f"LOG:   ⚠️  Translation failed: Content too large")
+                        view_queue.put(f"LOG:   ℹ️  Continuing with English version only...")
+                    else:
+                        view_queue.put(f"LOG:   ⚠️  Translation failed: {error_msg[:100]}")
+                        view_queue.put(f"LOG:   ℹ️  Continuing with English version only...")
+
+                    # Continue without translation
+                    russian_text = None
 
             # Step 3: Tagging (optional)
             # Use English text for tagging (tags are in English)
             tags = ["general"]
             if do_tagging:
                 view_queue.put(f"LOG:   → Generating tags...")
-                tags = fn_generate_tags(markdown_text, config)
-                view_queue.put(f"LOG:   ✓ Tags: {', '.join(tags)}")
+                try:
+                    tags = fn_generate_tags(markdown_text, config)
+                    view_queue.put(f"LOG:   ✓ Tags: {', '.join(tags)}")
+                except Exception as tag_error:
+                    logger.warning(f"Tagging failed (non-fatal): {tag_error}")
+                    view_queue.put(f"LOG:   ⚠️  Tag generation failed, using 'general'")
+                    tags = ["general"]
 
             # Step 4: Save to disk
             primary_tag = tags[0] if tags else "general"
@@ -588,8 +613,8 @@ def processing_pipeline_worker(
                 source_name = item
 
             # Save English version
-            if do_translation:
-                # When translation is enabled, save both languages
+            if do_translation and russian_text is not None:
+                # When translation succeeded, save both languages
                 saved_path_en = fn_save_markdown_to_disk(
                     text=markdown_text,
                     tag=primary_tag,
@@ -606,7 +631,7 @@ def processing_pipeline_worker(
                 )
                 view_queue.put(f"LOG:   ✓ Saved Russian to: {saved_path_ru}")
             else:
-                # When translation is disabled, save only English
+                # When translation is disabled or failed, save only English
                 saved_path = fn_save_markdown_to_disk(
                     text=markdown_text,
                     tag=primary_tag,
@@ -616,7 +641,7 @@ def processing_pipeline_worker(
                 view_queue.put(f"LOG:   ✓ Saved to: {saved_path}")
 
             # Step 5: Create chunks and add to vector database
-            if do_translation:
+            if do_translation and russian_text is not None:
                 # Bilingual storage: create chunks for both languages
                 view_queue.put(f"LOG:   → Creating English chunks...")
                 chunks_en = fn_create_text_chunks(
@@ -641,7 +666,7 @@ def processing_pipeline_worker(
                 storage.add_documents(chunks_ru)
                 view_queue.put(f"LOG:   ✓ Added {len(chunks_en)} + {len(chunks_ru)} chunks to database")
             else:
-                # Monolingual storage: create chunks only for English
+                # Monolingual storage: create chunks only for English (or when translation failed)
                 view_queue.put(f"LOG:   → Creating chunks...")
                 chunks = fn_create_text_chunks(
                     text=markdown_text,
@@ -655,14 +680,18 @@ def processing_pipeline_worker(
                 storage.add_documents(chunks)
                 view_queue.put(f"LOG:   ✓ Added to database")
 
-            view_queue.put(f"LOG: ✅ SUCCESS: {item_name}")
+            # Show final status
+            if translation_failed and do_translation:
+                view_queue.put(f"LOG: ⚠️  COMPLETED WITH WARNINGS: {item_name} (translation failed)")
+            else:
+                view_queue.put(f"LOG: ✅ SUCCESS: {item_name}")
 
             # Generate summary for changelog
             view_queue.put(f"LOG:   → Generating summary for changelog...")
             try:
                 from app_services import fn_generate_summary
                 # Use Russian text if available, otherwise English
-                text_for_summary = russian_text if do_translation and russian_text else markdown_text
+                text_for_summary = russian_text if (do_translation and russian_text is not None) else markdown_text
                 summary = fn_generate_summary(text_for_summary, config)
                 view_queue.put(f"LOG:   ✓ Summary generated")
 
