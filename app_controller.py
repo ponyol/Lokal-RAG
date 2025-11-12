@@ -228,7 +228,14 @@ class AppOrchestrator:
         self.view_queue.put(f"LOG: Source type: {source_type.upper()}")
         self.view_queue.put(f"LOG: Translation: {'ON' if settings['do_translation'] else 'OFF'}")
         self.view_queue.put(f"LOG: Auto-tagging: {'ON' if settings['do_tagging'] else 'OFF'}")
-        self.view_queue.put(f"LOG: Extract images: {'ON' if settings['extract_images'] else 'OFF'}")
+        # Map vision mode to display text
+        vision_mode_display = {
+            "disabled": "DISABLED",
+            "auto": "AUTO (Smart Fallback)",
+            "local": "LOCAL VISION MODEL"
+        }
+        vision_mode = settings.get('vision_mode', 'auto')
+        self.view_queue.put(f"LOG: Image extraction: {vision_mode_display.get(vision_mode, 'AUTO')}")
         if source_type == "web":
             self.view_queue.put(f"LOG: Use cookies: {'ON' if settings['use_cookies'] else 'OFF'}")
             if settings['use_cookies']:
@@ -490,7 +497,7 @@ def processing_pipeline_worker(
     source_type = settings.get("source_type", "pdf")
     do_translation = settings.get("do_translation", False)
     do_tagging = settings.get("do_tagging", True)
-    extract_images = settings.get("extract_images", False)
+    vision_mode = settings.get("vision_mode", "auto")
     use_cookies = settings.get("use_cookies", True)
     browser_choice = settings.get("browser_choice", "chrome")
     save_raw_html = settings.get("save_raw_html", False)
@@ -499,7 +506,7 @@ def processing_pipeline_worker(
     from dataclasses import replace
     config = replace(
         config,
-        VISION_ENABLED=extract_images,
+        VISION_MODE=vision_mode,
         WEB_USE_BROWSER_COOKIES=use_cookies,
         WEB_BROWSER_CHOICE=browser_choice,
         WEB_SAVE_RAW_HTML=save_raw_html,

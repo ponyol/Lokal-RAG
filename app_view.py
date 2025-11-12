@@ -71,6 +71,12 @@ class AppView:
         self.timeout_var = ctk.StringVar(value="300")
         self.translation_chunk_var = ctk.StringVar(value="2000")
 
+        # Vision settings state variables
+        self.vision_mode_var = ctk.StringVar(value="auto")  # "disabled", "auto", or "local"
+        self.vision_provider_var = ctk.StringVar(value="ollama")  # "ollama" or "lmstudio"
+        self.vision_base_url_var = ctk.StringVar(value="http://localhost:11434")
+        self.vision_model_var = ctk.StringVar(value="granite-docling:258m")
+
         # Storage paths state variables
         self.vector_db_path_var = ctk.StringVar(value="./lokal_rag_db")
         self.markdown_output_path_var = ctk.StringVar(value="./output_markdown")
@@ -266,12 +272,21 @@ class AppView:
         )
         self.tag_checkbox.pack(anchor="w", padx=20, pady=5)
 
-        self.extract_images_checkbox = ctk.CTkCheckBox(
+        # Vision mode selection
+        vision_label = ctk.CTkLabel(
             options_frame,
-            text="Extract images with vision model (slower, requires vision-capable model)",
-            variable=self.extract_images_var,
+            text="Image Extraction Mode:",
+            font=ctk.CTkFont(size=12, weight="bold"),
         )
-        self.extract_images_checkbox.pack(anchor="w", padx=20, pady=5)
+        vision_label.pack(anchor="w", padx=20, pady=(10, 5))
+
+        self.vision_mode_dropdown = ctk.CTkOptionMenu(
+            options_frame,
+            variable=self.vision_mode_var,
+            values=["Disabled", "Auto (Smart Fallback)", "Local Vision Model"],
+            width=300,
+        )
+        self.vision_mode_dropdown.pack(anchor="w", padx=20, pady=(0, 5))
 
         # Start button
         self.start_button = ctk.CTkButton(
@@ -859,6 +874,64 @@ class AppView:
         )
         self.mistral_model_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
 
+        # Vision settings frame (for image extraction)
+        vision_frame = ctk.CTkFrame(scrollable_frame)
+        vision_frame.pack(fill="x", padx=20, pady=10)
+
+        vision_title = ctk.CTkLabel(
+            vision_frame,
+            text="👁️ Vision Settings (Image Extraction):",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        vision_title.pack(anchor="w", padx=10, pady=(10, 5))
+
+        vision_help = ctk.CTkLabel(
+            vision_frame,
+            text="Configure local vision provider for image extraction from PDFs (separate from main LLM).",
+            font=ctk.CTkFont(size=10),
+            text_color="gray",
+        )
+        vision_help.pack(anchor="w", padx=10, pady=(0, 10))
+
+        vision_provider_label = ctk.CTkLabel(vision_frame, text="Vision Provider:")
+        vision_provider_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.vision_provider_dropdown = ctk.CTkOptionMenu(
+            vision_frame,
+            variable=self.vision_provider_var,
+            values=["ollama", "lmstudio"],
+            width=200,
+        )
+        self.vision_provider_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
+
+        vision_base_url_label = ctk.CTkLabel(vision_frame, text="Vision Base URL:")
+        vision_base_url_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        self.vision_base_url_entry = ctk.CTkEntry(
+            vision_frame,
+            textvariable=self.vision_base_url_var,
+            width=300,
+        )
+        self.vision_base_url_entry.pack(anchor="w", padx=20, pady=(0, 10))
+
+        vision_model_label = ctk.CTkLabel(vision_frame, text="Vision Model:")
+        vision_model_label.pack(anchor="w", padx=20, pady=(5, 0))
+
+        vision_model_help = ctk.CTkLabel(
+            vision_frame,
+            text="Recommended: granite-docling:258m (lightweight, document-specialized)",
+            font=ctk.CTkFont(size=10),
+            text_color="gray",
+        )
+        vision_model_help.pack(anchor="w", padx=20, pady=(0, 0))
+
+        self.vision_model_entry = ctk.CTkEntry(
+            vision_frame,
+            textvariable=self.vision_model_var,
+            width=300,
+        )
+        self.vision_model_entry.pack(anchor="w", padx=20, pady=(0, 10))
+
         # Timeout setting
         timeout_frame = ctk.CTkFrame(scrollable_frame)
         timeout_frame.pack(fill="x", padx=20, pady=10)
@@ -1029,13 +1102,21 @@ class AppView:
             urls_text = self.url_textbox.get("1.0", "end").strip()
             web_urls = [url.strip() for url in urls_text.split("\n") if url.strip()]
 
+        # Map UI dropdown values to config values
+        vision_mode_map = {
+            "Disabled": "disabled",
+            "Auto (Smart Fallback)": "auto",
+            "Local Vision Model": "local",
+        }
+        vision_mode = vision_mode_map.get(self.vision_mode_var.get(), "auto")
+
         return {
             "source_type": self.source_type_var.get(),
             "folder_path": self.folder_path_var.get(),
             "web_urls": web_urls,
             "do_translation": self.translate_var.get(),
             "do_tagging": self.tag_var.get(),
-            "extract_images": self.extract_images_var.get(),
+            "vision_mode": vision_mode,
             "use_cookies": self.use_cookies_var.get(),
             "browser_choice": self.browser_choice_var.get(),
             "save_raw_html": self.save_raw_html_var.get(),
@@ -1126,6 +1207,14 @@ class AppView:
             >>> settings = view.get_llm_settings()
             >>> print(settings['llm_provider'])
         """
+        # Map UI dropdown values to config values for vision mode
+        vision_mode_map = {
+            "Disabled": "disabled",
+            "Auto (Smart Fallback)": "auto",
+            "Local Vision Model": "local",
+        }
+        vision_mode = vision_mode_map.get(self.vision_mode_var.get(), "auto")
+
         return {
             "llm_provider": self.llm_provider_var.get(),
             "ollama_base_url": self.ollama_url_var.get(),
@@ -1140,6 +1229,10 @@ class AppView:
             "mistral_model": self.mistral_model_var.get(),
             "timeout": int(self.timeout_var.get()),
             "translation_chunk_size": int(self.translation_chunk_var.get()),
+            "vision_mode": vision_mode,
+            "vision_provider": self.vision_provider_var.get(),
+            "vision_base_url": self.vision_base_url_var.get(),
+            "vision_model": self.vision_model_var.get(),
             "vector_db_path": self.vector_db_path_var.get(),
             "markdown_output_path": self.markdown_output_path_var.get(),
             "changelog_path": self.changelog_path_var.get(),
@@ -1194,6 +1287,25 @@ class AppView:
 
         if "translation_chunk_size" in settings:
             self.translation_chunk_var.set(str(settings["translation_chunk_size"]))
+
+        # Vision settings - map config values back to UI dropdown values
+        if "vision_mode" in settings:
+            vision_mode_reverse_map = {
+                "disabled": "Disabled",
+                "auto": "Auto (Smart Fallback)",
+                "local": "Local Vision Model",
+            }
+            ui_value = vision_mode_reverse_map.get(settings["vision_mode"], "Auto (Smart Fallback)")
+            self.vision_mode_var.set(ui_value)
+
+        if "vision_provider" in settings:
+            self.vision_provider_var.set(settings["vision_provider"])
+
+        if "vision_base_url" in settings:
+            self.vision_base_url_var.set(settings["vision_base_url"])
+
+        if "vision_model" in settings:
+            self.vision_model_var.set(settings["vision_model"])
 
         if "vector_db_path" in settings:
             self.vector_db_path_var.set(settings["vector_db_path"])
