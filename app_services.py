@@ -347,9 +347,11 @@ def fn_describe_image(image_bytes: bytes, config: AppConfig) -> str:
     base64_image = base64.b64encode(image_bytes).decode('utf-8')
 
     # Determine which model to use
-    # If VISION_MODEL is specified, use it; otherwise use the main LLM model
     vision_model = config.VISION_MODEL if config.VISION_MODEL else (
-        config.OLLAMA_MODEL if config.LLM_PROVIDER == "ollama" else config.LMSTUDIO_MODEL
+        config.OLLAMA_MODEL if config.LLM_PROVIDER == "ollama"
+        else config.LMSTUDIO_MODEL if config.LLM_PROVIDER == "lmstudio"
+        else config.CLAUDE_MODEL if config.LLM_PROVIDER == "claude"
+        else config.GEMINI_MODEL
     )
 
     logger.info(f"Describing image using {config.LLM_PROVIDER} with model {vision_model}")
@@ -358,6 +360,10 @@ def fn_describe_image(image_bytes: bytes, config: AppConfig) -> str:
         return _describe_image_ollama(base64_image, vision_model, config)
     elif config.LLM_PROVIDER == "lmstudio":
         return _describe_image_lmstudio(base64_image, vision_model, config)
+    elif config.LLM_PROVIDER == "claude":
+        return _describe_image_claude(image_bytes, vision_model, config)
+    elif config.LLM_PROVIDER == "gemini":
+        return _describe_image_gemini(image_bytes, vision_model, config)
     else:
         raise ValueError(f"Unsupported LLM provider for vision: {config.LLM_PROVIDER}")
 
@@ -424,6 +430,165 @@ def _describe_image_lmstudio(base64_image: str, model: str, config: AppConfig) -
         raise ValueError(f"Invalid LM Studio vision message format: {data}")
 
     return message["content"].strip()
+
+
+def _describe_image_claude(image_bytes: bytes, model: str, config: AppConfig) -> str:
+    """Describe image using Claude Vision API."""
+    try:
+        from anthropic import Anthropic
+    except ImportError:
+        raise ImportError(
+            "The 'anthropic' package is required for Claude API. "
+            "Install it with: pip install anthropic"
+        )
+
+    if not config.CLAUDE_API_KEY:
+        raise ValueError(
+            "CLAUDE_API_KEY is not set. Please add your Anthropic API key in Settings."
+        )
+
+    import base64
+
+    # Convert image to base64
+    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+
+    # Detect image type (assume PNG if can't determine)
+    image_type = "image/png"
+    if image_bytes.startswith(b'\xff\xd8\xff'):
+        image_type = "image/jpeg"
+    elif image_bytes.startswith(b'\x89PNG'):
+        image_type = "image/png"
+    elif image_bytes.startswith(b'GIF'):
+        image_type = "image/gif"
+    elif image_bytes.startswith(b'WEBP'):
+        image_type = "image/webp"
+
+    try:
+        client = Anthropic(api_key=config.CLAUDE_API_KEY)
+
+        message = client.messages.create(
+            model=model,
+            max_tokens=2048,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": image_type,
+                                "data": base64_image,
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": VISION_SYSTEM_PROMPT
+                        }
+                    ],
+                }
+            ],
+        )
+
+        if not message.content or len(message.content) == 0:
+            raise ValueError("Empty response from Claude Vision API")
+
+        return message.content[0].text.strip()
+
+    except Exception as e:
+        raise Exception(f"Claude Vision API error: {e}")
+
+
+def _describe_image_gemini(image_bytes: bytes, model: str, config: AppConfig) -> str:
+    """Describe image using Gemini Vision API."""
+    try:
+        import google.generativeai as genai
+        from PIL import Image
+        import io
+    except ImportError as e:
+        raise ImportError(
+            f"Required packages not found: {e}. "
+            "Install with: pip install google-generativeai pillow"
+        )
+
+    if not config.GEMINI_API_KEY:
+        raise ValueError(
+            "GEMINI_API_KEY is not set. Please add your Google API key in Settings."
+        )
+
+    # Configure Gemini API
+    genai.configure(api_key=config.GEMINI_API_KEY)
+
+    try:
+        # Load image from bytes
+        image = Image.open(io.BytesIO(image_bytes))
+
+        # Create model instance
+        vision_model = genai.GenerativeModel(model_name=model)
+
+        # Configure generation parameters
+        generation_config = {
+            "temperature": 0.7,
+            "top_p": 0.95,
+            "top_k": 40,
+            "max_output_tokens": 2048,
+        }
+
+        # Call Gemini Vision API
+        response = vision_model.generate_content(
+            [VISION_SYSTEM_PROMPT, image],
+            generation_config=generation_config,
+            request_options={"timeout": config.LLM_REQUEST_TIMEOUT},
+        )
+
+        # Check if response has candidates
+        if not response.candidates:
+            raise ValueError("Gemini Vision API returned no candidates in response")
+
+        # Check finish reason
+        candidate = response.candidates[0]
+        finish_reason = candidate.finish_reason
+
+        # Map finish_reason enum to string for logging
+        finish_reason_name = str(finish_reason).split('.')[-1] if finish_reason else "UNKNOWN"
+
+        # Handle different finish reasons (same as text API)
+        if finish_reason_name == "STOP" or finish_reason == 1:
+            # Success case
+            if response.text:
+                return response.text.strip()
+            else:
+                raise ValueError("Gemini Vision response marked as STOP but has no text")
+
+        elif finish_reason_name == "SAFETY" or finish_reason == 2:
+            # Content blocked by safety filters
+            safety_ratings = candidate.safety_ratings if hasattr(candidate, 'safety_ratings') else []
+            blocked_categories = [
+                f"{rating.category.name}: {rating.probability.name}"
+                for rating in safety_ratings
+                if hasattr(rating, 'category') and hasattr(rating, 'probability')
+            ]
+            detail = f" ({', '.join(blocked_categories)})" if blocked_categories else ""
+            raise ValueError(
+                f"Gemini Vision blocked content due to safety filters{detail}."
+            )
+
+        elif finish_reason_name == "MAX_TOKENS" or finish_reason == 3:
+            # Reached max tokens limit
+            raise ValueError("Gemini Vision reached maximum token limit.")
+
+        else:
+            # Unknown or other finish reason
+            raise ValueError(
+                f"Gemini Vision stopped generation with reason: {finish_reason_name} (code: {finish_reason})"
+            )
+
+    except Exception as e:
+        # Re-raise with more context
+        error_msg = str(e)
+        if "safety filters" in error_msg.lower() or "SAFETY" in error_msg:
+            logger.warning(f"Gemini Vision safety filter triggered: {error_msg}")
+        raise Exception(f"Gemini Vision API error: {error_msg}")
 
 
 def _call_claude(
