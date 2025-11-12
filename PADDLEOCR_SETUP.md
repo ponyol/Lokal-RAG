@@ -79,6 +79,12 @@ PaddleOCR-VL extracted 1234 chars from image
 If you get `ModuleNotFoundError: No module named 'paddleocr'`:
 - Ensure you installed paddleocr with the doc-parser feature: `pip install "paddleocr[doc-parser]"`
 
+### Framework Error on macOS
+If you get `framework paddle is invalid`:
+- PaddleOCR may have limited support on macOS (especially Apple Silicon)
+- The system will automatically fall back to Vision LLM API (Claude/Gemini/Ollama/LM Studio)
+- For best results on macOS, use Docker or a Linux VM
+
 ### CUDA Errors
 If you get CUDA-related errors:
 - Install the CPU-only version of PaddlePaddle instead
@@ -87,6 +93,19 @@ If you get CUDA-related errors:
 ### Slow Performance
 - Use GPU version for faster processing
 - First run will download the model (~1-2GB), subsequent runs are faster
+
+### Fallback to Vision LLM
+If PaddleOCR fails for any reason, the system automatically falls back to:
+- **Claude Vision API** (if provider is Claude and API key is set)
+- **Gemini Vision API** (if provider is Gemini and API key is set)
+- **Ollama Vision** (if provider is Ollama with vision-capable model)
+- **LM Studio Vision** (if provider is LM Studio with vision-capable model)
+
+You'll see this in the logs:
+```
+PaddleOCR-VL failed, falling back to LLM vision: framework paddle is invalid
+Describing image using gemini with model gemini-2.5-flash
+```
 
 ## Uninstallation
 
