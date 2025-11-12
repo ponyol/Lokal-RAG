@@ -5,13 +5,16 @@ A local-first desktop application for building a private RAG (Retrieval-Augmente
 ## Features
 
 - 📄 **PDF Ingestion**: Convert PDF files to high-quality Markdown using marker-pdf
+- 🖼️ **Image Extraction**: Extract and describe images from PDFs using vision models
 - 🌐 **Web Article Ingestion**: Fetch and extract content from web articles (Medium, blogs, news sites)
 - 🔐 **Authenticated Access**: Use your browser cookies to access paywalled content (Medium, etc.)
 - 🌍 **Translation**: Optional translation to Russian using local LLM
 - 🏷️ **Auto-tagging**: Automatic content categorization based on subject matter
 - 💾 **Local Storage**: All data stays on your machine - no cloud required
 - 💬 **Chat Interface**: Query your knowledge base using natural language
-- 🔒 **Privacy-First**: Uses local Ollama instance for all AI operations
+- 📝 **Notes**: Create searchable notes that integrate with your knowledge base
+- 🔍 **Hybrid Search**: BM25 + Vector search for better retrieval (dates, keywords, semantics)
+- 🔒 **Privacy-First**: Uses local Ollama instance or API providers (Claude, Gemini, Mistral)
 
 ## Architecture
 
@@ -117,6 +120,73 @@ https://news.ycombinator.com/item?id=12345
 2. Type your question in the input field
 3. Press Enter or click "Send"
 4. The assistant will respond based on your ingested documents
+
+## Vision Models for Image Extraction (Optional)
+
+When processing PDFs with images, you can enable vision models to extract text and content from images. The system supports multiple vision backends:
+
+### Option 1: Granite-Docling-258m (Recommended for Documents) 🔥
+
+**Best for**: OCR, tables, document structure
+**Size**: 258M parameters (~500MB)
+**Speed**: ⚡ Fast
+**Platform**: macOS, Linux, Windows
+
+```bash
+# Install through Ollama
+ollama pull granite-docling:258m
+```
+
+Then in Settings:
+- LLM Provider: `ollama`
+- Vision Model: `granite-docling:258m`
+
+See [GRANITE_DOCLING_SETUP.md](GRANITE_DOCLING_SETUP.md) for details.
+
+### Option 2: PaddleOCR-VL (Best Quality)
+
+**Best for**: Multilingual OCR (109 languages), complex tables
+**Size**: 900M parameters (~2GB)
+**Speed**: Medium
+**Platform**: Linux (limited macOS support)
+
+```bash
+pip install paddlepaddle-gpu==3.2.0
+pip install -U "paddleocr[doc-parser]"
+```
+
+See [PADDLEOCR_SETUP.md](PADDLEOCR_SETUP.md) for details.
+
+### Option 3: Claude Vision API
+
+**Best for**: General image understanding
+**Quality**: ⭐⭐⭐⭐
+**Cost**: $$ (API charges apply)
+
+In Settings:
+- LLM Provider: `claude`
+- Claude API Key: `sk-ant-...`
+
+### Option 4: Gemini Vision API
+
+**Best for**: Fast processing, good quality
+**Quality**: ⭐⭐⭐⭐
+**Cost**: $ (API charges apply)
+
+In Settings:
+- LLM Provider: `gemini`
+- Gemini API Key: `AIza...`
+
+### Priority Order
+
+The system automatically uses the best available method:
+
+1. **PaddleOCR-VL** (if installed)
+2. **Vision Model** (Ollama/LM Studio if configured)
+3. **API Vision** (Claude/Gemini if provider is set)
+
+Enable vision extraction:
+- ✅ Check "Extract images with vision model" in the Ingestion tab
 
 ## Configuration
 
