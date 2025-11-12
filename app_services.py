@@ -203,12 +203,117 @@ def fn_check_ollama_availability(config: AppConfig) -> tuple[bool, Optional[str]
 # ============================================================================
 
 
+def fn_check_paddleocr_availability() -> bool:
+    """
+    Check if PaddleOCR-VL is available for image description.
+
+    Returns:
+        bool: True if PaddleOCR is installed and can be imported
+
+    Example:
+        >>> if fn_check_paddleocr_availability():
+        ...     print("PaddleOCR is available")
+    """
+    try:
+        import paddleocr
+        # Check if PaddleOCRVL class exists (doc-parser feature)
+        from paddleocr import PaddleOCRVL
+        return True
+    except (ImportError, AttributeError):
+        return False
+
+
+def fn_describe_image_with_paddleocr(image_bytes: bytes) -> str:
+    """
+    Describe an image using PaddleOCR-VL (local, specialized for documents).
+
+    This function uses PaddleOCR-VL's document parsing capabilities to extract
+    text, tables, formulas, and other content from images. It's particularly
+    good for:
+    - OCR (text recognition in 109 languages)
+    - Table extraction
+    - Formula recognition (LaTeX)
+    - Chart and diagram understanding
+    - Multi-column layouts
+
+    Args:
+        image_bytes: The image data as bytes (PNG, JPEG, etc.)
+
+    Returns:
+        str: Markdown-formatted description of the image content
+
+    Raises:
+        ImportError: If paddleocr is not installed
+        Exception: If PaddleOCR processing fails
+
+    Example:
+        >>> with open("table.png", "rb") as f:
+        ...     image_data = f.read()
+        >>> description = fn_describe_image_with_paddleocr(image_data)
+    """
+    try:
+        from paddleocr import PaddleOCRVL
+        import tempfile
+        from pathlib import Path
+    except ImportError:
+        raise ImportError(
+            "PaddleOCR is not installed. Install it with: "
+            "pip install paddleocr[doc-parser]"
+        )
+
+    # PaddleOCR works with file paths, so save to temp file
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
+        tmp_path = Path(tmp_file.name)
+        tmp_file.write(image_bytes)
+
+    try:
+        logger.info("Using PaddleOCR-VL for image description (local, specialized for documents)")
+
+        # Initialize PaddleOCR-VL pipeline
+        pipeline = PaddleOCRVL()
+
+        # Process image
+        output = pipeline.predict(str(tmp_path))
+
+        # Extract markdown content
+        markdown_parts = []
+        for res in output:
+            # Try to get markdown representation
+            if hasattr(res, 'to_markdown'):
+                markdown_parts.append(res.to_markdown())
+            elif hasattr(res, '__str__'):
+                markdown_parts.append(str(res))
+
+        result = "\n\n".join(markdown_parts) if markdown_parts else "No content extracted"
+
+        logger.info(f"PaddleOCR-VL extracted {len(result)} chars from image")
+        return result
+
+    except Exception as e:
+        logger.error(f"PaddleOCR-VL processing failed: {e}")
+        raise
+
+    finally:
+        # Clean up temp file
+        try:
+            tmp_path.unlink()
+        except Exception:
+            pass
+
+
 def fn_describe_image(image_bytes: bytes, config: AppConfig) -> str:
     """
-    Describe an image using a vision-capable LLM.
+    Describe an image using the best available vision method.
 
-    This function sends an image to a multimodal LLM and receives a textual description.
-    Works with both Ollama (llava, bakllava, etc.) and LM Studio (with vision models).
+    Priority order:
+    1. PaddleOCR-VL (if available) - local, specialized for documents
+    2. LLM Vision API (Ollama, LM Studio) - requires vision-capable model
+
+    PaddleOCR-VL is preferred for document images because it:
+    - Runs locally (no API costs)
+    - Supports 109 languages
+    - Excels at OCR, tables, formulas, and document structure
+    - Uses only 0.9B parameters (lightweight)
 
     Args:
         image_bytes: The image data as bytes (PNG, JPEG, etc.)
@@ -227,6 +332,15 @@ def fn_describe_image(image_bytes: bytes, config: AppConfig) -> str:
         >>> config = AppConfig(VISION_ENABLED=True)
         >>> description = fn_describe_image(image_data, config)
     """
+    # Try PaddleOCR-VL first (local, specialized for documents)
+    if fn_check_paddleocr_availability():
+        try:
+            return fn_describe_image_with_paddleocr(image_bytes)
+        except Exception as paddle_error:
+            logger.warning(f"PaddleOCR-VL failed, falling back to LLM vision: {paddle_error}")
+            # Continue to fallback
+
+    # Fallback to LLM vision API
     import base64
 
     # Convert image to base64
