@@ -1531,9 +1531,10 @@ class AppView:
                         return
                     return original_handler(event)
 
-                # Use bind_all like CustomTkinter does
-                self.master.bind_all("<MouseWheel>", wrapped_handler, add="+")
-                logger.info(f"[SCROLL] Bound <MouseWheel> using _mouse_wheel_all for {widget_name}")
+                # CRITICAL FIX for macOS: Use direct bind on canvas instead of bind_all
+                # bind_all doesn't receive trackpad events on macOS, but direct bind does
+                canvas.bind("<MouseWheel>", wrapped_handler, add="+")
+                logger.info(f"[SCROLL] Bound <MouseWheel> directly to canvas for {widget_name}")
             else:
                 # Fallback: direct scrolling
                 def on_mousewheel(event):
@@ -1543,8 +1544,9 @@ class AppView:
                     scroll_amount = -1 * int(event.delta)
                     canvas.yview_scroll(scroll_amount, "units")
 
-                self.master.bind_all("<MouseWheel>", on_mousewheel, add="+")
-                logger.info(f"[SCROLL] Bound <MouseWheel> using fallback for {widget_name}")
+                # CRITICAL FIX for macOS: Use direct bind on canvas instead of bind_all
+                canvas.bind("<MouseWheel>", on_mousewheel, add="+")
+                logger.info(f"[SCROLL] Bound <MouseWheel> directly to canvas (fallback) for {widget_name}")
 
             # Bind Enter/Leave to track mouse position
             canvas.bind("<Enter>", on_enter, add="+")
