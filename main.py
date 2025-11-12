@@ -12,9 +12,11 @@ This module:
 6. Starts the application
 
 Usage:
-    python main.py
+    python main.py              # Normal mode
+    python main.py --debug      # Debug mode (logs scroll events)
 """
 
+import argparse
 import logging
 import sys
 import warnings
@@ -36,9 +38,12 @@ from app_view import AppView
 warnings.filterwarnings("ignore", category=UserWarning, module="multiprocessing.resource_tracker")
 
 
-def setup_logging() -> None:
+def setup_logging(debug: bool = False) -> None:
     """
     Configure structured logging for the application.
+
+    Args:
+        debug: Enable DEBUG level logging (default: False = INFO level)
 
     Logs are output to both console and a file.
     Format: JSON-like structured format for production readiness.
@@ -50,8 +55,9 @@ def setup_logging() -> None:
     Path("./logs").mkdir(exist_ok=True)
 
     # Configure root logger
+    log_level = logging.DEBUG if debug else logging.INFO
     logging.basicConfig(
-        level=logging.INFO,
+        level=log_level,
         format=log_format,
         datefmt=date_format,
         handlers=[
@@ -62,14 +68,15 @@ def setup_logging() -> None:
         ],
     )
 
-    # Set levels for noisy third-party libraries
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("chromadb").setLevel(logging.WARNING)
-    logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+    # Set levels for noisy third-party libraries (unless in debug mode)
+    if not debug:
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("chromadb").setLevel(logging.WARNING)
+        logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
 
     logger = logging.getLogger(__name__)
     logger.info("=" * 60)
-    logger.info("Lokal-RAG Application Starting")
+    logger.info(f"Lokal-RAG Application Starting (Log Level: {logging.getLevelName(log_level)})")
     logger.info("=" * 60)
 
 
@@ -102,15 +109,30 @@ def main() -> None:
     Main application entry point.
 
     This function:
-    1. Sets up logging
-    2. Creates configuration
-    3. Checks prerequisites
-    4. Initializes all components
-    5. Starts the GUI main loop
+    1. Parses command-line arguments
+    2. Sets up logging
+    3. Creates configuration
+    4. Checks prerequisites
+    5. Initializes all components
+    6. Starts the GUI main loop
     """
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description="Lokal-RAG - Local Knowledge Base Application"
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable DEBUG level logging (useful for troubleshooting scroll events on macOS)"
+    )
+    args = parser.parse_args()
+
     # Setup logging
-    setup_logging()
+    setup_logging(debug=args.debug)
     logger = logging.getLogger(__name__)
+
+    if args.debug:
+        logger.debug("DEBUG mode enabled - scroll events will be logged")
 
     try:
         # Create configuration

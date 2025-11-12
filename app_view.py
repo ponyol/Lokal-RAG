@@ -1491,10 +1491,13 @@ class AppView:
             propagation. See: https://github.com/TomSchimansky/CustomTkinter/issues/1816
         """
         import sys
+        import logging
+        logger = logging.getLogger(__name__)
 
         # Check if this is a CTkScrollableFrame with internal canvas
         if hasattr(widget, '_parent_canvas'):
             canvas = widget._parent_canvas
+            widget_name = widget.__class__.__name__
 
             # Make canvas and widget focusable (required for macOS mousewheel events)
             try:
@@ -1510,10 +1513,12 @@ class AppView:
                 """Mouse entered the canvas area."""
                 mouse_over_canvas[0] = True
                 widget.focus_set()
+                logger.debug(f"[SCROLL] Mouse entered {widget_name}")
 
             def on_leave(event):
                 """Mouse left the canvas area."""
                 mouse_over_canvas[0] = False
+                logger.debug(f"[SCROLL] Mouse left {widget_name}")
 
             # Use CustomTkinter's own _mouse_wheel_all method
             if hasattr(widget, '_mouse_wheel_all'):
@@ -1521,21 +1526,25 @@ class AppView:
 
                 def wrapped_handler(event):
                     """Wrapper that only scrolls if mouse is over this canvas"""
+                    logger.debug(f"[SCROLL] MouseWheel event on {widget_name}: delta={event.delta}, mouse_over={mouse_over_canvas[0]}")
                     if not mouse_over_canvas[0]:
                         return
                     return original_handler(event)
 
                 # Use bind_all like CustomTkinter does
                 self.master.bind_all("<MouseWheel>", wrapped_handler, add="+")
+                logger.info(f"[SCROLL] Bound <MouseWheel> using _mouse_wheel_all for {widget_name}")
             else:
                 # Fallback: direct scrolling
                 def on_mousewheel(event):
+                    logger.debug(f"[SCROLL] MouseWheel event (fallback) on {widget_name}: delta={event.delta}, mouse_over={mouse_over_canvas[0]}")
                     if not mouse_over_canvas[0]:
                         return
                     scroll_amount = -1 * int(event.delta)
                     canvas.yview_scroll(scroll_amount, "units")
 
                 self.master.bind_all("<MouseWheel>", on_mousewheel, add="+")
+                logger.info(f"[SCROLL] Bound <MouseWheel> using fallback for {widget_name}")
 
             # Bind Enter/Leave to track mouse position
             canvas.bind("<Enter>", on_enter, add="+")
@@ -1545,8 +1554,11 @@ class AppView:
 
         else:
             # CTkTextbox - bind directly to the textbox
+            widget_name = widget.__class__.__name__
+
             def _on_mousewheel_textbox(event):
                 """Handle mouse wheel scroll event for textbox."""
+                logger.debug(f"[SCROLL] MouseWheel event on {widget_name} (textbox): delta={event.delta}, platform={sys.platform}")
                 if sys.platform == "darwin":  # macOS
                     widget.yview_scroll(-1 * int(event.delta), "units")
                 elif sys.platform == "win32":  # Windows
@@ -1559,9 +1571,11 @@ class AppView:
 
             if sys.platform != "linux":
                 widget.bind("<MouseWheel>", _on_mousewheel_textbox, add="+")
+                logger.info(f"[SCROLL] Bound <MouseWheel> directly to {widget_name} (textbox)")
             else:
                 widget.bind("<Button-4>", _on_mousewheel_textbox, add="+")
                 widget.bind("<Button-5>", _on_mousewheel_textbox, add="+")
+                logger.info(f"[SCROLL] Bound <Button-4/5> to {widget_name} (textbox)")
 
     # ========================================================================
     # Public API - Event Binding
