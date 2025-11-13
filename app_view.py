@@ -1531,10 +1531,11 @@ class AppView:
                         return
                     return original_handler(event)
 
-                # CRITICAL FIX for macOS: Use direct bind on canvas instead of bind_all
-                # bind_all doesn't receive trackpad events on macOS, but direct bind does
+                # CRITICAL FIX for macOS: Bind to BOTH canvas AND widget
+                # Trackpad events may arrive at either place
                 canvas.bind("<MouseWheel>", wrapped_handler, add="+")
-                logger.info(f"[SCROLL] Bound <MouseWheel> directly to canvas for {widget_name}")
+                widget.bind("<MouseWheel>", wrapped_handler, add="+")
+                logger.info(f"[SCROLL] Bound <MouseWheel> to canvas and widget for {widget_name}")
             else:
                 # Fallback: direct scrolling
                 def on_mousewheel(event):
@@ -1544,15 +1545,31 @@ class AppView:
                     scroll_amount = -1 * int(event.delta)
                     canvas.yview_scroll(scroll_amount, "units")
 
-                # CRITICAL FIX for macOS: Use direct bind on canvas instead of bind_all
+                # CRITICAL FIX for macOS: Bind to BOTH canvas AND widget
                 canvas.bind("<MouseWheel>", on_mousewheel, add="+")
-                logger.info(f"[SCROLL] Bound <MouseWheel> directly to canvas (fallback) for {widget_name}")
+                widget.bind("<MouseWheel>", on_mousewheel, add="+")
+                logger.info(f"[SCROLL] Bound <MouseWheel> to canvas and widget (fallback) for {widget_name}")
 
             # Bind Enter/Leave to track mouse position
             canvas.bind("<Enter>", on_enter, add="+")
             canvas.bind("<Leave>", on_leave, add="+")
             widget.bind("<Enter>", on_enter, add="+")
             widget.bind("<Leave>", on_leave, add="+")
+
+            # DEBUG: Bind various event types to see what macOS trackpad actually sends
+            if sys.platform == "darwin" and logger.isEnabledFor(logging.DEBUG):
+                def log_all_events(event):
+                    """Log all events to debug what macOS trackpad sends"""
+                    logger.debug(f"[SCROLL] Event on {widget_name}: type={event.type}, num={getattr(event, 'num', 'N/A')}, delta={getattr(event, 'delta', 'N/A')}, x={event.x}, y={event.y}")
+
+                # Try various event types that might work on macOS trackpad
+                for event_type in ["<MouseWheel>", "<Button-4>", "<Button-5>"]:
+                    try:
+                        canvas.bind(event_type, log_all_events, add="+")
+                        widget.bind(event_type, log_all_events, add="+")
+                        logger.debug(f"[SCROLL] Bound {event_type} for debugging")
+                    except Exception as e:
+                        logger.debug(f"[SCROLL] Could not bind {event_type}: {e}")
 
         else:
             # CTkTextbox - bind directly to the textbox
