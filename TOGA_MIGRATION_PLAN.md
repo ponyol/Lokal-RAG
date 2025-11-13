@@ -22,6 +22,61 @@
 
 ---
 
+## 🚀 Testing the Toga Version (macOS)
+
+**IMPORTANT:** The Toga UI is now ready for initial testing on macOS!
+
+### Quick Start
+
+```bash
+# Install Toga 0.5.2 (will use native macOS Cocoa backend)
+pip install toga==0.5.2
+
+# Run the test version
+python main_toga.py
+
+# Or with debug logging
+python main_toga.py --debug
+```
+
+### What to Test
+
+1. **UI Rendering:** Does the app start? Do all 5 tabs appear?
+2. **Trackpad Scrolling:** This is the CRITICAL test!
+   - Go to Settings tab
+   - Try scrolling with trackpad (two-finger swipe)
+   - Does it work smoothly?
+   - Try all tabs
+3. **Basic Interactions:**
+   - Click "Browse..." button (folder dialog should open)
+   - Type in text fields
+   - Switch between tabs
+   - Click buttons
+
+### Expected Behavior
+
+- ✅ App starts with native macOS look & feel
+- ✅ Trackpad scrolling works in ALL tabs (Settings, Ingestion, etc.)
+- ✅ Native file dialogs (macOS style)
+- ⚠️  Processing functionality NOT YET WORKING (controller integration pending)
+
+### Known Limitations (Current Phase)
+
+- Processing/Ingestion buttons do nothing (controller not integrated yet)
+- Chat messages won't send (controller not integrated yet)
+- Settings won't save (controller not integrated yet)
+- This is a **UI structure test** to verify scrolling works!
+
+### Report Back
+
+Please test and report:
+1. Does trackpad scrolling work? (Most important!)
+2. Any UI rendering issues?
+3. Any crashes or errors?
+4. General look & feel feedback
+
+---
+
 ## Architecture: What Changes?
 
 ### ✅ Unchanged (Business Logic Layer)
@@ -56,7 +111,7 @@ pip install toga
 Or add to requirements.txt:
 ```
 # GUI
-toga==0.4.7  # Native UI framework (replaces customtkinter)
+toga==0.5.2  # Native UI framework (replaces customtkinter)
 ```
 
 ---
@@ -82,50 +137,52 @@ toga==0.4.7  # Native UI framework (replaces customtkinter)
 
 ## Implementation Plan
 
-### Phase 1: Basic Structure (Week 1)
+### Phase 1: Basic Structure ✅ COMPLETED
 - [x] Create branch `feature/toga-ui`
-- [ ] Add Toga to dependencies
-- [ ] Create `app_view_toga.py` with basic skeleton
-- [ ] Implement main window with tabs
-- [ ] Test basic UI rendering on macOS
+- [x] Add Toga 0.5.2 to dependencies
+- [x] Create `app_view_toga.py` with basic skeleton
+- [x] Implement main window with tabs
+- [x] Create test entry point (`main_toga.py`)
+- [ ] Test basic UI rendering on macOS (READY FOR TESTING)
 
-### Phase 2: Core Tabs (Week 2)
-- [ ] **Ingestion Tab**
+### Phase 2: Core Tabs ✅ BASIC STRUCTURE COMPLETED
+- [x] **Ingestion Tab** (UI complete, needs controller integration)
   - Folder selection (PDF/Markdown)
   - Web URL input
   - Processing options (translation, tagging, vision)
   - Start button
   - Log output
 
-- [ ] **Chat Tab**
+- [x] **Chat Tab** (UI complete, needs controller integration)
   - Chat history display
   - Message input
   - Send button
   - Search type selector
 
-- [ ] **Settings Tab**
+- [x] **Settings Tab** (UI complete, needs controller integration)
   - LLM provider selection
   - API keys input
   - Model selection
   - Paths configuration
   - Test/Save buttons
 
-### Phase 3: Additional Features (Week 3)
-- [ ] **Notes Tab**
-  - Notes list
-  - Create/Edit/Delete
-  - Search notes
+### Phase 3: Additional Features ✅ BASIC STRUCTURE COMPLETED
+- [x] **Notes Tab** (UI complete, needs controller integration)
+  - Notes list (placeholder)
+  - Create/Edit/Delete (basic implementation)
+  - Search notes (TODO)
 
-- [ ] **Changelog Tab**
-  - File list
-  - Content viewer
-  - Date display
+- [x] **Changelog Tab** (UI complete, needs implementation)
+  - File list (placeholder)
+  - Content viewer (basic implementation)
+  - Date display (TODO)
 
-### Phase 4: Controller Integration (Week 4)
+### Phase 4: Controller Integration (IN PROGRESS)
 - [ ] Update `app_controller.py` for Toga
-- [ ] Handle async event model
+- [ ] Handle async event model (Toga uses native event loops)
 - [ ] Thread-safe queue for worker → UI communication
 - [ ] Test all workflows end-to-end
+- [ ] Implement proper async/background task handling
 
 ### Phase 5: Polish & Testing
 - [ ] Styling (colors, fonts, spacing)
@@ -292,18 +349,18 @@ def worker():
 
 ## Migration Checklist
 
-### Pre-Migration
+### Pre-Migration ✅ COMPLETED
 - [x] Create new branch
-- [ ] Document current CustomTkinter API
-- [ ] List all UI components used
-- [ ] Identify threading patterns
+- [x] Document current CustomTkinter API (public methods identified)
+- [x] List all UI components used (widget mapping table created)
+- [x] Identify threading patterns (documented in plan)
 
-### During Migration
-- [ ] Install Toga
-- [ ] Create basic app structure
-- [ ] Migrate one tab at a time
-- [ ] Test each tab before moving to next
-- [ ] Update controller incrementally
+### During Migration (IN PROGRESS)
+- [x] Install Toga (0.5.2 in requirements.txt)
+- [x] Create basic app structure (app_view_toga.py)
+- [x] Migrate all tabs (UI structure complete)
+- [ ] Test each tab on macOS (READY FOR USER TESTING)
+- [ ] Update controller incrementally (NEXT STEP)
 
 ### Post-Migration
 - [ ] Remove CustomTkinter dependency
@@ -360,6 +417,26 @@ If Toga doesn't work out:
 
 ---
 
-**Status:** Planning Phase
+**Status:** ✅ Phase 1-3 Complete | ⏳ Phase 4 (Controller Integration) In Progress | 🧪 READY FOR macOS TESTING
 **Last Updated:** 2025-11-13
 **Author:** Claude + Ponyol
+
+---
+
+## ✨ Current Status Summary
+
+**What's Done:**
+- ✅ Toga 0.5.2 installed in requirements.txt
+- ✅ Complete UI skeleton in `app_view_toga.py` (680+ lines)
+- ✅ All 5 tabs implemented (Ingestion, Chat, Notes, Changelog, Settings)
+- ✅ Same public API as CustomTkinter version (drop-in replacement)
+- ✅ Test entry point created (`main_toga.py`)
+
+**What's Next:**
+- 🧪 **USER ACTION REQUIRED:** Test on macOS (run `python main_toga.py`)
+- ⏳ Controller integration (app_controller.py modifications)
+- ⏳ Async/threading model adaptation
+- ⏳ Full workflow testing
+
+**Critical Test:**
+Does trackpad scrolling work on macOS Settings tab? This is the PRIMARY goal of this migration!

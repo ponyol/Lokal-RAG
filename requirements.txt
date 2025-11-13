@@ -1,5 +1,6 @@
 # GUI
-customtkinter==5.2.2
+# customtkinter==5.2.2  # OLD: Has trackpad scrolling issues on macOS
+toga==0.5.2  # NEW: Native UI framework with proper macOS support
 
 # HTTP Client
 httpx==0.27.2  # Pinned to 0.27.x for mistralai compatibility
