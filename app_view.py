@@ -109,12 +109,28 @@ class TkScrollableFrame(ctk.CTkFrame):
                 elif event.num == 5:
                     self.canvas.yview_scroll(1, "units")
 
-        # Bind to canvas - this receives trackpad events on macOS!
-        if sys.platform != "linux":
-            self.canvas.bind("<MouseWheel>", on_mousewheel)
-        else:
-            self.canvas.bind("<Button-4>", on_mousewheel)
-            self.canvas.bind("<Button-5>", on_mousewheel)
+        def bind_to_widget(widget):
+            """Recursively bind mousewheel to widget and all its children."""
+            if sys.platform != "linux":
+                widget.bind("<MouseWheel>", on_mousewheel, add="+")
+            else:
+                widget.bind("<Button-4>", on_mousewheel, add="+")
+                widget.bind("<Button-5>", on_mousewheel, add="+")
+
+            # Bind to all children recursively
+            for child in widget.winfo_children():
+                bind_to_widget(child)
+
+        # Bind to canvas AND scrollable_frame (and all children)
+        bind_to_widget(self.canvas)
+        bind_to_widget(self.scrollable_frame)
+
+        # Re-bind when new widgets are added
+        def on_child_added(event):
+            """Re-bind mousewheel when new children are added."""
+            bind_to_widget(self.scrollable_frame)
+
+        self.scrollable_frame.bind("<Configure>", on_child_added, add="+")
 
 
 class AppView:
