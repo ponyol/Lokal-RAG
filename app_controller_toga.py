@@ -85,10 +85,8 @@ class TogaAppOrchestrator:
         # Start the queue checker
         self.check_view_queue()
 
-        # Load saved settings into UI (deferred to ensure widgets are ready)
-        # Use a small delay to ensure UI is fully rendered
-        import threading
-        threading.Timer(0.1, self.load_settings_to_ui).start()
+        # NOTE: load_settings_to_ui() will be called from main.py
+        # after the controller is initialized, to ensure it runs in the main thread
 
     def setup_callbacks(self) -> None:
         """

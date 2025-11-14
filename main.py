@@ -123,11 +123,21 @@ def create_app_with_controller(
 
     # Initialize controller (will be attached after app.startup)
     # We need to defer controller initialization until after Toga creates the UI
-    def on_app_ready():
-        """Called when Toga app is fully started."""
+    def on_app_ready(widget):
+        """
+        Called when Toga app is fully started.
+
+        Args:
+            widget: The widget that triggered the callback (Toga passes this)
+        """
         logger.info("Initializing controller...")
         orchestrator = TogaAppOrchestrator(app, config, storage)
         logger.info("✓ Controller initialized")
+
+        # Load saved settings into UI (must be done in main thread)
+        logger.info("Loading saved settings into UI...")
+        orchestrator.load_settings_to_ui()
+        logger.info("✓ Settings loaded")
 
         # Show initial status in logs
         if config.LLM_PROVIDER == "ollama":
