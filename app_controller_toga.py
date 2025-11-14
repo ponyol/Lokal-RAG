@@ -119,13 +119,16 @@ class TogaAppOrchestrator:
     # Queue Management (Thread-Safe GUI Updates)
     # ========================================================================
 
-    async def check_view_queue(self) -> None:
+    async def check_view_queue(self, **kwargs) -> None:
         """
         Check the view queue for messages from worker threads.
 
         This async method runs as a background task and periodically checks
         for messages from worker threads. It's the thread-safe way to update
         the Toga GUI from worker threads.
+
+        Args:
+            **kwargs: Toga passes additional arguments to background tasks
 
         Messages can be:
         - "LOG: <message>" - Append to ingestion log
