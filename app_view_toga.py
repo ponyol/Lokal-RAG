@@ -23,33 +23,33 @@ from toga.colors import rgb, TRANSPARENT
 
 logger = logging.getLogger(__name__)
 
-# ===== Dark Theme Colors =====
-class DarkTheme:
-    """Dark theme color palette for Lokal-RAG."""
-    # Background colors
-    BG_PRIMARY = rgb(28, 28, 30)  # Main background
-    BG_SECONDARY = rgb(44, 44, 46)  # Cards/containers
-    BG_TERTIARY = rgb(58, 58, 60)  # Inputs/buttons
+# ===== Light Theme Colors (Default) =====
+class Theme:
+    """Light theme color palette for Lokal-RAG."""
+    # Background colors - use Toga defaults (None = platform default)
+    BG_PRIMARY = None  # Main background (platform default)
+    BG_SECONDARY = None  # Cards/containers (platform default)
+    BG_TERTIARY = None  # Inputs/buttons (platform default)
 
-    # Text colors
-    TEXT_PRIMARY = rgb(255, 255, 255)  # Main text
-    TEXT_SECONDARY = rgb(174, 174, 178)  # Secondary text
-    TEXT_DISABLED = rgb(99, 99, 102)  # Disabled text
+    # Text colors - use platform defaults
+    TEXT_PRIMARY = None  # Main text (platform default)
+    TEXT_SECONDARY = None  # Secondary text (platform default)
+    TEXT_DISABLED = None  # Disabled text (platform default)
 
-    # Accent colors
-    ACCENT_BLUE = rgb(10, 132, 255)  # Primary actions
-    ACCENT_GREEN = rgb(48, 209, 88)  # Success
-    ACCENT_ORANGE = rgb(255, 159, 10)  # Warning
-    ACCENT_RED = rgb(255, 69, 58)  # Error
+    # Accent colors - keep for button colors
+    ACCENT_BLUE = rgb(0, 122, 255)  # Primary actions (system blue)
+    ACCENT_GREEN = rgb(52, 199, 89)  # Success (system green)
+    ACCENT_ORANGE = rgb(255, 149, 0)  # Warning (system orange)
+    ACCENT_RED = rgb(255, 59, 48)  # Error (system red)
 
     # UI elements
-    BORDER = rgb(72, 72, 74)  # Borders/separators
-    SCROLLBAR = rgb(99, 99, 102)  # Scrollbar
+    BORDER = None  # Borders/separators (platform default)
+    SCROLLBAR = None  # Scrollbar (platform default)
 
 
 class LokalRAGApp(toga.App):
     """
-    Main Toga application for Lokal-RAG with dark theme.
+    Main Toga application for Lokal-RAG.
 
     This class manages the UI and provides a public API for the controller
     to interact with the view layer.
@@ -88,7 +88,7 @@ class LokalRAGApp(toga.App):
 
         # Create tabs with dark theme
         self.tabs = toga.OptionContainer(
-            style=Pack(background_color=DarkTheme.BG_PRIMARY),
+            style=Pack(),
             content=[
                 ("📚 Ingestion", self._create_ingestion_tab()),
                 ("💬 Chat", self._create_chat_tab()),
@@ -129,8 +129,7 @@ class LokalRAGApp(toga.App):
         container = toga.Box(
             style=Pack(
                 direction=COLUMN,
-                padding=20,
-                background_color=DarkTheme.BG_PRIMARY
+                padding=20
             )
         )
 
@@ -140,118 +139,72 @@ class LokalRAGApp(toga.App):
             style=Pack(
                 padding_bottom=20,
                 font_size=20,
-                font_weight="bold",
-                color=DarkTheme.TEXT_PRIMARY
+                font_weight="bold"
             )
         )
         container.add(title)
 
         # ---- Source Type Selection ----
-        source_type_box = toga.Box(
-            style=Pack(
-                direction=COLUMN,
-                padding=10,
-                background_color=DarkTheme.BG_SECONDARY
-            )
-        )
-
         source_label = toga.Label(
-            "Select Source Type:",
+            "Source Type (choose one):",
             style=Pack(
+                padding_top=10,
                 padding_bottom=10,
-                font_weight="bold",
-                color=DarkTheme.TEXT_PRIMARY
+                font_weight="bold"
             )
         )
-        source_type_box.add(source_label)
+        container.add(source_label)
 
-        # Radio buttons (simulated with buttons)
-        self.pdf_radio_btn = toga.Button(
-            "📄 PDF / Markdown Files (from folder)",
-            on_press=self._on_pdf_selected,
-            style=Pack(
-                padding=5,
-                background_color=DarkTheme.ACCENT_BLUE,
-                color=DarkTheme.TEXT_PRIMARY
-            )
+        # Source type selector
+        self.source_type_selection = toga.Selection(
+            items=["PDF / Markdown Files", "Web URL"],
+            style=Pack(padding=5)
         )
-        source_type_box.add(self.pdf_radio_btn)
+        self.source_type_selection.value = "PDF / Markdown Files"
+        self.source_type_selection.on_change = self._on_source_type_changed
+        container.add(self.source_type_selection)
 
-        self.web_radio_btn = toga.Button(
-            "🌐 Web Articles (URLs)",
-            on_press=self._on_web_selected,
-            style=Pack(
-                padding=5,
-                background_color=DarkTheme.BG_TERTIARY,
-                color=DarkTheme.TEXT_PRIMARY
-            )
-        )
-        source_type_box.add(self.web_radio_btn)
-
-        container.add(source_type_box)
-
-        # ---- PDF/Folder Selection (initially visible) ----
-        self.pdf_container = toga.Box(
-            style=Pack(
-                direction=COLUMN,
-                padding_top=10
-            )
-        )
-
+        # ---- PDF/Folder Selection ----
         folder_box = toga.Box(style=Pack(direction=ROW, padding=5))
         folder_label = toga.Label(
             "PDF/Markdown Folder:",
-            style=Pack(width=180, color=DarkTheme.TEXT_PRIMARY)
+            style=Pack(width=180)
         )
         self.folder_input = toga.TextInput(
             readonly=True,
             placeholder="No folder selected",
-            style=Pack(flex=1, padding_right=5, background_color=DarkTheme.BG_TERTIARY)
+            style=Pack(flex=1, padding_right=5)
         )
         folder_button = toga.Button(
             "Browse...",
             on_press=self._on_select_folder,
-            style=Pack(
-                width=100,
-                background_color=DarkTheme.ACCENT_BLUE,
-                color=DarkTheme.TEXT_PRIMARY
-            )
+            style=Pack(width=100)
         )
         folder_box.add(folder_label)
         folder_box.add(self.folder_input)
         folder_box.add(folder_button)
-        self.pdf_container.add(folder_box)
+        container.add(folder_box)
 
-        container.add(self.pdf_container)
-
-        # ---- Web URL Input (initially hidden) ----
-        self.web_container = toga.Box(
-            style=Pack(
-                direction=COLUMN,
-                padding_top=10
-            )
-        )
-
+        # ---- Web URL Input ----
+        url_box = toga.Box(style=Pack(direction=ROW, padding=5))
         url_label = toga.Label(
             "Web URL:",
-            style=Pack(
-                padding_bottom=5,
-                color=DarkTheme.TEXT_PRIMARY
-            )
+            style=Pack(width=180)
         )
-        self.web_container.add(url_label)
-
         self.url_input = toga.TextInput(
             placeholder="https://example.com/article",
-            style=Pack(
-                flex=1,
-                background_color=DarkTheme.BG_TERTIARY,
-                color=DarkTheme.TEXT_PRIMARY
-            )
+            style=Pack(flex=1)
         )
-        self.web_container.add(self.url_input)
+        url_box.add(url_label)
+        url_box.add(self.url_input)
+        container.add(url_box)
 
-        # Don't add web_container yet (will be swapped on radio button click)
+        # Helper text
+        helper_text = toga.Label(
+            "Note: Fill in either folder OR URL based on selection above",
+            style=Pack(padding=5, font_size=10)
+        )
+        container.add(helper_text)
 
         # ---- Processing Options ----
         options_label = toga.Label(
@@ -259,8 +212,7 @@ class LokalRAGApp(toga.App):
             style=Pack(
                 padding_top=20,
                 padding_bottom=10,
-                font_weight="bold",
-                color=DarkTheme.TEXT_PRIMARY
+                font_weight="bold"
             )
         )
         container.add(options_label)
@@ -269,8 +221,7 @@ class LokalRAGApp(toga.App):
         self.translate_switch = toga.Switch(
             "Enable Translation (auto-detect language → English)",
             style=Pack(
-                padding=5,
-                color=DarkTheme.TEXT_PRIMARY
+                padding=5
             )
         )
         container.add(self.translate_switch)
@@ -280,8 +231,7 @@ class LokalRAGApp(toga.App):
             "Enable Auto-Tagging (extract topics/themes)",
             value=True,
             style=Pack(
-                padding=5,
-                color=DarkTheme.TEXT_PRIMARY
+                padding=5
             )
         )
         container.add(self.tagging_switch)
@@ -290,14 +240,12 @@ class LokalRAGApp(toga.App):
         vision_box = toga.Box(style=Pack(direction=ROW, padding=5))
         vision_label = toga.Label(
             "Vision Mode:",
-            style=Pack(width=180, color=DarkTheme.TEXT_PRIMARY)
+            style=Pack(width=180)
         )
         self.vision_mode_selection = toga.Selection(
             items=["disabled", "auto", "local"],
             style=Pack(
-                flex=1,
-                background_color=DarkTheme.BG_TERTIARY,
-                color=DarkTheme.TEXT_PRIMARY
+                flex=1
             )
         )
         self.vision_mode_selection.value = "auto"
@@ -319,8 +267,7 @@ class LokalRAGApp(toga.App):
             style=Pack(
                 padding_right=10,
                 flex=1,
-                background_color=DarkTheme.ACCENT_GREEN,
-                color=DarkTheme.TEXT_PRIMARY
+                background_color=Theme.ACCENT_GREEN
             )
         )
         self.clear_log_button = toga.Button(
@@ -328,8 +275,7 @@ class LokalRAGApp(toga.App):
             on_press=self._on_clear_log,
             style=Pack(
                 flex=1,
-                background_color=DarkTheme.ACCENT_RED,
-                color=DarkTheme.TEXT_PRIMARY
+                background_color=Theme.ACCENT_RED
             )
         )
         button_box.add(self.start_button)
@@ -342,8 +288,7 @@ class LokalRAGApp(toga.App):
             style=Pack(
                 padding_top=10,
                 padding_bottom=5,
-                font_weight="bold",
-                color=DarkTheme.TEXT_PRIMARY
+                font_weight="bold"
             )
         )
         container.add(log_label)
@@ -354,9 +299,7 @@ class LokalRAGApp(toga.App):
             placeholder="Processing logs will appear here...",
             style=Pack(
                 flex=1,
-                height=250,
-                background_color=DarkTheme.BG_SECONDARY,
-                color=DarkTheme.TEXT_PRIMARY
+                height=250
             )
         )
         container.add(self.log_output)
@@ -364,7 +307,7 @@ class LokalRAGApp(toga.App):
         # Wrap in ScrollContainer for native scrolling
         return toga.ScrollContainer(
             content=container,
-            style=Pack(background_color=DarkTheme.BG_PRIMARY)
+            style=Pack()
         )
 
     def _create_chat_tab(self) -> toga.Widget:
@@ -377,8 +320,7 @@ class LokalRAGApp(toga.App):
         container = toga.Box(
             style=Pack(
                 direction=COLUMN,
-                padding=20,
-                background_color=DarkTheme.BG_PRIMARY
+                padding=20
             )
         )
 
@@ -387,8 +329,7 @@ class LokalRAGApp(toga.App):
             style=Pack(
                 padding_bottom=20,
                 font_size=20,
-                font_weight="bold",
-                color=DarkTheme.TEXT_PRIMARY
+                font_weight="bold"
             )
         )
         container.add(title)
@@ -399,9 +340,7 @@ class LokalRAGApp(toga.App):
             placeholder="Chat history will appear here...\n\nAsk questions about your documents!",
             style=Pack(
                 flex=1,
-                height=400,
-                background_color=DarkTheme.BG_SECONDARY,
-                color=DarkTheme.TEXT_PRIMARY
+                height=400
             )
         )
         container.add(self.chat_history)
@@ -416,14 +355,12 @@ class LokalRAGApp(toga.App):
         )
         search_label = toga.Label(
             "Search Type:",
-            style=Pack(width=120, color=DarkTheme.TEXT_PRIMARY)
+            style=Pack(width=120)
         )
         self.search_type_selection = toga.Selection(
             items=["vector", "bm25", "ensemble"],
             style=Pack(
-                flex=1,
-                background_color=DarkTheme.BG_TERTIARY,
-                color=DarkTheme.TEXT_PRIMARY
+                flex=1
             )
         )
         self.search_type_selection.value = "vector"
@@ -437,9 +374,7 @@ class LokalRAGApp(toga.App):
             placeholder="Type your message here...",
             style=Pack(
                 flex=1,
-                padding_right=10,
-                background_color=DarkTheme.BG_TERTIARY,
-                color=DarkTheme.TEXT_PRIMARY
+                padding_right=10
             )
         )
         self.send_button = toga.Button(
@@ -447,8 +382,7 @@ class LokalRAGApp(toga.App):
             on_press=self._on_send_message,
             style=Pack(
                 width=100,
-                background_color=DarkTheme.ACCENT_BLUE,
-                color=DarkTheme.TEXT_PRIMARY
+                background_color=Theme.ACCENT_BLUE
             )
         )
         input_box.add(self.chat_input)
@@ -457,7 +391,7 @@ class LokalRAGApp(toga.App):
 
         return toga.ScrollContainer(
             content=container,
-            style=Pack(background_color=DarkTheme.BG_PRIMARY)
+            style=Pack()
         )
 
     def _create_notes_tab(self) -> toga.Widget:
@@ -470,8 +404,7 @@ class LokalRAGApp(toga.App):
         container = toga.Box(
             style=Pack(
                 direction=COLUMN,
-                padding=20,
-                background_color=DarkTheme.BG_PRIMARY
+                padding=20
             )
         )
 
@@ -480,8 +413,7 @@ class LokalRAGApp(toga.App):
             style=Pack(
                 padding_bottom=20,
                 font_size=20,
-                font_weight="bold",
-                color=DarkTheme.TEXT_PRIMARY
+                font_weight="bold"
             )
         )
         container.add(title)
@@ -491,9 +423,7 @@ class LokalRAGApp(toga.App):
             placeholder="Create a new note...\n\nYour note will be saved to the knowledge base.",
             style=Pack(
                 flex=1,
-                height=400,
-                background_color=DarkTheme.BG_SECONDARY,
-                color=DarkTheme.TEXT_PRIMARY
+                height=400
             )
         )
         container.add(self.note_text)
@@ -506,8 +436,7 @@ class LokalRAGApp(toga.App):
             style=Pack(
                 flex=1,
                 padding_right=10,
-                background_color=DarkTheme.ACCENT_GREEN,
-                color=DarkTheme.TEXT_PRIMARY
+                background_color=Theme.ACCENT_GREEN
             )
         )
         clear_button = toga.Button(
@@ -515,8 +444,7 @@ class LokalRAGApp(toga.App):
             on_press=self._on_clear_note,
             style=Pack(
                 flex=1,
-                background_color=DarkTheme.ACCENT_RED,
-                color=DarkTheme.TEXT_PRIMARY
+                background_color=Theme.ACCENT_RED
             )
         )
         button_box.add(save_button)
@@ -525,7 +453,7 @@ class LokalRAGApp(toga.App):
 
         return toga.ScrollContainer(
             content=container,
-            style=Pack(background_color=DarkTheme.BG_PRIMARY)
+            style=Pack()
         )
 
     def _create_changelog_tab(self) -> toga.Widget:
@@ -538,8 +466,7 @@ class LokalRAGApp(toga.App):
         container = toga.Box(
             style=Pack(
                 direction=COLUMN,
-                padding=20,
-                background_color=DarkTheme.BG_PRIMARY
+                padding=20
             )
         )
 
@@ -548,8 +475,7 @@ class LokalRAGApp(toga.App):
             style=Pack(
                 padding_bottom=20,
                 font_size=20,
-                font_weight="bold",
-                color=DarkTheme.TEXT_PRIMARY
+                font_weight="bold"
             )
         )
         container.add(title)
@@ -560,16 +486,14 @@ class LokalRAGApp(toga.App):
             placeholder="Document processing history will appear here...",
             style=Pack(
                 flex=1,
-                height=500,
-                background_color=DarkTheme.BG_SECONDARY,
-                color=DarkTheme.TEXT_PRIMARY
+                height=500
             )
         )
         container.add(self.changelog_text)
 
         return toga.ScrollContainer(
             content=container,
-            style=Pack(background_color=DarkTheme.BG_PRIMARY)
+            style=Pack()
         )
 
     def _create_settings_tab(self) -> toga.Widget:
@@ -589,8 +513,7 @@ class LokalRAGApp(toga.App):
         container = toga.Box(
             style=Pack(
                 direction=COLUMN,
-                padding=20,
-                background_color=DarkTheme.BG_PRIMARY
+                padding=20
             )
         )
 
@@ -599,8 +522,7 @@ class LokalRAGApp(toga.App):
             style=Pack(
                 padding_bottom=20,
                 font_size=20,
-                font_weight="bold",
-                color=DarkTheme.TEXT_PRIMARY
+                font_weight="bold"
             )
         )
         container.add(title)
@@ -614,9 +536,7 @@ class LokalRAGApp(toga.App):
         self.llm_provider_selection = toga.Selection(
             items=["ollama", "lmstudio", "claude", "gemini", "mistral"],
             style=Pack(
-                padding=5,
-                background_color=DarkTheme.BG_TERTIARY,
-                color=DarkTheme.TEXT_PRIMARY
+                padding=5
             )
         )
         self.llm_provider_selection.value = "ollama"
@@ -766,8 +686,7 @@ class LokalRAGApp(toga.App):
             style=Pack(
                 flex=1,
                 padding_right=10,
-                background_color=DarkTheme.ACCENT_GREEN,
-                color=DarkTheme.TEXT_PRIMARY
+                background_color=Theme.ACCENT_GREEN
             )
         )
         test_button = toga.Button(
@@ -775,8 +694,7 @@ class LokalRAGApp(toga.App):
             on_press=self._on_test_connection,
             style=Pack(
                 flex=1,
-                background_color=DarkTheme.ACCENT_BLUE,
-                color=DarkTheme.TEXT_PRIMARY
+                background_color=Theme.ACCENT_BLUE
             )
         )
         button_box.add(self.save_settings_button)
@@ -785,7 +703,7 @@ class LokalRAGApp(toga.App):
 
         return toga.ScrollContainer(
             content=container,
-            style=Pack(background_color=DarkTheme.BG_PRIMARY)
+            style=Pack()
         )
 
     # ========================================================================
@@ -806,8 +724,7 @@ class LokalRAGApp(toga.App):
         section = toga.Box(
             style=Pack(
                 direction=COLUMN,
-                padding=10,
-                background_color=DarkTheme.BG_SECONDARY
+                padding=10
             )
         )
 
@@ -815,8 +732,7 @@ class LokalRAGApp(toga.App):
             title,
             style=Pack(
                 padding_bottom=10,
-                font_weight="bold",
-                color=DarkTheme.TEXT_PRIMARY
+                font_weight="bold"
             )
         )
         section.add(section_title)
@@ -845,25 +761,21 @@ class LokalRAGApp(toga.App):
 
         label = toga.Label(
             label_text,
-            style=Pack(width=150, color=DarkTheme.TEXT_SECONDARY)
+            style=Pack(width=150)
         )
 
         if is_password:
             input_field = toga.PasswordInput(
                 placeholder=placeholder,
                 style=Pack(
-                    flex=1,
-                    background_color=DarkTheme.BG_TERTIARY,
-                    color=DarkTheme.TEXT_PRIMARY
+                    flex=1
                 )
             )
         else:
             input_field = toga.TextInput(
                 placeholder=placeholder,
                 style=Pack(
-                    flex=1,
-                    background_color=DarkTheme.BG_TERTIARY,
-                    color=DarkTheme.TEXT_PRIMARY
+                    flex=1
                 )
             )
 
@@ -876,21 +788,14 @@ class LokalRAGApp(toga.App):
     # Event Handlers (Internal)
     # ========================================================================
 
-    def _on_pdf_selected(self, widget):
-        """Handle PDF/Folder source selection."""
-        self.source_type_value = "pdf"
-        # Update button colors
-        self.pdf_radio_btn.style.update(background_color=DarkTheme.ACCENT_BLUE)
-        self.web_radio_btn.style.update(background_color=DarkTheme.BG_TERTIARY)
-        logger.info("Source type changed to: pdf")
-
-    def _on_web_selected(self, widget):
-        """Handle Web source selection."""
-        self.source_type_value = "web"
-        # Update button colors
-        self.web_radio_btn.style.update(background_color=DarkTheme.ACCENT_BLUE)
-        self.pdf_radio_btn.style.update(background_color=DarkTheme.BG_TERTIARY)
-        logger.info("Source type changed to: web")
+    def _on_source_type_changed(self, widget):
+        """Handle source type selection change."""
+        if self.source_type_selection.value == "PDF / Markdown Files":
+            self.source_type_value = "pdf"
+            logger.info("Source type changed to: pdf")
+        else:  # "Web URL"
+            self.source_type_value = "web"
+            logger.info("Source type changed to: web")
 
     def _on_select_folder(self, widget):
         """Handle folder selection button press."""
@@ -1083,10 +988,10 @@ class LokalRAGApp(toga.App):
         self.start_button.enabled = not is_processing
         if is_processing:
             self.start_button.text = "⏳ Processing..."
-            self.start_button.style.update(background_color=DarkTheme.ACCENT_ORANGE)
+            self.start_button.style.update(background_color=Theme.ACCENT_ORANGE)
         else:
             self.start_button.text = "🚀 Start Processing"
-            self.start_button.style.update(background_color=DarkTheme.ACCENT_GREEN)
+            self.start_button.style.update(background_color=Theme.ACCENT_GREEN)
 
     def set_chat_state(self, is_processing: bool) -> None:
         """
@@ -1099,10 +1004,10 @@ class LokalRAGApp(toga.App):
         self.chat_input.enabled = not is_processing
         if is_processing:
             self.send_button.text = "⏳ Thinking..."
-            self.send_button.style.update(background_color=DarkTheme.ACCENT_ORANGE)
+            self.send_button.style.update(background_color=Theme.ACCENT_ORANGE)
         else:
             self.send_button.text = "Send"
-            self.send_button.style.update(background_color=DarkTheme.ACCENT_BLUE)
+            self.send_button.style.update(background_color=Theme.ACCENT_BLUE)
 
     def append_log(self, message: str) -> None:
         """
