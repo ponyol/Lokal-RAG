@@ -82,8 +82,8 @@ class TogaAppOrchestrator:
         # Set up event callbacks
         self.setup_callbacks()
 
-        # Start the queue checker
-        self.check_view_queue()
+        # Start the queue checker (as a background task)
+        self.view.add_background_task(self.check_view_queue)
 
         # NOTE: load_settings_to_ui() will be called from main.py
         # after the controller is initialized, to ensure it runs in the main thread
@@ -119,12 +119,13 @@ class TogaAppOrchestrator:
     # Queue Management (Thread-Safe GUI Updates)
     # ========================================================================
 
-    def check_view_queue(self) -> None:
+    async def check_view_queue(self) -> None:
         """
         Check the view queue for messages from worker threads.
 
-        This method is called periodically to process messages from background threads.
-        It's the thread-safe way to update the Toga GUI from worker threads.
+        This async method runs as a background task and periodically checks
+        for messages from worker threads. It's the thread-safe way to update
+        the Toga GUI from worker threads.
 
         Messages can be:
         - "LOG: <message>" - Append to ingestion log
@@ -132,37 +133,40 @@ class TogaAppOrchestrator:
         - "STOP_PROCESSING" - Reset processing state
         - "STOP_CHATTING" - Reset chat state
         """
-        try:
-            while True:
-                # Non-blocking get
-                message = self.view_queue.get_nowait()
+        import asyncio
 
-                if message == "STOP_PROCESSING":
-                    self.is_processing = False
-                    self.view.set_processing_state(False)
+        while True:
+            try:
+                while True:
+                    # Non-blocking get
+                    message = self.view_queue.get_nowait()
 
-                elif message == "STOP_CHATTING":
-                    self.is_chatting = False
-                    self.view.set_chat_state(False)
+                    if message == "STOP_PROCESSING":
+                        self.is_processing = False
+                        self.view.set_processing_state(False)
+                        logger.info("Processing completed, UI state reset")
 
-                elif message.startswith("LOG: "):
-                    log_message = message[5:]
-                    self.view.append_log(log_message)
+                    elif message == "STOP_CHATTING":
+                        self.is_chatting = False
+                        self.view.set_chat_state(False)
+                        logger.info("Chat completed, UI state reset")
 
-                elif message.startswith("CHAT: "):
-                    # Format: "CHAT: role: message"
-                    parts = message[6:].split(": ", 1)
-                    if len(parts) == 2:
-                        role, content = parts
-                        self.view.append_chat_message(role, content)
+                    elif message.startswith("LOG: "):
+                        log_message = message[5:]
+                        self.view.append_log(log_message)
 
-        except queue.Empty:
-            pass
+                    elif message.startswith("CHAT: "):
+                        # Format: "CHAT: role: message"
+                        parts = message[6:].split(": ", 1)
+                        if len(parts) == 2:
+                            role, content = parts
+                            self.view.append_chat_message(role, content)
 
-        # Schedule next check using threading.Timer
-        timer = threading.Timer(0.1, self.check_view_queue)
-        timer.daemon = True
-        timer.start()
+            except queue.Empty:
+                pass
+
+            # Sleep for 100ms before next check (async, non-blocking)
+            await asyncio.sleep(0.1)
 
     # ========================================================================
     # Event Handlers
