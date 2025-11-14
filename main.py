@@ -22,7 +22,7 @@ import sys
 import warnings
 from pathlib import Path
 
-from app_config import create_config_from_settings
+from app_config import create_config_from_settings, AppConfig
 from app_controller_toga import TogaAppOrchestrator
 from app_services import fn_check_ollama_availability
 from app_storage import StorageService, fn_ensure_directories_exist
