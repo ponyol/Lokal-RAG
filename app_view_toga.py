@@ -937,6 +937,7 @@ class LokalRAGApp(toga.App):
             "mistral_api_key": self.mistral_api_key_input.value or "",
             "mistral_model": self.mistral_model_input.value or "",
             # Vision
+            "vision_mode": self.vision_mode_selection.value or "auto",
             "vision_provider": self.vision_provider_input.value or "",
             "vision_base_url": self.vision_base_url_input.value or "",
             "vision_model": self.vision_model_input.value or "",
@@ -989,6 +990,10 @@ class LokalRAGApp(toga.App):
             self.mistral_model_input.value = settings["mistral_model"]
 
         # Vision
+        if "vision_mode" in settings:
+            vision_mode = settings["vision_mode"]
+            logger.info(f"Setting vision mode to: {vision_mode}")
+            self.vision_mode_selection.value = vision_mode
         if "vision_provider" in settings:
             self.vision_provider_input.value = settings["vision_provider"]
         if "vision_base_url" in settings:
