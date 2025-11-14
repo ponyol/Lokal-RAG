@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Toga-based UI for Lokal-RAG Application (Dark Theme)
+Toga-based UI for Lokal-RAG Application
 
 This module provides a native UI implementation using Toga (BeeWare).
 It replaces CustomTkinter to fix macOS trackpad scrolling issues.
@@ -8,7 +8,7 @@ It replaces CustomTkinter to fix macOS trackpad scrolling issues.
 Architecture:
 - Pure UI layer (no business logic)
 - Same public API as app_view.py for compatibility with app_controller.py
-- Native look & feel with dark theme
+- Native look & feel with platform-native styling
 - Native scrolling works on macOS (trackpad, mousewheel, scroll gestures)
 """
 
@@ -72,21 +72,21 @@ class LokalRAGApp(toga.App):
         # Source type tracking
         self.source_type_value = "pdf"  # Default to PDF
 
-        logger.info("Toga app initialized with dark theme")
+        logger.info("Toga app initialized with native theme")
 
     def startup(self):
         """
         Build the UI when the app starts.
 
         This method is called automatically by Toga after __init__.
-        It creates the main window and all tabs with dark theme.
+        It creates the main window and all tabs.
         """
-        logger.info("Building Toga UI with dark theme...")
+        logger.info("Building Toga UI...")
 
         # Create main window
         self.main_window = toga.MainWindow(title=self.formal_name)
 
-        # Create tabs with dark theme
+        # Create tabs
         self.tabs = toga.OptionContainer(
             style=Pack(),
             content=[
@@ -104,7 +104,7 @@ class LokalRAGApp(toga.App):
         # Show the window
         self.main_window.show()
 
-        logger.info("✓ Toga UI created successfully with dark theme")
+        logger.info("✓ Toga UI created successfully")
 
     # ========================================================================
     # Tab Creation Methods
@@ -112,7 +112,7 @@ class LokalRAGApp(toga.App):
 
     def _create_ingestion_tab(self) -> toga.Widget:
         """
-        Create the Ingestion tab UI with dark theme.
+        Create the Ingestion tab UI.
 
         This tab allows users to:
         - Select source type (PDF/Markdown or Web)
@@ -312,7 +312,7 @@ class LokalRAGApp(toga.App):
 
     def _create_chat_tab(self) -> toga.Widget:
         """
-        Create the Chat tab UI with dark theme.
+        Create the Chat tab UI.
 
         Returns:
             toga.Widget: The chat tab content
@@ -396,7 +396,7 @@ class LokalRAGApp(toga.App):
 
     def _create_notes_tab(self) -> toga.Widget:
         """
-        Create the Notes tab UI with dark theme.
+        Create the Notes tab UI.
 
         Returns:
             toga.Widget: The notes tab content
@@ -458,7 +458,7 @@ class LokalRAGApp(toga.App):
 
     def _create_changelog_tab(self) -> toga.Widget:
         """
-        Create the Changelog tab UI with dark theme.
+        Create the Changelog tab UI.
 
         Returns:
             toga.Widget: The changelog tab content
@@ -498,7 +498,7 @@ class LokalRAGApp(toga.App):
 
     def _create_settings_tab(self) -> toga.Widget:
         """
-        Create the Settings tab UI with dark theme.
+        Create the Settings tab UI.
 
         This tab allows users to configure:
         - LLM provider (Ollama, LM Studio, Claude, Gemini, Mistral)
