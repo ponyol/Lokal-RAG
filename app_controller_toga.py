@@ -82,11 +82,13 @@ class TogaAppOrchestrator:
         # Set up event callbacks
         self.setup_callbacks()
 
-        # Load saved settings into UI
-        self.load_settings_to_ui()
-
         # Start the queue checker
         self.check_view_queue()
+
+        # Load saved settings into UI (deferred to ensure widgets are ready)
+        # Use a small delay to ensure UI is fully rendered
+        import threading
+        threading.Timer(0.1, self.load_settings_to_ui).start()
 
     def setup_callbacks(self) -> None:
         """
@@ -105,10 +107,15 @@ class TogaAppOrchestrator:
         """Load saved settings from JSON into the UI."""
         from app_config import load_settings_from_json
 
-        settings = load_settings_from_json()
-        if settings:
-            self.view.set_llm_settings(settings)
-            logger.info("Loaded settings into UI")
+        try:
+            settings = load_settings_from_json()
+            if settings:
+                logger.info(f"Found settings file with keys: {list(settings.keys())}")
+                self.view.set_llm_settings(settings)
+            else:
+                logger.info("No settings file found, using defaults")
+        except Exception as e:
+            logger.error(f"Failed to load settings into UI: {e}", exc_info=True)
 
     # ========================================================================
     # Queue Management (Thread-Safe GUI Updates)

@@ -951,8 +951,12 @@ class LokalRAGApp(toga.App):
         Args:
             settings: Dictionary of settings to populate
         """
+        logger.info(f"Loading settings into UI: {list(settings.keys())}")
+
         if "llm_provider" in settings:
-            self.llm_provider_selection.value = settings["llm_provider"]
+            provider = settings["llm_provider"]
+            logger.info(f"Setting LLM provider to: {provider}")
+            self.llm_provider_selection.value = provider
 
         # Ollama
         if "ollama_base_url" in settings:
@@ -994,7 +998,11 @@ class LokalRAGApp(toga.App):
 
         # General
         if "timeout" in settings:
-            self.timeout_input.value = str(settings["timeout"])
+            timeout_val = str(settings["timeout"])
+            logger.info(f"Setting timeout to: {timeout_val}")
+            self.timeout_input.value = timeout_val
+
+        logger.info("✓ Settings loaded into UI successfully")
 
     def set_processing_state(self, is_processing: bool) -> None:
         """
