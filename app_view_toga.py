@@ -185,23 +185,22 @@ class LokalRAGApp(toga.App):
         folder_box.add(folder_button)
         container.add(folder_box)
 
-        # ---- Web URL Input ----
-        url_box = toga.Box(style=Pack(direction=ROW, padding=5))
+        # ---- Web URL Input (Multiline for multiple URLs) ----
         url_label = toga.Label(
-            "Web URL:",
-            style=Pack(width=180)
+            "Web URLs (one per line):",
+            style=Pack(padding=5, padding_bottom=2)
         )
-        self.url_input = toga.TextInput(
-            placeholder="https://example.com/article",
-            style=Pack(flex=1)
+        container.add(url_label)
+
+        self.url_input = toga.MultilineTextInput(
+            placeholder="https://example.com/article1\nhttps://example.com/article2\n...",
+            style=Pack(height=100, padding=5)
         )
-        url_box.add(url_label)
-        url_box.add(self.url_input)
-        container.add(url_box)
+        container.add(self.url_input)
 
         # Helper text
         helper_text = toga.Label(
-            "Note: Fill in either folder OR URL based on selection above",
+            "Note: Fill in either folder OR URLs based on selection above",
             style=Pack(padding=5, font_size=10)
         )
         container.add(helper_text)
@@ -672,6 +671,19 @@ class LokalRAGApp(toga.App):
         self.vision_model_input = vision_model_box.children[1]
         vision_section.add(vision_model_box)
 
+        # ---- General Settings ----
+        general_section = self._create_settings_section(
+            "General Settings:",
+            container
+        )
+
+        timeout_box = self._create_input_row(
+            "LLM Request Timeout (seconds):",
+            "300"
+        )
+        self.timeout_input = timeout_box.children[1]
+        general_section.add(timeout_box)
+
         # ---- Action Buttons ----
         button_box = toga.Box(
             style=Pack(
@@ -910,10 +922,10 @@ class LokalRAGApp(toga.App):
         return {
             "llm_provider": self.llm_provider_selection.value,
             # Ollama
-            "ollama_url": self.ollama_url_input.value or "",
+            "ollama_base_url": self.ollama_url_input.value or "",
             "ollama_model": self.ollama_model_input.value or "",
             # LM Studio
-            "lmstudio_url": self.lmstudio_url_input.value or "",
+            "lmstudio_base_url": self.lmstudio_url_input.value or "",
             "lmstudio_model": self.lmstudio_model_input.value or "",
             # Claude
             "claude_api_key": self.claude_api_key_input.value or "",
@@ -928,6 +940,8 @@ class LokalRAGApp(toga.App):
             "vision_provider": self.vision_provider_input.value or "",
             "vision_base_url": self.vision_base_url_input.value or "",
             "vision_model": self.vision_model_input.value or "",
+            # General
+            "timeout": self.timeout_input.value or "300",
         }
 
     def set_llm_settings(self, settings: dict) -> None:
@@ -941,14 +955,14 @@ class LokalRAGApp(toga.App):
             self.llm_provider_selection.value = settings["llm_provider"]
 
         # Ollama
-        if "ollama_url" in settings:
-            self.ollama_url_input.value = settings["ollama_url"]
+        if "ollama_base_url" in settings:
+            self.ollama_url_input.value = settings["ollama_base_url"]
         if "ollama_model" in settings:
             self.ollama_model_input.value = settings["ollama_model"]
 
         # LM Studio
-        if "lmstudio_url" in settings:
-            self.lmstudio_url_input.value = settings["lmstudio_url"]
+        if "lmstudio_base_url" in settings:
+            self.lmstudio_url_input.value = settings["lmstudio_base_url"]
         if "lmstudio_model" in settings:
             self.lmstudio_model_input.value = settings["lmstudio_model"]
 
@@ -977,6 +991,10 @@ class LokalRAGApp(toga.App):
             self.vision_base_url_input.value = settings["vision_base_url"]
         if "vision_model" in settings:
             self.vision_model_input.value = settings["vision_model"]
+
+        # General
+        if "timeout" in settings:
+            self.timeout_input.value = str(settings["timeout"])
 
     def set_processing_state(self, is_processing: bool) -> None:
         """
