@@ -252,6 +252,61 @@ class LokalRAGApp(toga.App):
         vision_box.add(self.vision_mode_selection)
         container.add(vision_box)
 
+        # ---- Web Scraping Options ----
+        web_options_label = toga.Label(
+            "Web Scraping Options:",
+            style=Pack(
+                padding_top=20,
+                padding_bottom=10,
+                font_weight="bold"
+            )
+        )
+        container.add(web_options_label)
+
+        # Use cookies checkbox
+        self.use_cookies_switch = toga.Switch(
+            "Use browser cookies for authentication",
+            value=True,  # Default: enabled
+            style=Pack(
+                padding=5
+            )
+        )
+        container.add(self.use_cookies_switch)
+
+        # Browser selection
+        browser_box = toga.Box(style=Pack(direction=ROW, padding=5))
+        browser_label = toga.Label(
+            "Browser:",
+            style=Pack(width=180)
+        )
+        self.browser_selection = toga.Selection(
+            items=["chrome", "firefox", "safari", "edge", "all"],
+            style=Pack(
+                flex=1
+            )
+        )
+        self.browser_selection.value = "firefox"  # Default: firefox
+        browser_box.add(browser_label)
+        browser_box.add(self.browser_selection)
+        container.add(browser_box)
+
+        # Helper text for browser selection
+        browser_helper = toga.Label(
+            "Select the browser where you're logged in to the site",
+            style=Pack(padding=5, padding_left=185, font_size=10)
+        )
+        container.add(browser_helper)
+
+        # Save raw HTML checkbox
+        self.save_raw_html_switch = toga.Switch(
+            "Save raw HTML (for debugging)",
+            value=False,
+            style=Pack(
+                padding=5
+            )
+        )
+        container.add(self.save_raw_html_switch)
+
         # ---- Action Buttons ----
         button_box = toga.Box(
             style=Pack(
@@ -893,9 +948,9 @@ class LokalRAGApp(toga.App):
                 - do_translation: bool
                 - do_tagging: bool
                 - vision_mode: str
-                - use_cookies: bool (default: False, not yet implemented in UI)
-                - browser_choice: str (default: "chrome", not yet implemented in UI)
-                - save_raw_html: bool (default: False, not yet implemented in UI)
+                - use_cookies: bool
+                - browser_choice: str ("chrome", "firefox", "safari", "edge", "all")
+                - save_raw_html: bool
         """
         # Parse web URLs from input (split by newlines and/or commas)
         web_urls = []
@@ -911,14 +966,14 @@ class LokalRAGApp(toga.App):
         return {
             "source_type": self.source_type_value,
             "folder_path": self.folder_input.value or "",
-            "web_urls": web_urls,  # Changed from web_url to web_urls (list)
-            "do_translation": self.translate_switch.value,  # Changed from translate
-            "do_tagging": self.tagging_switch.value,  # Changed from auto_tag
+            "web_urls": web_urls,
+            "do_translation": self.translate_switch.value,
+            "do_tagging": self.tagging_switch.value,
             "vision_mode": self.vision_mode_selection.value,
-            # Web scraping options (not yet implemented in Toga UI, using defaults)
-            "use_cookies": False,
-            "browser_choice": "chrome",
-            "save_raw_html": False,
+            # Web scraping options (now from UI widgets)
+            "use_cookies": self.use_cookies_switch.value,
+            "browser_choice": self.browser_selection.value,
+            "save_raw_html": self.save_raw_html_switch.value,
         }
 
     def get_chat_input(self) -> str:
