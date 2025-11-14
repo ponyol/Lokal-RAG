@@ -713,6 +713,17 @@ class LokalRAGApp(toga.App):
         button_box.add(test_button)
         container.add(button_box)
 
+        # ---- Status Label ----
+        self.settings_status_label = toga.Label(
+            "",
+            style=Pack(
+                padding_top=10,
+                padding_bottom=10,
+                font_size=12
+            )
+        )
+        container.add(self.settings_status_label)
+
         return toga.ScrollContainer(
             content=container,
             style=Pack()
@@ -1095,6 +1106,21 @@ class LokalRAGApp(toga.App):
             message: Info message
         """
         self.main_window.info_dialog(title, message)
+
+    def show_settings_status(self, message: str, is_error: bool = False) -> None:
+        """
+        Display a status message in the Settings tab.
+
+        Args:
+            message: The message to display
+            is_error: True if this is an error message, False for success
+
+        Example:
+            >>> view.show_settings_status("✓ Settings saved!", is_error=False)
+        """
+        # NOTE: Toga doesn't support text color styling directly on Label widgets,
+        # so we rely on the message already containing visual indicators (✓/✗)
+        self.settings_status_label.text = message
 
 
 def main():
