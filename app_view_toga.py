@@ -889,18 +889,36 @@ class LokalRAGApp(toga.App):
             dict: Ingestion settings with keys:
                 - source_type: str ("pdf" or "web")
                 - folder_path: str
-                - web_url: str
-                - translate: bool
-                - auto_tag: bool
+                - web_urls: list[str] (parsed from url_input)
+                - do_translation: bool
+                - do_tagging: bool
                 - vision_mode: str
+                - use_cookies: bool (default: False, not yet implemented in UI)
+                - browser_choice: str (default: "chrome", not yet implemented in UI)
+                - save_raw_html: bool (default: False, not yet implemented in UI)
         """
+        # Parse web URLs from input (split by newlines and/or commas)
+        web_urls = []
+        if self.source_type_value == "web":
+            urls_text = (self.url_input.value or "").strip()
+            # Split by newlines first, then by commas
+            for line in urls_text.split("\n"):
+                for url in line.split(","):
+                    url = url.strip()
+                    if url:
+                        web_urls.append(url)
+
         return {
             "source_type": self.source_type_value,
             "folder_path": self.folder_input.value or "",
-            "web_url": self.url_input.value or "",
-            "translate": self.translate_switch.value,
-            "auto_tag": self.tagging_switch.value,
+            "web_urls": web_urls,  # Changed from web_url to web_urls (list)
+            "do_translation": self.translate_switch.value,  # Changed from translate
+            "do_tagging": self.tagging_switch.value,  # Changed from auto_tag
             "vision_mode": self.vision_mode_selection.value,
+            # Web scraping options (not yet implemented in Toga UI, using defaults)
+            "use_cookies": False,
+            "browser_choice": "chrome",
+            "save_raw_html": False,
         }
 
     def get_chat_input(self) -> str:
