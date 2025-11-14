@@ -16,9 +16,121 @@ All heavy operations are delegated to the Controller.
 """
 
 import customtkinter as ctk
+import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog
 from typing import Callable, Optional
+
+
+class TkScrollableFrame(ctk.CTkFrame):
+    """
+    A hybrid scrollable frame that uses native Tkinter scrolling.
+
+    This widget combines:
+    - CustomTkinter frame for styling (dark theme)
+    - Native Tkinter Canvas + Scrollbar for scrolling (works on macOS trackpad!)
+
+    Why: CTkScrollableFrame doesn't receive trackpad events on macOS,
+    but native Tkinter scrolling works perfectly.
+    """
+
+    def __init__(self, master, **kwargs):
+        """
+        Create a scrollable frame with native Tkinter scrolling.
+
+        Args:
+            master: Parent widget
+            **kwargs: Additional arguments for CTkFrame
+        """
+        super().__init__(master, **kwargs)
+
+        # Create a canvas (native tkinter)
+        self.canvas = tk.Canvas(
+            self,
+            highlightthickness=0,
+            bg=self._apply_appearance_mode(ctk.ThemeManager.theme["CTkFrame"]["fg_color"]),
+        )
+
+        # Create a native Tkinter scrollbar
+        self.scrollbar = tk.Scrollbar(
+            self,
+            orient="vertical",
+            command=self.canvas.yview,
+            bg=self._apply_appearance_mode(ctk.ThemeManager.theme["CTkFrame"]["fg_color"]),
+            troughcolor=self._apply_appearance_mode(ctk.ThemeManager.theme["CTkFrame"]["top_fg_color"]),
+            activebackground=self._apply_appearance_mode(ctk.ThemeManager.theme["CTkButton"]["fg_color"]),
+        )
+
+        # Configure canvas scrolling
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+
+        # Create a frame inside the canvas to hold widgets
+        self.scrollable_frame = ctk.CTkFrame(self.canvas, fg_color="transparent")
+
+        # Create window in canvas
+        self.canvas_window = self.canvas.create_window(
+            (0, 0),
+            window=self.scrollable_frame,
+            anchor="nw"
+        )
+
+        # Pack canvas and scrollbar
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+
+        # Bind events to update scroll region
+        self.scrollable_frame.bind("<Configure>", self._on_frame_configure)
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
+
+        # Bind mousewheel - THIS WORKS ON macOS!
+        self._bind_mousewheel()
+
+    def _on_frame_configure(self, event=None):
+        """Update scroll region when frame size changes."""
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _on_canvas_configure(self, event):
+        """Update canvas window width when canvas is resized."""
+        self.canvas.itemconfig(self.canvas_window, width=event.width)
+
+    def _bind_mousewheel(self):
+        """Bind mousewheel events - works on macOS trackpad!"""
+        import sys
+
+        def on_mousewheel(event):
+            if sys.platform == "darwin":  # macOS
+                # macOS trackpad sends delta directly
+                self.canvas.yview_scroll(-1 * int(event.delta), "units")
+            elif sys.platform == "win32":  # Windows
+                self.canvas.yview_scroll(-1 * int(event.delta / 120), "units")
+            else:  # Linux
+                if event.num == 4:
+                    self.canvas.yview_scroll(-1, "units")
+                elif event.num == 5:
+                    self.canvas.yview_scroll(1, "units")
+
+        def bind_to_widget(widget):
+            """Recursively bind mousewheel to widget and all its children."""
+            if sys.platform != "linux":
+                widget.bind("<MouseWheel>", on_mousewheel, add="+")
+            else:
+                widget.bind("<Button-4>", on_mousewheel, add="+")
+                widget.bind("<Button-5>", on_mousewheel, add="+")
+
+            # Bind to all children recursively
+            for child in widget.winfo_children():
+                bind_to_widget(child)
+
+        # Bind to canvas AND scrollable_frame (and all children)
+        bind_to_widget(self.canvas)
+        bind_to_widget(self.scrollable_frame)
+
+        # Re-bind when new widgets are added
+        def on_child_added(event):
+            """Re-bind mousewheel when new children are added."""
+            bind_to_widget(self.scrollable_frame)
+
+        self.scrollable_frame.bind("<Configure>", on_child_added, add="+")
 
 
 class AppView:
@@ -116,10 +228,10 @@ class AppView:
         """Setup the Ingestion tab UI."""
         tab = self.tabview.tab("Ingestion")
 
-        # Create scrollable frame for all content
-        scrollable_frame = ctk.CTkScrollableFrame(tab)
-        scrollable_frame.pack(fill="both", expand=True, padx=0, pady=0)
-        self._enable_mousewheel_scrolling(scrollable_frame)
+        # Create scrollable frame for all content using native Tkinter scrolling
+        scrollable_container = TkScrollableFrame(tab)
+        scrollable_container.pack(fill="both", expand=True, padx=0, pady=0)
+        scrollable_frame = scrollable_container.scrollable_frame
 
         # Title
         title = ctk.CTkLabel(
@@ -530,10 +642,11 @@ class AppView:
         )
         self.refresh_changelog_button.pack(pady=5)
 
-        # File list (scrollable)
-        self.changelog_listbox = ctk.CTkScrollableFrame(left_frame, width=230, height=500)
-        self.changelog_listbox.pack(fill="both", expand=True, pady=5)
-        self._enable_mousewheel_scrolling(self.changelog_listbox)
+        # File list (scrollable) using native Tkinter scrolling
+        self.changelog_listbox_container = TkScrollableFrame(left_frame)
+        self.changelog_listbox_container.pack(fill="both", expand=True, pady=5)
+        self.changelog_listbox_container.configure(width=230, height=500)
+        self.changelog_listbox = self.changelog_listbox_container.scrollable_frame
 
         # Right panel: Content viewer
         right_frame = ctk.CTkFrame(main_frame)
@@ -645,10 +758,11 @@ class AppView:
         """Setup the Settings tab UI."""
         tab = self.tabview.tab("Settings")
 
-        # Create scrollable frame for all content
-        scrollable_frame = ctk.CTkScrollableFrame(tab)
-        scrollable_frame.pack(fill="both", expand=True, padx=0, pady=0)
-        self._enable_mousewheel_scrolling(scrollable_frame)
+        # Create scrollable frame for all content using native Tkinter scrolling
+        # (works with macOS trackpad unlike CTkScrollableFrame)
+        scrollable_container = TkScrollableFrame(tab)
+        scrollable_container.pack(fill="both", expand=True, padx=0, pady=0)
+        scrollable_frame = scrollable_container.scrollable_frame
 
         # Title
         title = ctk.CTkLabel(
@@ -1531,10 +1645,11 @@ class AppView:
                         return
                     return original_handler(event)
 
-                # CRITICAL FIX for macOS: Use direct bind on canvas instead of bind_all
-                # bind_all doesn't receive trackpad events on macOS, but direct bind does
+                # CRITICAL FIX for macOS: Bind to BOTH canvas AND widget
+                # Trackpad events may arrive at either place
                 canvas.bind("<MouseWheel>", wrapped_handler, add="+")
-                logger.info(f"[SCROLL] Bound <MouseWheel> directly to canvas for {widget_name}")
+                widget.bind("<MouseWheel>", wrapped_handler, add="+")
+                logger.info(f"[SCROLL] Bound <MouseWheel> to canvas and widget for {widget_name}")
             else:
                 # Fallback: direct scrolling
                 def on_mousewheel(event):
@@ -1544,15 +1659,31 @@ class AppView:
                     scroll_amount = -1 * int(event.delta)
                     canvas.yview_scroll(scroll_amount, "units")
 
-                # CRITICAL FIX for macOS: Use direct bind on canvas instead of bind_all
+                # CRITICAL FIX for macOS: Bind to BOTH canvas AND widget
                 canvas.bind("<MouseWheel>", on_mousewheel, add="+")
-                logger.info(f"[SCROLL] Bound <MouseWheel> directly to canvas (fallback) for {widget_name}")
+                widget.bind("<MouseWheel>", on_mousewheel, add="+")
+                logger.info(f"[SCROLL] Bound <MouseWheel> to canvas and widget (fallback) for {widget_name}")
 
             # Bind Enter/Leave to track mouse position
             canvas.bind("<Enter>", on_enter, add="+")
             canvas.bind("<Leave>", on_leave, add="+")
             widget.bind("<Enter>", on_enter, add="+")
             widget.bind("<Leave>", on_leave, add="+")
+
+            # DEBUG: Bind various event types to see what macOS trackpad actually sends
+            if sys.platform == "darwin" and logger.isEnabledFor(logging.DEBUG):
+                def log_all_events(event):
+                    """Log all events to debug what macOS trackpad sends"""
+                    logger.debug(f"[SCROLL] Event on {widget_name}: type={event.type}, num={getattr(event, 'num', 'N/A')}, delta={getattr(event, 'delta', 'N/A')}, x={event.x}, y={event.y}")
+
+                # Try various event types that might work on macOS trackpad
+                for event_type in ["<MouseWheel>", "<Button-4>", "<Button-5>"]:
+                    try:
+                        canvas.bind(event_type, log_all_events, add="+")
+                        widget.bind(event_type, log_all_events, add="+")
+                        logger.debug(f"[SCROLL] Bound {event_type} for debugging")
+                    except Exception as e:
+                        logger.debug(f"[SCROLL] Could not bind {event_type}: {e}")
 
         else:
             # CTkTextbox - bind directly to the textbox
