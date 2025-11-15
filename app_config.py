@@ -249,10 +249,10 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
         overrides["MISTRAL_MODEL"] = settings["mistral_model"]
 
     if "timeout" in settings:
-        overrides["LLM_REQUEST_TIMEOUT"] = settings["timeout"]
+        overrides["LLM_REQUEST_TIMEOUT"] = int(settings["timeout"])
 
     if "translation_chunk_size" in settings:
-        overrides["TRANSLATION_CHUNK_SIZE"] = settings["translation_chunk_size"]
+        overrides["TRANSLATION_CHUNK_SIZE"] = int(settings["translation_chunk_size"])
 
     if "vector_db_path" in settings:
         overrides["VECTOR_DB_PATH"] = Path(settings["vector_db_path"])

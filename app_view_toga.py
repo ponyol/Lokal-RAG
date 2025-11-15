@@ -739,6 +739,13 @@ class LokalRAGApp(toga.App):
         self.timeout_input = timeout_box.children[1]
         general_section.add(timeout_box)
 
+        translation_chunk_box = self._create_input_row(
+            "Translation Chunk Size (chars):",
+            "2000"
+        )
+        self.translation_chunk_input = translation_chunk_box.children[1]
+        general_section.add(translation_chunk_box)
+
         # ---- Action Buttons ----
         button_box = toga.Box(
             style=Pack(
@@ -1027,6 +1034,7 @@ class LokalRAGApp(toga.App):
             "vision_model": self.vision_model_input.value or "",
             # General
             "timeout": self.timeout_input.value or "300",
+            "translation_chunk_size": self.translation_chunk_input.value or "2000",
         }
 
     def set_llm_settings(self, settings: dict) -> None:
@@ -1090,6 +1098,11 @@ class LokalRAGApp(toga.App):
             timeout_val = str(settings["timeout"])
             logger.info(f"Setting timeout to: {timeout_val}")
             self.timeout_input.value = timeout_val
+
+        if "translation_chunk_size" in settings:
+            chunk_size_val = str(settings["translation_chunk_size"])
+            logger.info(f"Setting translation chunk size to: {chunk_size_val}")
+            self.translation_chunk_input.value = chunk_size_val
 
         logger.info("✓ Settings loaded into UI successfully")
 

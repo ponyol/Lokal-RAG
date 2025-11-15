@@ -82,8 +82,9 @@ class TogaAppOrchestrator:
         # Set up event callbacks
         self.setup_callbacks()
 
-        # Start the queue checker (as a background task)
-        self.view.add_background_task(self.check_view_queue)
+        # Start the queue checker using asyncio (recommended over deprecated add_background_task)
+        import asyncio
+        asyncio.create_task(self.check_view_queue(self.view))
 
         # NOTE: load_settings_to_ui() will be called from main.py
         # after the controller is initialized, to ensure it runs in the main thread
