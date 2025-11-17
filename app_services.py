@@ -515,6 +515,7 @@ def _describe_image_lmstudio_with_url(base64_image: str, model: str, base_url: s
         response.raise_for_status()
 
     data = response.json()
+    logger.info(f"Total time response: {response.elapsed.total_seconds()} seconds")
 
     if "choices" not in data or len(data["choices"]) == 0:
         raise ValueError(f"Invalid LM Studio vision response format: {data}")

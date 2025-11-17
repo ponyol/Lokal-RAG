@@ -936,8 +936,8 @@ class AppView:
             variable=self.gemini_model_var,
             values=[
                 "gemini-2.5-pro-preview-03-25",        # Fast and versatile (recommended)
-                "gemini-2.5-flash-preview-09-2025",          # More powerful, slower
-                "gemini-2.5-pro-preview-03-25",    # Experimental 2.0 (if available)
+                "gemini-2.5-flash-preview-09-2025",    # More powerful, slower
+                "gemini-2.5-pro-preview-03-25",        # Experimental 2.0 (if available)
             ],
             width=400,
         )
