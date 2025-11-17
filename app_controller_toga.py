@@ -101,6 +101,7 @@ class TogaAppOrchestrator:
         self.view.on_save_settings_callback = self.on_save_settings
         self.view.on_load_settings_callback = self.on_load_settings
         self.view.on_save_note_callback = self.on_save_note
+        self.view.on_clear_chat_callback = self.on_clear_chat  # V2: Added
 
         logger.info("Callbacks set up successfully")
 
