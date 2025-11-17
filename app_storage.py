@@ -46,7 +46,14 @@ class StorageService:
 
     def __init__(self, config: AppConfig):
         """
-        Initialize the storage service with embedding model and vector database.
+        Initialize the storage service with embedding model and vector databases.
+
+        Creates two separate ChromaDB instances:
+        - chroma_db_en: For English documents
+        - chroma_db_ru: For Russian documents
+
+        The selected database (based on config.DATABASE_LANGUAGE) is used for search,
+        but documents are always added to both databases.
 
         Args:
             config: Application configuration
@@ -56,13 +63,20 @@ class StorageService:
         """
         self.config = config
         self._embeddings: Optional[HuggingFaceEmbeddings] = None
+
+        # Two separate vectorstores for English and Russian
+        self._vectorstore_en: Optional[Chroma] = None
+        self._vectorstore_ru: Optional[Chroma] = None
+
+        # Active vectorstore for search (based on DATABASE_LANGUAGE)
         self._vectorstore: Optional[Chroma] = None
+
         self._bm25_retriever: Optional[BM25Retriever] = None
         self._all_documents: list[Document] = []  # Store all docs for BM25
 
-        logger.info("Initializing StorageService")
+        logger.info("Initializing StorageService with dual-language databases")
         self._initialize_embeddings()
-        self._initialize_vectorstore()
+        self._initialize_vectorstores()
         self._initialize_bm25_retriever()
 
     def _initialize_embeddings(self) -> None:
@@ -89,32 +103,54 @@ class StorageService:
             logger.error(f"Failed to load embedding model: {e}")
             raise
 
-    def _initialize_vectorstore(self) -> None:
+    def _initialize_vectorstores(self) -> None:
         """
-        Initialize the ChromaDB vector store.
+        Initialize two separate ChromaDB vector stores (English and Russian).
 
-        If the database already exists at config.VECTOR_DB_PATH, it will be loaded.
-        Otherwise, a new database will be created.
+        Creates two databases:
+        - chroma_db_en: For English documents
+        - chroma_db_ru: For Russian documents
+
+        The active database for search is selected based on config.DATABASE_LANGUAGE.
 
         NOTE: ChromaDB 1.3+ uses a modern architecture without multiprocessing,
         so no special cleanup is required (unlike 0.4.x versions).
         """
         try:
-            # Ensure the directory exists
-            self.config.VECTOR_DB_PATH.mkdir(parents=True, exist_ok=True)
+            # Paths for both databases
+            db_path_en = self.config.VECTOR_DB_PATH.parent / "chroma_db_en"
+            db_path_ru = self.config.VECTOR_DB_PATH.parent / "chroma_db_ru"
 
-            logger.info(f"Initializing vector database at: {self.config.VECTOR_DB_PATH}")
+            # Ensure directories exist
+            db_path_en.mkdir(parents=True, exist_ok=True)
+            db_path_ru.mkdir(parents=True, exist_ok=True)
 
-            self._vectorstore = Chroma(
-                collection_name="lokal_rag_collection",
+            logger.info(f"Initializing English vector database at: {db_path_en}")
+            self._vectorstore_en = Chroma(
+                collection_name="lokal_rag_en",
                 embedding_function=self._embeddings,
-                persist_directory=str(self.config.VECTOR_DB_PATH),
+                persist_directory=str(db_path_en),
             )
+            logger.info("English vector database initialized successfully")
 
-            logger.info("Vector database initialized successfully")
+            logger.info(f"Initializing Russian vector database at: {db_path_ru}")
+            self._vectorstore_ru = Chroma(
+                collection_name="lokal_rag_ru",
+                embedding_function=self._embeddings,
+                persist_directory=str(db_path_ru),
+            )
+            logger.info("Russian vector database initialized successfully")
+
+            # Set active vectorstore based on DATABASE_LANGUAGE
+            if self.config.DATABASE_LANGUAGE == "ru":
+                self._vectorstore = self._vectorstore_ru
+                logger.info("Active database: Russian (ru)")
+            else:
+                self._vectorstore = self._vectorstore_en
+                logger.info("Active database: English (en)")
 
         except Exception as e:
-            logger.error(f"Failed to initialize vector database: {e}")
+            logger.error(f"Failed to initialize vector databases: {e}")
             raise
 
     def _initialize_bm25_retriever(self) -> None:
@@ -183,18 +219,22 @@ class StorageService:
 
     def add_documents(self, docs: list[Document]) -> None:
         """
-        Add documents to the vector database.
+        Add documents to BOTH vector databases (English and Russian).
 
         This is a stateful operation that:
         1. Generates embeddings for each document
-        2. Stores the embeddings and documents in ChromaDB
+        2. Stores the embeddings and documents in BOTH ChromaDB instances
         3. Persists the changes to disk
+
+        NOTE: Documents are always added to both databases, regardless of
+        config.DATABASE_LANGUAGE setting. This ensures all documents are
+        searchable when switching languages.
 
         Args:
             docs: List of LangChain Document objects to add
 
         Raises:
-            RuntimeError: If vector store is not initialized
+            RuntimeError: If vector stores are not initialized
             Exception: If document addition fails
 
         Example:
@@ -202,15 +242,15 @@ class StorageService:
             >>> docs = [Document(page_content="Text", metadata={"source": "file.pdf"})]
             >>> storage.add_documents(docs)
         """
-        if self._vectorstore is None:
-            raise RuntimeError("Vector store not initialized")
+        if self._vectorstore_en is None or self._vectorstore_ru is None:
+            raise RuntimeError("Vector stores not initialized")
 
         if not docs:
             logger.warning("No documents to add")
             return
 
         try:
-            logger.info(f"Adding {len(docs)} documents to vector database")
+            logger.info(f"Adding {len(docs)} documents to BOTH databases (en + ru)")
 
             # Add type metadata to all documents
             for doc in docs:
@@ -226,8 +266,14 @@ class StorageService:
                 if any(month in doc.page_content.lower() for month in ['август', 'august', 'июль', 'july', 'сентябр', 'september']):
                     logger.info(f"    ✅ Contains date keywords!")
 
-            # Add documents and generate embeddings to vector store
-            self._vectorstore.add_documents(docs)
+            # Add documents to BOTH databases
+            logger.info("  → Adding to English database...")
+            self._vectorstore_en.add_documents(docs)
+            logger.info("  ✓ Added to English database")
+
+            logger.info("  → Adding to Russian database...")
+            self._vectorstore_ru.add_documents(docs)
+            logger.info("  ✓ Added to Russian database")
 
             # Add documents to BM25 index
             self._all_documents.extend(docs)
@@ -242,40 +288,43 @@ class StorageService:
                 logger.warning(f"Failed to rebuild BM25 retriever: {bm25_error}")
                 self._bm25_retriever = None
 
-            logger.info("Documents added successfully (vector + BM25)")
+            logger.info("Documents added successfully to BOTH databases (en + ru + BM25)")
 
         except Exception as e:
-            logger.error(f"Failed to add documents to vector database: {e}")
+            logger.error(f"Failed to add documents to vector databases: {e}")
             raise
 
     def add_note(self, note_content: str, note_path: Path) -> None:
         """
-        Add a note to the vector database.
+        Add a note to BOTH vector databases (English and Russian).
 
         Notes are stored with metadata type="note" to distinguish them from
         regular documents (type="document").
+
+        NOTE: Notes are always added to both databases, regardless of
+        config.DATABASE_LANGUAGE setting.
 
         Args:
             note_content: The text content of the note
             note_path: Path to the note file (for metadata)
 
         Raises:
-            RuntimeError: If vector store is not initialized
+            RuntimeError: If vector stores are not initialized
             Exception: If note addition fails
 
         Example:
             >>> storage = StorageService(config)
             >>> storage.add_note("Заметка о проекте", Path("notes/note_2025-11-11.md"))
         """
-        if self._vectorstore is None:
-            raise RuntimeError("Vector store not initialized")
+        if self._vectorstore_en is None or self._vectorstore_ru is None:
+            raise RuntimeError("Vector stores not initialized")
 
         if not note_content.strip():
             logger.warning("Empty note content, skipping")
             return
 
         try:
-            logger.info(f"Adding note to vector database: {note_path.name}")
+            logger.info(f"Adding note to BOTH databases: {note_path.name}")
 
             # Create Document with type="note" metadata
             doc = Document(
@@ -287,8 +336,14 @@ class StorageService:
                 }
             )
 
-            # Add note to vector store
-            self._vectorstore.add_documents([doc])
+            # Add note to BOTH vector stores
+            logger.info("  → Adding to English database...")
+            self._vectorstore_en.add_documents([doc])
+            logger.info("  ✓ Added to English database")
+
+            logger.info("  → Adding to Russian database...")
+            self._vectorstore_ru.add_documents([doc])
+            logger.info("  ✓ Added to Russian database")
 
             # Add note to BM25 index
             self._all_documents.append(doc)
@@ -303,10 +358,10 @@ class StorageService:
                 logger.warning(f"Failed to rebuild BM25 retriever: {bm25_error}")
                 self._bm25_retriever = None
 
-            logger.info("Note added successfully (vector + BM25)")
+            logger.info("Note added successfully to BOTH databases (en + ru + BM25)")
 
         except Exception as e:
-            logger.error(f"Failed to add note to vector database: {e}")
+            logger.error(f"Failed to add note to vector databases: {e}")
             raise
 
     def search_similar_documents(
@@ -432,6 +487,8 @@ class StorageService:
         This method should be called when the application is shutting down
         to free memory and close connections gracefully.
 
+        Cleans up BOTH vector databases (English and Russian).
+
         NOTE: Even ChromaDB 1.3+ and sentence-transformers may use multiprocessing
         internally (PyTorch DataLoader), which can cause semaphore warnings.
         We clean up what we can, but some warnings may persist - they are harmless.
@@ -439,19 +496,32 @@ class StorageService:
         try:
             logger.info("Cleaning up StorageService resources...")
 
-            # Clear vectorstore reference
-            if self._vectorstore is not None:
-                # Try to close ChromaDB client if accessible
+            # Clear English vectorstore
+            if self._vectorstore_en is not None:
                 try:
-                    if hasattr(self._vectorstore, '_client'):
-                        client = self._vectorstore._client
+                    if hasattr(self._vectorstore_en, '_client'):
+                        client = self._vectorstore_en._client
                         if hasattr(client, 'close'):
                             client.close()
-                            logger.debug("ChromaDB client closed")
+                            logger.debug("English ChromaDB client closed")
                 except Exception as e:
-                    logger.debug(f"ChromaDB client cleanup skipped: {e}")
+                    logger.debug(f"English ChromaDB client cleanup skipped: {e}")
+                self._vectorstore_en = None
 
-                self._vectorstore = None
+            # Clear Russian vectorstore
+            if self._vectorstore_ru is not None:
+                try:
+                    if hasattr(self._vectorstore_ru, '_client'):
+                        client = self._vectorstore_ru._client
+                        if hasattr(client, 'close'):
+                            client.close()
+                            logger.debug("Russian ChromaDB client closed")
+                except Exception as e:
+                    logger.debug(f"Russian ChromaDB client cleanup skipped: {e}")
+                self._vectorstore_ru = None
+
+            # Clear active vectorstore reference
+            self._vectorstore = None
 
             # Clear embeddings and underlying PyTorch resources
             if self._embeddings is not None:
@@ -481,7 +551,7 @@ class StorageService:
             import gc
             gc.collect()
 
-            logger.info("StorageService cleanup complete")
+            logger.info("StorageService cleanup complete (both databases)")
 
         except Exception as e:
             logger.error(f"Error during StorageService cleanup: {e}")

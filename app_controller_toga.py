@@ -99,6 +99,7 @@ class TogaAppOrchestrator:
         self.view.on_ingest_callback = self.on_start_ingestion
         self.view.on_send_message_callback = self.on_send_chat_message
         self.view.on_save_settings_callback = self.on_save_settings
+        self.view.on_load_settings_callback = self.on_load_settings
         self.view.on_save_note_callback = self.on_save_note
 
         logger.info("Callbacks set up successfully")
@@ -350,11 +351,45 @@ class TogaAppOrchestrator:
         # Optionally show a visual confirmation
         self.view.append_chat_message("system", "Chat history cleared")
 
+    def on_load_settings(self) -> None:
+        """
+        Handle the "Load Settings" button click.
+
+        Loads LLM configuration from the selected path (home or project).
+        """
+        try:
+            from app_config import load_settings_from_json
+
+            # Get the selected config location from UI
+            location = self.view.get_config_location()
+
+            # Load settings from the selected path
+            settings = load_settings_from_json(location)
+
+            if settings:
+                logger.info(f"Loading settings from {location}: {list(settings.keys())}")
+                self.view.set_llm_settings(settings)
+                self.view.show_info_dialog(
+                    "Settings Loaded",
+                    f"Settings loaded successfully from {location} location!"
+                )
+            else:
+                logger.info(f"No settings file found at {location} location")
+                self.view.show_info_dialog(
+                    "No Settings Found",
+                    f"No settings file found at {location} location. Using defaults."
+                )
+
+        except Exception as e:
+            error_msg = f"Failed to load settings: {e}"
+            self.view.show_error_dialog("Load Error", error_msg)
+            logger.error(error_msg, exc_info=True)
+
     def on_save_settings(self) -> None:
         """
         Handle the "Save Settings" button click.
 
-        Saves LLM configuration to ~/.lokal-rag/settings.json
+        Saves LLM configuration to the selected path (home or project).
         """
         try:
             from app_config import save_settings_to_json, create_config_from_settings
@@ -363,19 +398,25 @@ class TogaAppOrchestrator:
             # Get settings from UI
             settings = self.view.get_llm_settings()
 
-            # Save to JSON
-            save_settings_to_json(settings)
+            # Get the selected config location from UI
+            location = self.view.get_config_location()
+
+            # Save to JSON at the selected location
+            save_settings_to_json(settings, location)
 
             # Update the controller's config
             self.config = create_config_from_settings(settings)
 
             # Show success message
-            self.view.show_settings_status("✓ Settings saved successfully!", is_error=False)
-            logger.info(f"Settings saved: Provider={settings['llm_provider']}")
+            self.view.show_info_dialog(
+                "Settings Saved",
+                f"Settings saved successfully to {location} location!"
+            )
+            logger.info(f"Settings saved to {location}: Provider={settings['llm_provider']}, DB Language={settings.get('database_language', 'en')}")
 
         except Exception as e:
             error_msg = f"Failed to save settings: {e}"
-            self.view.show_settings_status(f"✗ {error_msg}", is_error=True)
+            self.view.show_error_dialog("Save Error", error_msg)
             logger.error(error_msg, exc_info=True)
 
     def on_test_connection(self) -> None:
