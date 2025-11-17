@@ -81,6 +81,7 @@ class AppConfig:
     MARKDOWN_OUTPUT_PATH: Path = Path("./output_markdown")
     CHANGELOG_PATH: Path = Path("./changelog")  # Path for changelog files
     NOTES_DIR: Path = Path("./notes")  # Path for user notes
+    DATABASE_LANGUAGE: str = "en"  # Language for database to use: "en" or "ru"
 
     # Text Processing Configuration
     CHUNK_SIZE: int = 1500
@@ -130,30 +131,56 @@ def create_default_config() -> AppConfig:
     return AppConfig()
 
 
-def get_settings_path() -> Path:
+def get_settings_path(location: str = "home") -> Path:
     """
-    Get the path to the settings file.
+    Get the path to the settings file based on location choice.
+
+    Args:
+        location: Either "home" for ~/.lokal-rag/settings.json
+                  or "project" for .lokal-rag/settings.json
 
     Returns:
-        Path: Path to ~/.lokal-rag/settings.json
+        Path: Path to the settings file
+
+    Example:
+        >>> home_path = get_settings_path("home")
+        >>> print(home_path)
+        /home/user/.lokal-rag/settings.json
+
+        >>> project_path = get_settings_path("project")
+        >>> print(project_path)
+        /path/to/project/.lokal-rag/settings.json
     """
-    settings_dir = Path.home() / ".lokal-rag"
+    if location == "project":
+        # Project-local settings (relative to current working directory)
+        settings_dir = Path.cwd() / ".lokal-rag"
+    else:  # "home" is default
+        # User home settings
+        settings_dir = Path.home() / ".lokal-rag"
+
     settings_dir.mkdir(parents=True, exist_ok=True)
     return settings_dir / "settings.json"
 
 
-def load_settings_from_json() -> dict:
+def load_settings_from_json(location: str = "home") -> dict:
     """
     Load LLM settings from JSON file.
+
+    Args:
+        location: Either "home" for ~/.lokal-rag/settings.json
+                  or "project" for .lokal-rag/settings.json
 
     Returns:
         dict: Settings dictionary, or empty dict if file doesn't exist
 
     Example:
-        >>> settings = load_settings_from_json()
+        >>> settings = load_settings_from_json("home")
+        >>> print(settings.get("llm_provider", "ollama"))
+
+        >>> settings = load_settings_from_json("project")
         >>> print(settings.get("llm_provider", "ollama"))
     """
-    settings_path = get_settings_path()
+    settings_path = get_settings_path(location)
 
     if not settings_path.exists():
         return {}
@@ -166,21 +193,23 @@ def load_settings_from_json() -> dict:
         return {}
 
 
-def save_settings_to_json(settings: dict) -> None:
+def save_settings_to_json(settings: dict, location: str = "home") -> None:
     """
     Save LLM settings to JSON file.
 
     Args:
         settings: Settings dictionary to save
+        location: Either "home" for ~/.lokal-rag/settings.json
+                  or "project" for .lokal-rag/settings.json
 
     Example:
         >>> settings = {
         ...     "llm_provider": "ollama",
         ...     "ollama_model": "qwen2.5:7b-instruct"
         ... }
-        >>> save_settings_to_json(settings)
+        >>> save_settings_to_json(settings, "home")
     """
-    settings_path = get_settings_path()
+    settings_path = get_settings_path(location)
 
     try:
         with open(settings_path, "w", encoding="utf-8") as f:
@@ -262,6 +291,9 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
 
     if "changelog_path" in settings:
         overrides["CHANGELOG_PATH"] = Path(settings["changelog_path"])
+
+    if "database_language" in settings:
+        overrides["DATABASE_LANGUAGE"] = settings["database_language"]
 
     # Vision settings
     if "vision_mode" in settings:

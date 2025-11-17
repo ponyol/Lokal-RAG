@@ -67,6 +67,7 @@ class LokalRAGApp(toga.App):
         self.on_ingest_callback: Optional[Callable] = None
         self.on_send_message_callback: Optional[Callable] = None
         self.on_save_settings_callback: Optional[Callable] = None
+        self.on_load_settings_callback: Optional[Callable] = None
         self.on_save_note_callback: Optional[Callable] = None
 
         # Source type tracking
@@ -526,6 +527,65 @@ class LokalRAGApp(toga.App):
         )
         container.add(title)
 
+        # ---- Settings File Location ----
+        settings_file_section = self._create_settings_section(
+            "Settings File Location:",
+            container
+        )
+
+        config_location_box = toga.Box(style=Pack(direction=ROW, padding=5))
+        config_location_label = toga.Label(
+            "Config Path:",
+            style=Pack(width=150)
+        )
+        self.config_location_selection = toga.Selection(
+            items=["Home (~/.lokal-rag/settings.json)", "Project (.lokal-rag/settings.json)"],
+            style=Pack(flex=1, padding_right=10)
+        )
+        self.config_location_selection.value = "Home (~/.lokal-rag/settings.json)"
+
+        self.load_settings_button = toga.Button(
+            "Load Settings",
+            on_press=self._on_load_settings,
+            style=Pack(
+                width=120,
+                background_color=Theme.ACCENT_BLUE
+            )
+        )
+
+        config_location_box.add(config_location_label)
+        config_location_box.add(self.config_location_selection)
+        config_location_box.add(self.load_settings_button)
+        settings_file_section.add(config_location_box)
+
+        # ---- Database Language Selection ----
+        db_section = self._create_settings_section(
+            "Database Settings:",
+            container
+        )
+
+        db_language_box = toga.Box(style=Pack(direction=ROW, padding=5))
+        db_language_label = toga.Label(
+            "Database Language:",
+            style=Pack(width=150)
+        )
+        self.db_language_selection = toga.Selection(
+            items=["English", "Russian"],
+            style=Pack(flex=1)
+        )
+        self.db_language_selection.value = "English"
+
+        db_language_box.add(db_language_label)
+        db_language_box.add(self.db_language_selection)
+        db_section.add(db_language_box)
+
+        # Info label
+        db_info_label = toga.Label(
+            "Note: Database language affects which ChromaDB is used for search. Documents are always added to both databases.",
+            style=Pack(padding=5, font_size=10)
+        )
+        db_section.add(db_info_label)
+
         # ---- LLM Provider Selection ----
         provider_section = self._create_settings_section(
             "LLM Provider:",
@@ -850,6 +910,13 @@ class LokalRAGApp(toga.App):
         """Handle clear note button press."""
         self.clear_note_text()
 
+    def _on_load_settings(self, widget):
+        """Handle load settings button press."""
+        if self.on_load_settings_callback:
+            self.on_load_settings_callback()
+        else:
+            logger.warning("No load settings callback set")
+
     def _on_save_settings(self, widget):
         """Handle save settings button press."""
         if self.on_save_settings_callback:
@@ -919,6 +986,13 @@ class LokalRAGApp(toga.App):
         Returns:
             dict: LLM settings with all provider configurations
         """
+        # Map UI display text to internal values
+        db_lang_map = {
+            "English": "en",
+            "Russian": "ru"
+        }
+        db_language = db_lang_map.get(self.db_language_selection.value, "en")
+
         return {
             "llm_provider": self.llm_provider_selection.value,
             # Ollama
@@ -942,7 +1016,20 @@ class LokalRAGApp(toga.App):
             "vision_model": self.vision_model_input.value or "",
             # General
             "timeout": self.timeout_input.value or "300",
+            # Database
+            "database_language": db_language,
         }
+
+    def get_config_location(self) -> str:
+        """
+        Get the selected config file location.
+
+        Returns:
+            str: Either "home" or "project"
+        """
+        if "Project" in self.config_location_selection.value:
+            return "project"
+        return "home"
 
     def set_llm_settings(self, settings: dict) -> None:
         """
@@ -1001,6 +1088,18 @@ class LokalRAGApp(toga.App):
             timeout_val = str(settings["timeout"])
             logger.info(f"Setting timeout to: {timeout_val}")
             self.timeout_input.value = timeout_val
+
+        # Database language
+        if "database_language" in settings:
+            db_lang = settings["database_language"]
+            # Map internal values to UI display text
+            db_lang_reverse_map = {
+                "en": "English",
+                "ru": "Russian"
+            }
+            display_value = db_lang_reverse_map.get(db_lang, "English")
+            self.db_language_selection.value = display_value
+            logger.info(f"Setting database language to: {display_value}")
 
         logger.info("✓ Settings loaded into UI successfully")
 
