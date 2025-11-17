@@ -670,6 +670,7 @@ def processing_pipeline_worker(
                     tag=primary_tag,
                     filename=f"{filename}_en",
                     config=config,
+                    language="en",
                 )
                 view_queue.put(f"LOG:   ✓ Saved English to: {saved_path_en}")
 
@@ -678,6 +679,7 @@ def processing_pipeline_worker(
                     tag=primary_tag,
                     filename=f"{filename}_ru",
                     config=config,
+                    language="ru",
                 )
                 view_queue.put(f"LOG:   ✓ Saved Russian to: {saved_path_ru}")
             else:
@@ -687,6 +689,7 @@ def processing_pipeline_worker(
                     tag=primary_tag,
                     filename=filename,
                     config=config,
+                    language="en",
                 )
                 view_queue.put(f"LOG:   ✓ Saved to: {saved_path}")
 

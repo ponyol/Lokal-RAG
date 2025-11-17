@@ -567,26 +567,35 @@ def fn_save_markdown_to_disk(
     tag: str,
     filename: str,
     config: AppConfig,
+    language: str = "en",
 ) -> Path:
     """
-    Save Markdown content to disk in a tag-based directory structure.
+    Save Markdown content to disk in a language and tag-based directory structure.
 
     This is a pure function (aside from the I/O side effect of writing the file).
     It creates the directory structure if it doesn't exist.
 
     Directory structure:
         output_markdown/
-        ├── python/
-        │   ├── document1.md
-        │   └── document2.md
-        └── machine-learning/
-            └── document3.md
+        ├── en/
+        │   ├── python/
+        │   │   ├── document1.md
+        │   │   └── document2.md
+        │   └── machine-learning/
+        │       └── document3.md
+        └── ru/
+            ├── python/
+            │   ├── document1_ru.md
+            │   └── document2_ru.md
+            └── machine-learning/
+                └── document3_ru.md
 
     Args:
         text: The Markdown content to save
         tag: The category tag (used as subdirectory name)
         filename: The base filename (without extension)
         config: Application configuration
+        language: Language code ("en" or "ru") for subdirectory
 
     Returns:
         Path: The path to the created file
@@ -596,16 +605,16 @@ def fn_save_markdown_to_disk(
 
     Example:
         >>> config = AppConfig()
-        >>> path = fn_save_markdown_to_disk("# Title", "python", "doc1", config)
+        >>> path = fn_save_markdown_to_disk("# Title", "python", "doc1", config, "en")
         >>> print(path)
-        output_markdown/python/doc1.md
+        output_markdown/en/python/doc1.md
     """
     # Sanitize tag for use as directory name
     safe_tag = tag.replace(" ", "-").lower()
     safe_tag = "".join(c for c in safe_tag if c.isalnum() or c in ("-", "_"))
 
-    # Create the output directory structure
-    output_dir = config.MARKDOWN_OUTPUT_PATH / safe_tag
+    # Create the output directory structure with language subfolder
+    output_dir = config.MARKDOWN_OUTPUT_PATH / language / safe_tag
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Create the output file path
