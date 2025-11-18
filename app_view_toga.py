@@ -199,16 +199,18 @@ class LokalRAGApp(toga.App):
 
                 # Load window size preference
                 window_size_pref = settings.get("window_size", "1280x800 (MacBook Air)")
+                logger.info(f"📐 Loading window size preference: '{window_size_pref}'")
                 # Parse: "1280x800 (MacBook Air)" -> width=1280, height=800
                 try:
                     dimensions = window_size_pref.split(" ")[0]  # Get "1280x800"
                     width, height = dimensions.split("x")
                     self.window_width = int(width)
                     self.window_height = int(height)
-                    logger.info(f"✓ Window size: {self.window_width}x{self.window_height}")
+                    logger.info(f"✓ Parsed window size: {self.window_width}x{self.window_height}")
                 except Exception as e:
                     logger.warning(f"Failed to parse window size '{window_size_pref}': {e}")
                     # Keep defaults
+                    logger.info(f"Using default window size: {self.window_width}x{self.window_height}")
 
             else:
                 logger.info("No settings file found, using default Light theme")
@@ -1743,7 +1745,20 @@ class LokalRAGApp(toga.App):
             window_size = settings["window_size"]
             self.window_size_selection.value = window_size
             logger.info(f"Setting window size to: {window_size}")
-            # Note: Window size will be applied on next app startup
+
+            # Apply window size immediately
+            try:
+                # Parse: "1440x900 (16:10 Wide)" -> width=1440, height=900
+                dimensions = window_size.split(" ")[0]  # Get "1440x900"
+                width, height = dimensions.split("x")
+                width, height = int(width), int(height)
+
+                if hasattr(self, 'main_window'):
+                    from toga.size import Size
+                    self.main_window.size = Size(width, height)
+                    logger.info(f"✓ Window resized to: {width}x{height}")
+            except Exception as e:
+                logger.warning(f"Failed to apply window size: {e}")
 
         logger.info("✓ Settings loaded into UI V2 successfully")
 
