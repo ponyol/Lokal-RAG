@@ -18,6 +18,7 @@ It calls the pure functional services and manages side effects.
 import logging
 import queue
 import threading
+import asyncio
 from pathlib import Path
 from typing import Optional
 
@@ -93,8 +94,8 @@ class TogaAppOrchestrator:
         # Set up event callbacks
         self.setup_callbacks()
 
-        # Start the queue checker
-        self.check_view_queue()
+        # Start the queue checker (async loop)
+        self.view.add_background_task(self.check_view_queue_loop)
 
     def setup_callbacks(self) -> None:
         """
@@ -170,50 +171,73 @@ class TogaAppOrchestrator:
     # Queue Management (Thread-Safe GUI Updates)
     # ========================================================================
 
-    def check_view_queue(self) -> None:
+    async def check_view_queue_loop(self, widget, **kwargs):
         """
-        Check the view queue for messages from worker threads.
+        Async loop to check the view queue for messages from worker threads.
 
-        This method is called periodically to process messages from background threads.
-        It's the thread-safe way to update the Toga GUI from worker threads.
+        This method runs as a Toga background task and processes messages from
+        background threads. It's the thread-safe way to update the Toga GUI.
 
         Messages can be:
         - "LOG: <message>" - Append to ingestion log
         - "CHAT: <role>: <message>" - Append to chat history
         - "STOP_PROCESSING" - Reset processing state
         - "STOP_CHATTING" - Reset chat state
-        """
-        try:
-            while True:
-                # Non-blocking get
-                message = self.view_queue.get_nowait()
 
-                if message == "STOP_PROCESSING":
+        OPTIMIZATION: Batches log messages to reduce UI redraws
+        """
+        logger.info("Starting view queue checker loop...")
+
+        while True:
+            try:
+                # Batch log messages to reduce UI updates
+                log_batch = []
+                chat_messages = []
+                stop_processing = False
+                stop_chatting = False
+
+                # Process all pending messages (up to 50 per iteration)
+                for _ in range(50):
+                    try:
+                        message = self.view_queue.get_nowait()
+
+                        if message == "STOP_PROCESSING":
+                            stop_processing = True
+                        elif message == "STOP_CHATTING":
+                            stop_chatting = True
+                        elif message.startswith("LOG: "):
+                            log_batch.append(message[5:])
+                        elif message.startswith("CHAT: "):
+                            parts = message[6:].split(": ", 1)
+                            if len(parts) == 2:
+                                chat_messages.append((parts[0], parts[1]))
+                    except queue.Empty:
+                        break
+
+                # Apply batched updates
+                if log_batch:
+                    # Batch append all log messages at once
+                    batch_text = "\n".join(log_batch)
+                    self.view.append_log(batch_text)
+
+                for role, content in chat_messages:
+                    self.view.append_chat_message(role, content)
+
+                if stop_processing:
                     self.is_processing = False
                     self.view.set_processing_state(False)
+                    logger.info("Processing completed")
 
-                elif message == "STOP_CHATTING":
+                if stop_chatting:
                     self.is_chatting = False
                     self.view.set_chat_state(False)
+                    logger.info("Chat completed")
 
-                elif message.startswith("LOG: "):
-                    log_message = message[5:]
-                    self.view.append_log(log_message)
+            except Exception as e:
+                logger.error(f"Error in view queue checker: {e}", exc_info=True)
 
-                elif message.startswith("CHAT: "):
-                    # Format: "CHAT: role: message"
-                    parts = message[6:].split(": ", 1)
-                    if len(parts) == 2:
-                        role, content = parts
-                        self.view.append_chat_message(role, content)
-
-        except queue.Empty:
-            pass
-
-        # Schedule next check using threading.Timer
-        timer = threading.Timer(0.1, self.check_view_queue)
-        timer.daemon = True
-        timer.start()
+            # Sleep for 100ms before next check
+            await asyncio.sleep(0.1)
 
     # ========================================================================
     # Event Handlers

@@ -1499,10 +1499,22 @@ class LokalRAGApp(toga.App):
         Append a message to the processing log.
 
         Args:
-            message: The message to append
+            message: The message to append (can contain newlines for batch updates)
+
+        OPTIMIZATION: For large logs, we limit the buffer size to prevent slowdowns
         """
         current = self.log_output.value or ""
-        self.log_output.value = current + message + "\n"
+
+        # Add message (may already contain newlines from batching)
+        new_text = current + message + "\n"
+
+        # Limit log buffer to last 10,000 lines to prevent UI slowdown
+        lines = new_text.split("\n")
+        if len(lines) > 10000:
+            # Keep only the last 10,000 lines
+            new_text = "\n".join(lines[-10000:])
+
+        self.log_output.value = new_text
         # Auto-scroll to bottom by setting cursor to end
         # NOTE: Toga may handle this automatically
 
