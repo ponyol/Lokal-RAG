@@ -1,1297 +1,1536 @@
+#!/usr/bin/env python3
 """
-Application View Layer - GUI
+Toga-based UI for Lokal-RAG Application - V2 (FIXED)
 
-This module contains the AppView class, built with CustomTkinter.
-The View is responsible for:
-1. Rendering the UI
-2. Capturing user input
-3. Displaying output (logs, chat messages)
+This module provides a native UI implementation using Toga (BeeWare).
+It replaces CustomTkinter to fix macOS trackpad scrolling issues.
 
-The View has NO business logic. It only:
-- Provides getters for UI state
-- Provides setters for updating the display
-- Exposes widgets that the Controller can bind to
+Architecture:
+- Pure UI layer (no business logic)
+- 100% API-compatible with app_view.py for controller compatibility
+- Native look & feel with platform-native styling
+- Native scrolling works on macOS (trackpad, mousewheel, scroll gestures)
 
-All heavy operations are delegated to the Controller.
+Version 2 Changes:
+- Fixed API incompatibilities (web_urls, do_translation, do_tagging)
+- Added missing web authentication settings
+- Fixed vision mode and search type mappings
+- Added Clear Chat button
+- Added storage paths configuration
+- Added translation chunk size setting
+- Improved Changelog tab with file selection
 """
 
-import customtkinter as ctk
-import tkinter as tk
+import logging
+from typing import Optional, Callable
 from pathlib import Path
-from tkinter import filedialog
-from typing import Callable, Optional
+
+import toga
+from toga.style import Pack
+from toga.style.pack import COLUMN, ROW, CENTER
+from toga.colors import rgb, TRANSPARENT
+
+logger = logging.getLogger(__name__)
+
+# ===== Light Theme Colors (Default) =====
+class LightTheme:
+    """Light theme color palette for Lokal-RAG."""
+    NAME = "light"
+
+    # Background colors
+    BG_PRIMARY = rgb(255, 255, 255)  # White background
+    BG_SECONDARY = rgb(245, 245, 247)  # Light gray for containers
+    BG_TERTIARY = rgb(255, 255, 255)  # White for inputs
+
+    # Text colors
+    TEXT_PRIMARY = rgb(0, 0, 0)  # Black text
+    TEXT_SECONDARY = rgb(60, 60, 67)  # Dark gray text
+    TEXT_PLACEHOLDER = rgb(142, 142, 147)  # Gray placeholder
+
+    # Accent colors (Apple Human Interface Guidelines)
+    ACCENT_BLUE = rgb(0, 122, 255)  # Primary actions
+    ACCENT_GREEN = rgb(52, 199, 89)  # Success
+    ACCENT_ORANGE = rgb(255, 149, 0)  # Warning
+    ACCENT_RED = rgb(255, 59, 48)  # Error
+
+    # UI elements
+    BORDER = rgb(209, 209, 214)  # Light border
+    SEPARATOR = rgb(209, 209, 214)  # Separator lines
 
 
-class TkScrollableFrame(ctk.CTkFrame):
+# ===== Dark Theme Colors =====
+class DarkTheme:
+    """Dark theme color palette for Lokal-RAG (WCAG AAA compliant)."""
+    NAME = "dark"
+
+    # Background colors (based on macOS dark mode)
+    BG_PRIMARY = rgb(30, 30, 30)  # Dark gray background (#1e1e1e)
+    BG_SECONDARY = rgb(44, 44, 46)  # Slightly lighter gray (#2c2c2e)
+    BG_TERTIARY = rgb(58, 58, 60)  # Input fields (#3a3a3c)
+
+    # Text colors (high contrast for readability)
+    TEXT_PRIMARY = rgb(255, 255, 255)  # White text
+    TEXT_SECONDARY = rgb(235, 235, 245)  # Light gray text (#ebebf5)
+    TEXT_PLACEHOLDER = rgb(142, 142, 147)  # Gray placeholder (same as light)
+
+    # Accent colors (slightly brighter for dark theme)
+    ACCENT_BLUE = rgb(10, 132, 255)  # Brighter blue (#0a84ff)
+    ACCENT_GREEN = rgb(48, 209, 88)  # Brighter green (#30d158)
+    ACCENT_ORANGE = rgb(255, 159, 10)  # Brighter orange (#ff9f0a)
+    ACCENT_RED = rgb(255, 69, 58)  # Brighter red (#ff453a)
+
+    # UI elements
+    BORDER = rgb(72, 72, 74)  # Dark border (#48484a)
+    SEPARATOR = rgb(72, 72, 74)  # Separator lines
+
+
+# Current theme (will be set dynamically)
+Theme = LightTheme  # Default to light theme
+
+
+class LokalRAGApp(toga.App):
     """
-    A hybrid scrollable frame that uses native Tkinter scrolling.
+    Main Toga application for Lokal-RAG.
 
-    This widget combines:
-    - CustomTkinter frame for styling (dark theme)
-    - Native Tkinter Canvas + Scrollbar for scrolling (works on macOS trackpad!)
+    This class manages the UI and provides a public API for the controller
+    to interact with the view layer.
 
-    Why: CTkScrollableFrame doesn't receive trackpad events on macOS,
-    but native Tkinter scrolling works perfectly.
+    V2: 100% API-compatible with CustomTkinter version (app_view.py)
     """
 
-    def __init__(self, master, **kwargs):
+    def __init__(self):
+        """Initialize the Toga application."""
+        super().__init__(
+            formal_name="Lokal-RAG",
+            app_id="org.lokalrag.app",
+            app_name="Lokal-RAG"
+        )
+
+        # Callback handlers (set by controller)
+        self.on_ingest_callback: Optional[Callable] = None
+        self.on_send_message_callback: Optional[Callable] = None
+        self.on_save_settings_callback: Optional[Callable] = None
+        self.on_load_settings_callback: Optional[Callable] = None
+        self.on_save_note_callback: Optional[Callable] = None
+        self.on_clear_chat_callback: Optional[Callable] = None  # NEW
+        self.on_ui_ready_callback: Optional[Callable] = None  # NEW: Called when UI is ready
+
+        # Source type tracking
+        self.source_type_value = "pdf"  # Default to PDF
+
+        # Changelog file mapping (for file selection)
+        self.changelog_files_map = {}
+
+        # Theme management
+        self.current_theme = LightTheme  # Default to light theme
+        self.theme_widgets = {
+            "containers": [],  # Boxes that need background color
+            "labels": [],  # Labels that need text color
+            "inputs": [],  # Text inputs that need background/text color
+            "buttons": [],  # Buttons (keep accent colors)
+        }
+
+        # Window size (will be set from settings)
+        self.window_width = 1280  # Default
+        self.window_height = 800
+
+        logger.info("Toga app V2 initialized with native theme and fixed API")
+
+    def _get_container_style(self, **kwargs):
         """
-        Create a scrollable frame with native Tkinter scrolling.
+        Get Pack style for containers with theme background color.
 
-        Args:
-            master: Parent widget
-            **kwargs: Additional arguments for CTkFrame
+        This ensures containers use the theme's background color.
         """
-        super().__init__(master, **kwargs)
+        return Pack(background_color=Theme.BG_PRIMARY, **kwargs)
 
-        # Create a canvas (native tkinter)
-        self.canvas = tk.Canvas(
-            self,
-            highlightthickness=0,
-            bg=self._apply_appearance_mode(ctk.ThemeManager.theme["CTkFrame"]["fg_color"]),
-        )
+    def _get_secondary_container_style(self, **kwargs):
+        """
+        Get Pack style for secondary containers (cards, panels).
 
-        # Create a native Tkinter scrollbar
-        self.scrollbar = tk.Scrollbar(
-            self,
-            orient="vertical",
-            command=self.canvas.yview,
-            bg=self._apply_appearance_mode(ctk.ThemeManager.theme["CTkFrame"]["fg_color"]),
-            troughcolor=self._apply_appearance_mode(ctk.ThemeManager.theme["CTkFrame"]["top_fg_color"]),
-            activebackground=self._apply_appearance_mode(ctk.ThemeManager.theme["CTkButton"]["fg_color"]),
-        )
+        This ensures secondary containers use a slightly different background.
+        """
+        return Pack(background_color=Theme.BG_SECONDARY, **kwargs)
 
-        # Configure canvas scrolling
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+    def _load_theme_preference(self):
+        """
+        Load theme preference from settings file BEFORE creating UI.
 
-        # Create a frame inside the canvas to hold widgets
-        self.scrollable_frame = ctk.CTkFrame(self.canvas, fg_color="transparent")
+        This is critical because Toga widgets get their colors at creation time
+        and can't be easily changed afterwards.
+        """
+        global Theme
 
-        # Create window in canvas
-        self.canvas_window = self.canvas.create_window(
-            (0, 0),
-            window=self.scrollable_frame,
-            anchor="nw"
-        )
+        try:
+            from pathlib import Path
+            import json
 
-        # Pack canvas and scrollbar
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
+            # Try to load settings from home directory first
+            home_settings = Path.home() / ".lokal-rag" / "settings.json"
+            project_settings = Path(".lokal-rag") / "settings.json"
 
-        # Bind events to update scroll region
-        self.scrollable_frame.bind("<Configure>", self._on_frame_configure)
-        self.canvas.bind("<Configure>", self._on_canvas_configure)
+            logger.info(f"🔍 Looking for theme settings...")
+            logger.info(f"   Home: {home_settings} (exists: {home_settings.exists()})")
+            logger.info(f"   Project: {project_settings} (exists: {project_settings.exists()})")
 
-        # Bind mousewheel - THIS WORKS ON macOS!
-        self._bind_mousewheel()
+            settings_path = None
+            if home_settings.exists():
+                settings_path = home_settings
+                logger.info(f"📂 Using home settings: {settings_path}")
+            elif project_settings.exists():
+                settings_path = project_settings
+                logger.info(f"📂 Using project settings: {settings_path}")
 
-    def _on_frame_configure(self, event=None):
-        """Update scroll region when frame size changes."""
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+            if settings_path:
+                with open(settings_path, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
 
-    def _on_canvas_configure(self, event):
-        """Update canvas window width when canvas is resized."""
-        self.canvas.itemconfig(self.canvas_window, width=event.width)
+                theme_pref = settings.get("theme", "light")
+                logger.info(f"Loaded theme preference from settings: {theme_pref}")
 
-    def _bind_mousewheel(self):
-        """Bind mousewheel events - works on macOS trackpad!"""
-        import sys
+                if theme_pref == "dark":
+                    self.current_theme = DarkTheme
+                    Theme = DarkTheme
+                    logger.info("✓ Dark theme will be applied to UI")
+                else:
+                    self.current_theme = LightTheme
+                    Theme = LightTheme
+                    logger.info("✓ Light theme will be applied to UI")
 
-        def on_mousewheel(event):
-            if sys.platform == "darwin":  # macOS
-                # macOS trackpad sends delta directly
-                self.canvas.yview_scroll(-1 * int(event.delta), "units")
-            elif sys.platform == "win32":  # Windows
-                self.canvas.yview_scroll(-1 * int(event.delta / 120), "units")
-            else:  # Linux
-                if event.num == 4:
-                    self.canvas.yview_scroll(-1, "units")
-                elif event.num == 5:
-                    self.canvas.yview_scroll(1, "units")
+                # Load window size preference
+                window_size_pref = settings.get("window_size", "1280x800 (MacBook Air)")
+                logger.info(f"📐 Loading window size preference: '{window_size_pref}'")
+                # Parse: "1280x800 (MacBook Air)" -> width=1280, height=800
+                try:
+                    dimensions = window_size_pref.split(" ")[0]  # Get "1280x800"
+                    width, height = dimensions.split("x")
+                    self.window_width = int(width)
+                    self.window_height = int(height)
+                    logger.info(f"✓ Parsed window size: {self.window_width}x{self.window_height}")
+                except Exception as e:
+                    logger.warning(f"Failed to parse window size '{window_size_pref}': {e}")
+                    # Keep defaults
+                    logger.info(f"Using default window size: {self.window_width}x{self.window_height}")
 
-        def bind_to_widget(widget):
-            """Recursively bind mousewheel to widget and all its children."""
-            if sys.platform != "linux":
-                widget.bind("<MouseWheel>", on_mousewheel, add="+")
             else:
-                widget.bind("<Button-4>", on_mousewheel, add="+")
-                widget.bind("<Button-5>", on_mousewheel, add="+")
+                logger.info("No settings file found, using default Light theme")
+                self.current_theme = LightTheme
+                Theme = LightTheme
 
-            # Bind to all children recursively
-            for child in widget.winfo_children():
-                bind_to_widget(child)
+        except Exception as e:
+            logger.warning(f"Failed to load theme preference: {e}")
+            self.current_theme = LightTheme
+            Theme = LightTheme
 
-        # Bind to canvas AND scrollable_frame (and all children)
-        bind_to_widget(self.canvas)
-        bind_to_widget(self.scrollable_frame)
-
-        # Re-bind when new widgets are added
-        def on_child_added(event):
-            """Re-bind mousewheel when new children are added."""
-            bind_to_widget(self.scrollable_frame)
-
-        self.scrollable_frame.bind("<Configure>", on_child_added, add="+")
-
-
-class AppView:
-    """
-    The main application view using CustomTkinter.
-
-    This class creates a modern, tabbed interface with:
-    - Ingestion tab: For processing PDF files
-    - Chat tab: For querying the knowledge base
-    """
-
-    def __init__(self, master: ctk.CTk):
+    def startup(self):
         """
-        Initialize the application view.
+        Build the UI when the app starts.
 
-        Args:
-            master: The root CustomTkinter window
+        This method is called automatically by Toga after __init__.
+        It creates the main window and all tabs.
         """
-        self.master = master
-        self.master.title("Lokal-RAG - Local Knowledge Base")
-        self.master.geometry("900x700")
+        logger.info("Building Toga UI V2...")
 
-        # Set theme
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
+        # Load theme preference BEFORE creating UI
+        self._load_theme_preference()
 
-        # Initialize state variables
-        self.source_type_var = ctk.StringVar(value="pdf")  # "pdf" or "web"
-        self.folder_path_var = ctk.StringVar(value="No folder selected")
-        self.web_urls_var = ctk.StringVar(value="")
-        self.translate_var = ctk.BooleanVar(value=False)
-        self.tag_var = ctk.BooleanVar(value=True)
-        self.extract_images_var = ctk.BooleanVar(value=False)
-        self.use_cookies_var = ctk.BooleanVar(value=True)
-        self.browser_choice_var = ctk.StringVar(value="chrome")
-        self.save_raw_html_var = ctk.BooleanVar(value=False)
+        # Create main window
+        self.main_window = toga.MainWindow(title=self.formal_name)
 
-        # LLM Settings state variables
-        self.llm_provider_var = ctk.StringVar(value="ollama")
-        self.ollama_url_var = ctk.StringVar(value="http://localhost:11434")
-        self.ollama_model_var = ctk.StringVar(value="qwen2.5:7b-instruct")
-        self.lmstudio_url_var = ctk.StringVar(value="http://localhost:1234/v1")
-        self.lmstudio_model_var = ctk.StringVar(value="meta-llama-3.1-8b-instruct")
-        self.claude_api_key_var = ctk.StringVar(value="")
-        self.claude_model_var = ctk.StringVar(value="claude-3-5-sonnet-20241022")
-        self.gemini_api_key_var = ctk.StringVar(value="")
-        self.gemini_model_var = ctk.StringVar(value="gemini-2.5-pro-preview-03-25")
-        self.mistral_api_key_var = ctk.StringVar(value="")
-        self.mistral_model_var = ctk.StringVar(value="mistral-small-latest")
-        self.timeout_var = ctk.StringVar(value="300")
-        self.translation_chunk_var = ctk.StringVar(value="2000")
+        # Set window size from preferences
+        try:
+            # Note: In Toga, window size is set as a tuple (width, height)
+            self.main_window.size = (self.window_width, self.window_height)
+            logger.info(f"✓ Window size set to: {self.window_width}x{self.window_height}")
+        except Exception as e:
+            logger.warning(f"Failed to set window size: {e}")
 
-        # Vision settings state variables
-        self.vision_mode_var = ctk.StringVar(value="auto")  # "disabled", "auto", or "local"
-        self.vision_provider_var = ctk.StringVar(value="ollama")  # "ollama" or "lmstudio"
-        self.vision_base_url_var = ctk.StringVar(value="http://localhost:11434")
-        self.vision_model_var = ctk.StringVar(value="granite-docling:258m")
+        # Create tabs
+        self.tabs = toga.OptionContainer(
+            style=Pack(),
+            content=[
+                ("📚 Ingestion", self._create_ingestion_tab()),
+                ("💬 Chat", self._create_chat_tab()),
+                ("📝 Notes", self._create_notes_tab()),
+                ("📋 Changelog", self._create_changelog_tab()),
+                ("⚙️ Settings", self._create_settings_tab()),
+            ]
+        )
 
-        # Storage paths state variables
-        self.vector_db_path_var = ctk.StringVar(value="./lokal_rag_db")
-        self.markdown_output_path_var = ctk.StringVar(value="./output_markdown")
-        self.changelog_path_var = ctk.StringVar(value="./changelog")
+        # Set main window content
+        self.main_window.content = self.tabs
 
-        # Chat search type state variable
-        self.search_type_var = ctk.StringVar(value="all")  # "document", "note", or "all"
+        # Show the window
+        self.main_window.show()
 
-        # Create the UI
-        self._create_widgets()
+        logger.info("✓ Toga UI V2 created successfully")
 
-    def _create_widgets(self) -> None:
-        """Create all UI widgets and layout."""
-        # Create tabview
-        self.tabview = ctk.CTkTabview(self.master)
-        self.tabview.pack(fill="both", expand=True, padx=20, pady=20)
-
-        # Add tabs
-        self.tabview.add("Ingestion")
-        self.tabview.add("Chat")
-        self.tabview.add("Notes")
-        self.tabview.add("Changelog")
-        self.tabview.add("Settings")
-
-        # Setup each tab
-        self._setup_ingestion_tab()
-        self._setup_chat_tab()
-        self._setup_notes_tab()
-        self._setup_changelog_tab()
-        self._setup_settings_tab()
+        # Notify controller that UI is ready
+        if self.on_ui_ready_callback:
+            logger.info("Calling UI ready callback...")
+            self.on_ui_ready_callback()
 
     # ========================================================================
-    # Ingestion Tab
+    # Tab Creation Methods
     # ========================================================================
 
-    def _setup_ingestion_tab(self) -> None:
-        """Setup the Ingestion tab UI."""
-        tab = self.tabview.tab("Ingestion")
+    def _create_ingestion_tab(self) -> toga.Widget:
+        """
+        Create the Ingestion tab UI.
 
-        # Create scrollable frame for all content using native Tkinter scrolling
-        scrollable_container = TkScrollableFrame(tab)
-        scrollable_container.pack(fill="both", expand=True, padx=0, pady=0)
-        scrollable_frame = scrollable_container.scrollable_frame
+        This tab allows users to:
+        - Select source type (PDF/Markdown or Web)
+        - Select a folder containing PDFs/Markdown files
+        - Enter web URLs to scrape (with auth options)
+        - Configure processing options (translation, tagging, vision)
+        - Start the ingestion process
+        - View processing logs
+
+        V2: Added web authentication settings (use_cookies, browser_choice, save_raw_html)
+        V2: Fixed vision_mode to use display text + mapping
+
+        Returns:
+            toga.Widget: The ingestion tab content
+        """
+        # Main container (vertical layout) - Apply theme background
+        container = toga.Box(
+            style=self._get_container_style(
+                direction=COLUMN,
+                margin=20
+            )
+        )
 
         # Title
-        title = ctk.CTkLabel(
-            scrollable_frame,
-            text="📚 Content Ingestion",
-            font=ctk.CTkFont(size=20, weight="bold"),
+        title = toga.Label(
+            "📚 Content Ingestion",
+            style=Pack(
+                margin_bottom=20,
+                font_size=20,
+                font_weight="bold"
+            )
         )
-        title.pack(pady=(10, 20))
+        container.add(title)
 
-        # Source type selection frame
-        source_type_frame = ctk.CTkFrame(scrollable_frame)
-        source_type_frame.pack(fill="x", padx=20, pady=10)
-
-        source_label = ctk.CTkLabel(
-            source_type_frame,
-            text="Select Source Type:",
-            font=ctk.CTkFont(size=14, weight="bold"),
+        # ---- Source Type Selection ----
+        source_label = toga.Label(
+            "Source Type (choose one):",
+            style=Pack(
+                margin_top=10,
+                margin_bottom=10,
+                font_weight="bold"
+            )
         )
-        source_label.pack(anchor="w", padx=10, pady=(10, 5))
+        container.add(source_label)
 
-        self.pdf_radio = ctk.CTkRadioButton(
-            source_type_frame,
-            text="📄 PDF / Markdown Files (from folder)",
-            variable=self.source_type_var,
-            value="pdf",
-            command=self._on_source_type_changed,
+        # Source type selector
+        self.source_type_selection = toga.Selection(
+            items=["PDF / Markdown Files", "Web URLs"],
+            style=Pack(margin=5)
         )
-        self.pdf_radio.pack(anchor="w", padx=20, pady=5)
+        self.source_type_selection.value = "PDF / Markdown Files"
+        self.source_type_selection.on_change = self._on_source_type_changed
+        container.add(self.source_type_selection)
 
-        self.web_radio = ctk.CTkRadioButton(
-            source_type_frame,
-            text="🌐 Web Articles (URLs)",
-            variable=self.source_type_var,
-            value="web",
-            command=self._on_source_type_changed,
+        # ---- PDF/Folder Selection ----
+        folder_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        folder_label = toga.Label(
+            "PDF/Markdown Folder:",
+            style=Pack(width=180)
         )
-        self.web_radio.pack(anchor="w", padx=20, pady=5)
-
-        # Create a container frame for source-specific inputs
-        # This ensures consistent positioning when switching between sources
-        self.source_container = ctk.CTkFrame(scrollable_frame)
-        self.source_container.pack(fill="x", padx=20, pady=10)
-
-        # PDF: Folder selection frame
-        self.folder_frame = ctk.CTkFrame(self.source_container)
-        self.folder_frame.pack(fill="x", padx=0, pady=0)
-
-        self.select_folder_button = ctk.CTkButton(
-            self.folder_frame,
-            text="Select Folder",
-            command=self._on_select_folder_clicked,
-            width=120,
+        self.folder_input = toga.TextInput(
+            readonly=True,
+            placeholder="No folder selected",
+            style=Pack(flex=1, margin_right=5)
         )
-        self.select_folder_button.pack(side="left", padx=10, pady=10)
-
-        folder_label = ctk.CTkLabel(
-            self.folder_frame,
-            textvariable=self.folder_path_var,
-            anchor="w",
+        folder_button = toga.Button(
+            "Browse...",
+            on_press=self._on_select_folder,
+            style=Pack(width=100)
         )
-        folder_label.pack(side="left", fill="x", expand=True, padx=10)
+        folder_box.add(folder_label)
+        folder_box.add(self.folder_input)
+        folder_box.add(folder_button)
+        container.add(folder_box)
 
-        # WEB: URL input frame
-        self.url_frame = ctk.CTkFrame(self.source_container)
-        # Don't pack yet - will be shown when web radio is selected
-
-        url_label = ctk.CTkLabel(
-            self.url_frame,
-            text="Enter URLs (one per line):",
-            font=ctk.CTkFont(size=12),
+        # ---- Web URL Input (Multiline for multiple URLs) ----
+        url_label = toga.Label(
+            "Web URLs (one per line):",
+            style=Pack(margin=5, margin_bottom=2)
         )
-        url_label.pack(anchor="w", padx=10, pady=(10, 5))
+        container.add(url_label)
 
-        self.url_textbox = ctk.CTkTextbox(
-            self.url_frame,
-            height=100,
-            wrap="word",
+        self.url_input = toga.MultilineTextInput(
+            placeholder="https://example.com/article1\nhttps://example.com/article2\n...",
+            style=Pack(height=100, margin=5)
         )
-        self.url_textbox.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-        self._enable_mousewheel_scrolling(self.url_textbox)
+        container.add(self.url_input)
 
-        # WEB: Authentication options
-        auth_frame = ctk.CTkFrame(self.url_frame)
-        auth_frame.pack(fill="x", padx=10, pady=5)
-
-        self.cookies_checkbox = ctk.CTkCheckBox(
-            auth_frame,
-            text="Use browser cookies for authentication",
-            variable=self.use_cookies_var,
+        # ---- V2: Web Authentication Options ----
+        auth_label = toga.Label(
+            "Web Authentication Options:",
+            style=Pack(
+                margin_top=10,
+                margin_bottom=5,
+                font_weight="bold"
+            )
         )
-        self.cookies_checkbox.pack(anchor="w", padx=10, pady=5)
+        container.add(auth_label)
+
+        # Use cookies
+        self.use_cookies_switch = toga.Switch(
+            "Use browser cookies for authentication",
+            value=True,
+            style=Pack(margin=5)
+        )
+        container.add(self.use_cookies_switch)
 
         # Browser selection
-        browser_frame = ctk.CTkFrame(auth_frame)
-        browser_frame.pack(fill="x", padx=20, pady=5)
-
-        browser_label = ctk.CTkLabel(
-            browser_frame,
-            text="Browser:",
-            font=ctk.CTkFont(size=12),
+        browser_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        browser_label = toga.Label(
+            "Browser:",
+            style=Pack(width=180)
         )
-        browser_label.pack(side="left", padx=(0, 10))
-
-        self.browser_dropdown = ctk.CTkOptionMenu(
-            browser_frame,
-            variable=self.browser_choice_var,
-            values=["chrome", "firefox", "safari", "edge", "all"],
-            width=120,
+        self.browser_selection = toga.Selection(
+            items=["chrome", "firefox", "safari", "edge", "all"],
+            style=Pack(flex=1)
         )
-        self.browser_dropdown.pack(side="left")
+        self.browser_selection.value = "chrome"
+        browser_box.add(browser_label)
+        browser_box.add(self.browser_selection)
+        container.add(browser_box)
 
-        browser_hint = ctk.CTkLabel(
-            browser_frame,
-            text="(Select where you're logged in to the site)",
-            font=ctk.CTkFont(size=10),
-            text_color="gray",
+        browser_hint = toga.Label(
+            "(Select where you're logged in to the site)",
+            style=Pack(margin_left=185, margin_bottom=5, font_size=10)
         )
-        browser_hint.pack(side="left", padx=10)
+        container.add(browser_hint)
 
-        # Debug option
-        self.raw_html_checkbox = ctk.CTkCheckBox(
-            auth_frame,
-            text="Save raw HTML for debugging (output_markdown/_debug/)",
-            variable=self.save_raw_html_var,
+        # Save raw HTML for debugging
+        self.save_html_switch = toga.Switch(
+            "Save raw HTML for debugging (output_markdown/_debug/)",
+            value=False,
+            style=Pack(margin=5)
         )
-        self.raw_html_checkbox.pack(anchor="w", padx=10, pady=5)
+        container.add(self.save_html_switch)
 
-        # Options frame
-        options_frame = ctk.CTkFrame(scrollable_frame)
-        options_frame.pack(fill="x", padx=20, pady=10)
-
-        options_title = ctk.CTkLabel(
-            options_frame,
-            text="Processing Options:",
-            font=ctk.CTkFont(size=14, weight="bold"),
+        # ---- Processing Options ----
+        options_label = toga.Label(
+            "Processing Options:",
+            style=Pack(
+                margin_top=20,
+                margin_bottom=10,
+                font_weight="bold"
+            )
         )
-        options_title.pack(anchor="w", padx=10, pady=(10, 5))
+        container.add(options_label)
 
-        self.translate_checkbox = ctk.CTkCheckBox(
-            options_frame,
-            text="Translate to Russian",
-            variable=self.translate_var,
+        # Translation checkbox
+        self.translate_switch = toga.Switch(
+            "Enable Translation (auto-detect language → Russian)",
+            value=False,
+            style=Pack(margin=5)
         )
-        self.translate_checkbox.pack(anchor="w", padx=20, pady=5)
+        container.add(self.translate_switch)
 
-        self.tag_checkbox = ctk.CTkCheckBox(
-            options_frame,
-            text="Auto-tag content (recommended)",
-            variable=self.tag_var,
+        # Auto-tagging checkbox
+        self.tagging_switch = toga.Switch(
+            "Enable Auto-Tagging (extract topics/themes)",
+            value=True,
+            style=Pack(margin=5)
         )
-        self.tag_checkbox.pack(anchor="w", padx=20, pady=5)
+        container.add(self.tagging_switch)
 
-        # Vision mode selection
-        vision_label = ctk.CTkLabel(
-            options_frame,
-            text="Image Extraction Mode:",
-            font=ctk.CTkFont(size=12, weight="bold"),
+        # V2: Vision mode selection (FIXED - display text + mapping)
+        vision_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        vision_label = toga.Label(
+            "Image Extraction Mode:",
+            style=Pack(width=180)
         )
-        vision_label.pack(anchor="w", padx=20, pady=(10, 5))
-
-        self.vision_mode_dropdown = ctk.CTkOptionMenu(
-            options_frame,
-            variable=self.vision_mode_var,
-            values=["Disabled", "Auto (Smart Fallback)", "Local Vision Model"],
-            width=300,
+        self.vision_mode_selection = toga.Selection(
+            items=["Disabled", "Auto (Smart Fallback)", "Local Vision Model"],
+            style=Pack(flex=1)
         )
-        self.vision_mode_dropdown.pack(anchor="w", padx=20, pady=(0, 5))
+        self.vision_mode_selection.value = "Auto (Smart Fallback)"
+        vision_box.add(vision_label)
+        vision_box.add(self.vision_mode_selection)
+        container.add(vision_box)
 
-        # Start button
-        self.start_button = ctk.CTkButton(
-            scrollable_frame,
-            text="Start Processing",
-            command=None,  # Will be set by controller
-            height=40,
-            font=ctk.CTkFont(size=14, weight="bold"),
+        # ---- Action Buttons ----
+        button_box = toga.Box(
+            style=Pack(
+                direction=ROW,
+                margin_top=20,
+                margin_bottom=10
+            )
         )
-        self.start_button.pack(pady=20)
-
-        # Log textbox
-        log_label = ctk.CTkLabel(
-            scrollable_frame,
-            text="Processing Log:",
-            font=ctk.CTkFont(size=14, weight="bold"),
+        self.start_button = toga.Button(
+            "🚀 Start Processing",
+            on_press=self._on_start_processing,
+            style=Pack(
+                margin_right=10,
+                flex=1,
+                background_color=Theme.ACCENT_GREEN
+            )
         )
-        log_label.pack(anchor="w", padx=20, pady=(10, 5))
-
-        self.log_textbox = ctk.CTkTextbox(
-            scrollable_frame,
-            height=250,
-            wrap="word",
-            state="disabled",
+        self.clear_log_button = toga.Button(
+            "🗑️ Clear Log",
+            on_press=self._on_clear_log,
+            style=Pack(
+                flex=1,
+                background_color=Theme.ACCENT_RED
+            )
         )
-        self.log_textbox.pack(fill="both", expand=True, padx=20, pady=(0, 20))
-        self._enable_mousewheel_scrolling(self.log_textbox)
+        button_box.add(self.start_button)
+        button_box.add(self.clear_log_button)
+        container.add(button_box)
 
-    def _on_select_folder_clicked(self) -> None:
-        """Handle folder selection button click."""
-        folder = filedialog.askdirectory(title="Select Folder Containing PDFs")
-        if folder:
-            self.folder_path_var.set(folder)
-
-    def _on_source_type_changed(self) -> None:
-        """Handle source type radio button change."""
-        source_type = self.source_type_var.get()
-
-        if source_type == "pdf":
-            # Show PDF folder frame, hide URL frame
-            self.url_frame.pack_forget()
-            self.folder_frame.pack(fill="x", padx=0, pady=0)
-        else:  # web
-            # Hide PDF folder frame, show URL frame
-            self.folder_frame.pack_forget()
-            self.url_frame.pack(fill="x", padx=0, pady=0)
-
-    # ========================================================================
-    # Chat Tab
-    # ========================================================================
-
-    def _setup_chat_tab(self) -> None:
-        """Setup the Chat tab UI."""
-        tab = self.tabview.tab("Chat")
-
-        # Title
-        title = ctk.CTkLabel(
-            tab,
-            text="💬 Chat with Your Knowledge Base",
-            font=ctk.CTkFont(size=20, weight="bold"),
+        # ---- Processing Log (Scrollable) ----
+        log_label = toga.Label(
+            "Processing Log:",
+            style=Pack(
+                margin_top=10,
+                margin_bottom=5,
+                font_weight="bold"
+            )
         )
-        title.pack(pady=(10, 10))
+        container.add(log_label)
 
-        # Search type selector frame
-        search_type_frame = ctk.CTkFrame(tab)
-        search_type_frame.pack(fill="x", padx=20, pady=(0, 10))
-
-        search_label = ctk.CTkLabel(
-            search_type_frame,
-            text="Искать в:",
-            font=ctk.CTkFont(size=12),
+        # MultilineTextInput for logs (readonly)
+        self.log_output = toga.MultilineTextInput(
+            readonly=True,
+            placeholder="Processing logs will appear here...",
+            style=Pack(
+                flex=1,
+                height=250
+            )
         )
-        search_label.pack(side="left", padx=(10, 10))
+        container.add(self.log_output)
 
-        self.search_type_selector = ctk.CTkSegmentedButton(
-            search_type_frame,
-            values=["Всё", "Документы", "Заметки"],
-            variable=self.search_type_var,
-            command=self._on_search_type_changed,
+        # Wrap in ScrollContainer for native scrolling
+        return toga.ScrollContainer(
+            content=container,
+            style=Pack()
         )
-        self.search_type_selector.pack(side="left", padx=10)
-        self.search_type_selector.set("Всё")
 
-        # Clear button
-        self.clear_chat_button = ctk.CTkButton(
-            search_type_frame,
-            text="Очистить историю",
-            command=None,  # Will be set by controller
-            width=150,
-            height=28,
+    def _create_chat_tab(self) -> toga.Widget:
+        """
+        Create the Chat tab UI.
+
+        V2: Fixed search_type values ("Всё", "Документы", "Заметки" + mapping)
+        V2: Added Clear Chat button
+
+        Returns:
+            toga.Widget: The chat tab content
+        """
+        container = toga.Box(
+            style=self._get_container_style(
+                direction=COLUMN,
+                margin=20
+            )
         )
-        self.clear_chat_button.pack(side="right", padx=10)
 
-        # Chat history textbox
-        history_label = ctk.CTkLabel(
-            tab,
-            text="Conversation:",
-            font=ctk.CTkFont(size=14, weight="bold"),
+        title = toga.Label(
+            "💬 Chat with Your Knowledge Base",
+            style=Pack(
+                margin_bottom=20,
+                font_size=20,
+                font_weight="bold"
+            )
         )
-        history_label.pack(anchor="w", padx=20, pady=(0, 5))
+        container.add(title)
 
-        self.chat_history_textbox = ctk.CTkTextbox(
-            tab,
-            height=400,
-            wrap="word",
-            state="disabled",
+        # V2: Search type selection (FIXED - correct values + Clear button)
+        search_box = toga.Box(
+            style=Pack(
+                direction=ROW,
+                margin_bottom=10
+            )
         )
-        self.chat_history_textbox.pack(fill="both", expand=True, padx=20, pady=(0, 10))
-        self._enable_mousewheel_scrolling(self.chat_history_textbox)
-
-        # Input frame
-        input_frame = ctk.CTkFrame(tab)
-        input_frame.pack(fill="x", padx=20, pady=(0, 20))
-
-        self.chat_entry = ctk.CTkEntry(
-            input_frame,
-            placeholder_text="Type your question here...",
-            height=40,
+        search_label = toga.Label(
+            "Искать в:",
+            style=Pack(width=120)
         )
-        self.chat_entry.pack(side="left", fill="x", expand=True, padx=(10, 5), pady=10)
-
-        # Bind Enter key to send message
-        self.chat_entry.bind("<Return>", lambda e: self._trigger_send_button())
-
-        self.send_button = ctk.CTkButton(
-            input_frame,
-            text="Send",
-            command=None,  # Will be set by controller
-            width=100,
-            height=40,
+        self.search_type_selection = toga.Selection(
+            items=["Всё", "Документы", "Заметки"],
+            style=Pack(flex=1, margin_right=10)
         )
-        self.send_button.pack(side="right", padx=(5, 10), pady=10)
+        self.search_type_selection.value = "Всё"
 
-    def _trigger_send_button(self) -> None:
-        """Programmatically trigger the send button."""
-        if self.send_button.cget("command"):
-            self.send_button.cget("command")()
-
-    def _on_search_type_changed(self, value: str) -> None:
-        """Handle search type selector change."""
-        # Map Russian labels to internal values
-        mapping = {
-            "Всё": "all",
-            "Документы": "document",
-            "Заметки": "note",
-        }
-        self.search_type_var.set(mapping.get(value, "all"))
-
-    # ========================================================================
-    # Notes Tab
-    # ========================================================================
-
-    def _setup_notes_tab(self) -> None:
-        """Setup the Notes tab UI."""
-        tab = self.tabview.tab("Notes")
-
-        # Title
-        title = ctk.CTkLabel(
-            tab,
-            text="📝 Заметки",
-            font=ctk.CTkFont(size=20, weight="bold"),
+        # V2: Clear Chat button
+        self.clear_chat_button = toga.Button(
+            "Очистить историю",
+            on_press=self._on_clear_chat,
+            style=Pack(width=150)
         )
-        title.pack(pady=(10, 20))
 
-        # Description
-        desc = ctk.CTkLabel(
-            tab,
-            text="Создавайте заметки, которые будут доступны для поиска в чате",
-            font=ctk.CTkFont(size=12),
-            text_color="gray",
+        search_box.add(search_label)
+        search_box.add(self.search_type_selection)
+        search_box.add(self.clear_chat_button)
+        container.add(search_box)
+
+        # Chat history display
+        self.chat_history = toga.MultilineTextInput(
+            readonly=True,
+            placeholder="Chat history will appear here...\n\nAsk questions about your documents!",
+            style=Pack(
+                flex=1,
+                height=400
+            )
         )
-        desc.pack(pady=(0, 10))
+        container.add(self.chat_history)
 
-        # Note input frame
-        input_frame = ctk.CTkFrame(tab)
-        input_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        # Message input
+        input_box = toga.Box(style=Pack(direction=ROW, margin_top=10))
+        self.chat_input = toga.TextInput(
+            placeholder="Type your message here...",
+            style=Pack(
+                flex=1,
+                margin_right=10
+            )
+        )
+        self.send_button = toga.Button(
+            "Send",
+            on_press=self._on_send_message,
+            style=Pack(
+                width=100,
+                background_color=Theme.ACCENT_BLUE
+            )
+        )
+        input_box.add(self.chat_input)
+        input_box.add(self.send_button)
+        container.add(input_box)
+
+        return toga.ScrollContainer(
+            content=container,
+            style=Pack()
+        )
+
+    def _create_notes_tab(self) -> toga.Widget:
+        """
+        Create the Notes tab UI.
+
+        Returns:
+            toga.Widget: The notes tab content
+        """
+        container = toga.Box(
+            style=self._get_container_style(
+                direction=COLUMN,
+                margin=20
+            )
+        )
+
+        title = toga.Label(
+            "📝 Заметки",
+            style=Pack(
+                margin_bottom=10,
+                font_size=20,
+                font_weight="bold"
+            )
+        )
+        container.add(title)
+
+        desc = toga.Label(
+            "Создавайте заметки, которые будут доступны для поиска в чате",
+            style=Pack(margin_bottom=20, font_size=12)
+        )
+        container.add(desc)
 
         # Note text area
-        self.note_textbox = ctk.CTkTextbox(
-            input_frame,
-            height=400,
-            wrap="word",
+        self.note_text = toga.MultilineTextInput(
+            placeholder="Create a new note...\n\nYour note will be saved to the knowledge base.",
+            style=Pack(
+                flex=1,
+                height=400
+            )
         )
-        self.note_textbox.pack(fill="both", expand=True, padx=10, pady=10)
-        self._enable_mousewheel_scrolling(self.note_textbox)
+        container.add(self.note_text)
 
-        # Button and status frame
-        control_frame = ctk.CTkFrame(tab)
-        control_frame.pack(fill="x", padx=20, pady=(0, 20))
-
-        # Save button
-        self.save_note_button = ctk.CTkButton(
-            control_frame,
-            text="💾 Сохранить заметку",
-            command=None,  # Will be set by controller
-            width=200,
-            height=40,
+        # Action buttons
+        button_box = toga.Box(style=Pack(direction=ROW, margin_top=15))
+        save_button = toga.Button(
+            "💾 Сохранить заметку",
+            on_press=self._on_save_note,
+            style=Pack(
+                flex=1,
+                margin_right=10,
+                background_color=Theme.ACCENT_GREEN
+            )
         )
-        self.save_note_button.pack(side="left", padx=10, pady=10)
-
-        # Status label
-        self.note_status_label = ctk.CTkLabel(
-            control_frame,
-            text="",
-            font=ctk.CTkFont(size=12),
+        clear_button = toga.Button(
+            "🗑️ Clear",
+            on_press=self._on_clear_note,
+            style=Pack(
+                flex=1,
+                background_color=Theme.ACCENT_RED
+            )
         )
-        self.note_status_label.pack(side="left", padx=10)
+        button_box.add(save_button)
+        button_box.add(clear_button)
+        container.add(button_box)
 
-    # ========================================================================
-    # Changelog Tab
-    # ========================================================================
-
-    def _setup_changelog_tab(self) -> None:
-        """Setup the Changelog tab UI with file list and content viewer."""
-        tab = self.tabview.tab("Changelog")
-
-        # Create main container with two panels
-        main_frame = ctk.CTkFrame(tab)
-        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
-
-        # Left panel: File list
-        left_frame = ctk.CTkFrame(main_frame)
-        left_frame.pack(side="left", fill="both", expand=False, padx=(0, 5))
-        left_frame.configure(width=250)
-
-        # Left panel title
-        list_title = ctk.CTkLabel(
-            left_frame,
-            text="📋 История обработки",
-            font=ctk.CTkFont(size=14, weight="bold"),
+        # Status label (for showing save success/error messages)
+        self.note_status_label = toga.Label(
+            "",
+            style=Pack(
+                margin_top=10,
+                font_size=12
+            )
         )
-        list_title.pack(pady=(10, 5))
+        container.add(self.note_status_label)
 
-        # Refresh button
-        self.refresh_changelog_button = ctk.CTkButton(
-            left_frame,
-            text="🔄 Обновить",
-            width=200,
-            height=30,
-            command=self._on_refresh_changelog,
+        return toga.ScrollContainer(
+            content=container,
+            style=Pack()
         )
-        self.refresh_changelog_button.pack(pady=5)
 
-        # File list (scrollable) using native Tkinter scrolling
-        self.changelog_listbox_container = TkScrollableFrame(left_frame)
-        self.changelog_listbox_container.pack(fill="both", expand=True, pady=5)
-        self.changelog_listbox_container.configure(width=230, height=500)
-        self.changelog_listbox = self.changelog_listbox_container.scrollable_frame
+    def _create_changelog_tab(self) -> toga.Widget:
+        """
+        Create the Changelog tab UI.
 
-        # Right panel: Content viewer
-        right_frame = ctk.CTkFrame(main_frame)
-        right_frame.pack(side="right", fill="both", expand=True, padx=(5, 0))
+        V2: Improved implementation with file selection dropdown + content viewer
+        (Similar to CustomTkinter's two-panel design, but simplified for Toga)
 
-        # Right panel title
-        content_title = ctk.CTkLabel(
-            right_frame,
-            text="📄 Содержимое",
-            font=ctk.CTkFont(size=14, weight="bold"),
+        Returns:
+            toga.Widget: The changelog tab content
+        """
+        container = toga.Box(
+            style=self._get_container_style(
+                direction=COLUMN,
+                margin=20
+            )
         )
-        content_title.pack(pady=(10, 5))
 
-        # Content textbox
-        self.changelog_content = ctk.CTkTextbox(
-            right_frame,
-            wrap="word",
-            font=ctk.CTkFont(size=12),
+        title = toga.Label(
+            "📋 История обработки",
+            style=Pack(
+                margin_bottom=20,
+                font_size=20,
+                font_weight="bold"
+            )
         )
-        self.changelog_content.pack(fill="both", expand=True, pady=(5, 10), padx=10)
-        self._enable_mousewheel_scrolling(self.changelog_content)
+        container.add(title)
 
-        # Store selected file
-        self.selected_changelog_file = None
+        # File selection row
+        file_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        file_label = toga.Label("Select File:", style=Pack(width=120))
+        self.changelog_file_selection = toga.Selection(
+            items=[],  # Will be populated by _load_changelog_files()
+            style=Pack(flex=1, margin_right=10)
+        )
+        self.changelog_file_selection.on_change = self._on_changelog_file_changed
+        refresh_button = toga.Button(
+            "🔄 Обновить",
+            on_press=self._on_refresh_changelog,
+            style=Pack(width=100)
+        )
+        file_box.add(file_label)
+        file_box.add(self.changelog_file_selection)
+        file_box.add(refresh_button)
+        container.add(file_box)
 
-        # Load initial changelog files
+        # Content label
+        content_label = toga.Label(
+            "Содержимое:",
+            style=Pack(
+                margin_top=10,
+                margin_bottom=5,
+                font_weight="bold"
+            )
+        )
+        container.add(content_label)
+
+        # Content viewer
+        self.changelog_content = toga.MultilineTextInput(
+            readonly=True,
+            placeholder="Select a changelog file to view...",
+            style=Pack(
+                flex=1,
+                height=500
+            )
+        )
+        container.add(self.changelog_content)
+
+        # Load files on startup
         self._load_changelog_files()
 
-    def _on_refresh_changelog(self) -> None:
-        """Handle refresh changelog button click."""
-        self._load_changelog_files()
+        return toga.ScrollContainer(
+            content=container,
+            style=Pack()
+        )
 
-    def _load_changelog_files(self) -> None:
-        """Load and display changelog files from the changelog directory."""
-        from pathlib import Path
+    def _create_settings_tab(self) -> toga.Widget:
+        """
+        Create the Settings tab UI.
 
-        # Clear existing items
-        for widget in self.changelog_listbox.winfo_children():
-            widget.destroy()
+        This tab allows users to configure:
+        - LLM provider (Ollama, LM Studio, Claude, Gemini, Mistral)
+        - API keys and endpoints
+        - Model selection
+        - Vision settings
+        - General settings (timeout, translation chunk size)
+        - Storage paths (vector DB, markdown output, changelog)
 
-        # Get changelog path from config (we'll pass it from controller later)
-        # For now, use default
+        V2: Added translation_chunk_size
+        V2: Added storage paths (vector_db_path, markdown_output_path, changelog_path)
+
+        Returns:
+            toga.Widget: The settings tab content
+        """
+        container = toga.Box(
+            style=self._get_container_style(
+                direction=COLUMN,
+                margin=20
+            )
+        )
+
+        title = toga.Label(
+            "⚙️ LLM Settings",
+            style=Pack(
+                margin_bottom=20,
+                font_size=20,
+                font_weight="bold"
+            )
+        )
+        container.add(title)
+
+        # ---- Settings File Location ----
+        settings_file_section = self._create_settings_section(
+            "Settings File Location:",
+            container
+        )
+
+        config_location_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        config_location_label = toga.Label(
+            "Config Path:",
+            style=Pack(width=150)
+        )
+        self.config_location_selection = toga.Selection(
+            items=["Home (~/.lokal-rag/settings.json)", "Project (.lokal-rag/settings.json)"],
+            style=Pack(flex=1, margin_right=10)
+        )
+        self.config_location_selection.value = "Home (~/.lokal-rag/settings.json)"
+
+        self.load_settings_button = toga.Button(
+            "Load Settings",
+            on_press=self._on_load_settings,
+            style=Pack(
+                width=120,
+                background_color=Theme.ACCENT_BLUE
+            )
+        )
+
+        config_location_box.add(config_location_label)
+        config_location_box.add(self.config_location_selection)
+        config_location_box.add(self.load_settings_button)
+        settings_file_section.add(config_location_box)
+
+        # ---- Appearance Settings (Theme Selection) ----
+        appearance_section = self._create_settings_section(
+            "Appearance Settings:",
+            container
+        )
+
+        theme_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        theme_label = toga.Label(
+            "Theme:",
+            style=Pack(width=150)
+        )
+        self.theme_selection = toga.Selection(
+            items=["Light", "Dark"],
+            on_change=self._on_theme_changed,
+            style=Pack(flex=1)
+        )
+        self.theme_selection.value = "Light"  # Default to light theme
+
+        theme_box.add(theme_label)
+        theme_box.add(self.theme_selection)
+        appearance_section.add(theme_box)
+
+        # Window size selection
+        window_size_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        window_size_label = toga.Label(
+            "Window Size:",
+            style=Pack(width=150)
+        )
+        self.window_size_selection = toga.Selection(
+            items=[
+                "1024x768 (4:3 Classic)",
+                "1280x720 (HD 720p)",
+                "1280x800 (MacBook Air)",
+                "1440x900 (16:10 Wide)",
+                "1920x1080 (Full HD)"
+            ],
+            style=Pack(flex=1)
+        )
+        self.window_size_selection.value = "1280x800 (MacBook Air)"  # Default
+
+        window_size_box.add(window_size_label)
+        window_size_box.add(self.window_size_selection)
+        appearance_section.add(window_size_box)
+
+        # ---- Database Language Selection ----
+        db_section = self._create_settings_section(
+            "Database Settings:",
+            container
+        )
+
+        db_language_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        db_language_label = toga.Label(
+            "Database Language:",
+            style=Pack(width=150)
+        )
+        self.db_language_selection = toga.Selection(
+            items=["English", "Russian"],
+            style=Pack(flex=1)
+        )
+        self.db_language_selection.value = "English"
+
+        db_language_box.add(db_language_label)
+        db_language_box.add(self.db_language_selection)
+        db_section.add(db_language_box)
+
+        # Info label
+        db_info_label = toga.Label(
+            "Note: Database language affects which ChromaDB is used for search. Documents are always added to both databases.",
+            style=Pack(margin=5, font_size=10)
+        )
+        db_section.add(db_info_label)
+
+        # ---- LLM Provider Selection ----
+        provider_section = self._create_settings_section(
+            "LLM Provider:",
+            container
+        )
+
+        self.llm_provider_selection = toga.Selection(
+            items=["ollama", "lmstudio", "claude", "gemini", "mistral"],
+            style=Pack(
+                margin=5
+            )
+        )
+        self.llm_provider_selection.value = "ollama"
+        provider_section.add(self.llm_provider_selection)
+
+        # ---- Ollama Settings ----
+        ollama_section = self._create_settings_section(
+            "Ollama Settings:",
+            container
+        )
+
+        ollama_url_box = self._create_input_row(
+            "Base URL:",
+            "http://localhost:11434"
+        )
+        self.ollama_url_input = ollama_url_box.children[1]
+        ollama_section.add(ollama_url_box)
+
+        ollama_model_box = self._create_input_row(
+            "Model Name:",
+            "qwen2.5:7b-instruct"
+        )
+        self.ollama_model_input = ollama_model_box.children[1]
+        ollama_section.add(ollama_model_box)
+
+        # ---- LM Studio Settings ----
+        lmstudio_section = self._create_settings_section(
+            "LM Studio Settings:",
+            container
+        )
+
+        lmstudio_url_box = self._create_input_row(
+            "Base URL:",
+            "http://localhost:1234/v1"
+        )
+        self.lmstudio_url_input = lmstudio_url_box.children[1]
+        lmstudio_section.add(lmstudio_url_box)
+
+        lmstudio_model_box = self._create_input_row(
+            "Model Name:",
+            "meta-llama-3.1-8b-instruct"
+        )
+        self.lmstudio_model_input = lmstudio_model_box.children[1]
+        lmstudio_section.add(lmstudio_model_box)
+
+        # ---- Claude Settings ----
+        claude_section = self._create_settings_section(
+            "Claude (Anthropic) Settings:",
+            container
+        )
+
+        claude_key_box = self._create_input_row(
+            "API Key:",
+            "sk-ant-...",
+            is_password=True
+        )
+        self.claude_api_key_input = claude_key_box.children[1]
+        claude_section.add(claude_key_box)
+
+        claude_help = toga.Label(
+            "Get your API key from: https://console.anthropic.com/",
+            style=Pack(margin=5, font_size=10)
+        )
+        claude_section.add(claude_help)
+
+        claude_model_box = self._create_input_row(
+            "Model:",
+            "claude-3-5-sonnet-20241022"
+        )
+        self.claude_model_input = claude_model_box.children[1]
+        claude_section.add(claude_model_box)
+
+        # ---- Gemini Settings ----
+        gemini_section = self._create_settings_section(
+            "Gemini (Google) Settings:",
+            container
+        )
+
+        gemini_key_box = self._create_input_row(
+            "API Key:",
+            "AIza...",
+            is_password=True
+        )
+        self.gemini_api_key_input = gemini_key_box.children[1]
+        gemini_section.add(gemini_key_box)
+
+        gemini_help = toga.Label(
+            "Get your API key from: https://makersuite.google.com/app/apikey",
+            style=Pack(margin=5, font_size=10)
+        )
+        gemini_section.add(gemini_help)
+
+        gemini_model_box = self._create_input_row(
+            "Model:",
+            "gemini-2.5-pro-preview-03-25"
+        )
+        self.gemini_model_input = gemini_model_box.children[1]
+        gemini_section.add(gemini_model_box)
+
+        # ---- Mistral Settings ----
+        mistral_section = self._create_settings_section(
+            "Mistral AI Settings:",
+            container
+        )
+
+        mistral_key_box = self._create_input_row(
+            "API Key:",
+            "...",
+            is_password=True
+        )
+        self.mistral_api_key_input = mistral_key_box.children[1]
+        mistral_section.add(mistral_key_box)
+
+        mistral_help = toga.Label(
+            "Get your API key from: https://console.mistral.ai/",
+            style=Pack(margin=5, font_size=10)
+        )
+        mistral_section.add(mistral_help)
+
+        mistral_model_box = self._create_input_row(
+            "Model:",
+            "mistral-small-latest"
+        )
+        self.mistral_model_input = mistral_model_box.children[1]
+        mistral_section.add(mistral_model_box)
+
+        # ---- Vision Settings ----
+        vision_section = self._create_settings_section(
+            "👁️ Vision Settings (Image Extraction):",
+            container
+        )
+
+        vision_help = toga.Label(
+            "Configure local vision provider for image extraction from PDFs (separate from main LLM).",
+            style=Pack(margin=5, font_size=10)
+        )
+        vision_section.add(vision_help)
+
+        vision_provider_box = self._create_input_row(
+            "Vision Provider:",
+            "ollama"
+        )
+        self.vision_provider_input = vision_provider_box.children[1]
+        vision_section.add(vision_provider_box)
+
+        vision_url_box = self._create_input_row(
+            "Vision Base URL:",
+            "http://localhost:11434"
+        )
+        self.vision_base_url_input = vision_url_box.children[1]
+        vision_section.add(vision_url_box)
+
+        vision_model_box = self._create_input_row(
+            "Vision Model:",
+            "granite-docling:258m"
+        )
+        self.vision_model_input = vision_model_box.children[1]
+        vision_section.add(vision_model_box)
+
+        vision_model_help = toga.Label(
+            "Recommended: granite-docling:258m (lightweight, document-specialized)",
+            style=Pack(margin_left=155, font_size=10)
+        )
+        vision_section.add(vision_model_help)
+
+        # ---- General Settings ----
+        general_section = self._create_settings_section(
+            "General Settings:",
+            container
+        )
+
+        timeout_box = self._create_input_row(
+            "LLM Request Timeout (seconds):",
+            "300"
+        )
+        self.timeout_input = timeout_box.children[1]
+        general_section.add(timeout_box)
+
+        # V2: Translation chunk size (ADDED)
+        chunk_box = self._create_input_row(
+            "Translation Chunk Size (characters):",
+            "2000"
+        )
+        self.translation_chunk_input = chunk_box.children[1]
+        general_section.add(chunk_box)
+
+        chunk_help = toga.Label(
+            "Size of text chunks for translation. Smaller values = more API calls but better quality.",
+            style=Pack(margin_left=155, margin_bottom=5, font_size=10)
+        )
+        general_section.add(chunk_help)
+
+        # ---- V2: Storage Paths (ADDED) ----
+        paths_section = self._create_settings_section(
+            "📁 Storage Paths:",
+            container
+        )
+
+        paths_help = toga.Label(
+            "Paths for storing vector database and markdown files (relative to app directory).",
+            style=Pack(margin=5, font_size=10)
+        )
+        paths_section.add(paths_help)
+
+        # Vector DB path
+        vector_db_box = self._create_input_row(
+            "Vector Database Path:",
+            "./lokal_rag_db"
+        )
+        self.vector_db_path_input = vector_db_box.children[1]
+        paths_section.add(vector_db_box)
+
+        # Markdown output path
+        markdown_output_box = self._create_input_row(
+            "Markdown Output Path:",
+            "./output_markdown"
+        )
+        self.markdown_output_path_input = markdown_output_box.children[1]
+        paths_section.add(markdown_output_box)
+
+        # Changelog path
+        changelog_box = self._create_input_row(
+            "Changelog Path:",
+            "./changelog"
+        )
+        self.changelog_path_input = changelog_box.children[1]
+        paths_section.add(changelog_box)
+
+        # ---- Action Buttons ----
+        button_box = toga.Box(
+            style=Pack(
+                direction=ROW,
+                margin_top=25,
+                margin_bottom=10
+            )
+        )
+        self.save_settings_button = toga.Button(
+            "💾 Save Settings",
+            on_press=self._on_save_settings,
+            style=Pack(
+                flex=1,
+                margin_right=10,
+                background_color=Theme.ACCENT_GREEN
+            )
+        )
+        test_button = toga.Button(
+            "🧪 Test Connection",
+            on_press=self._on_test_connection,
+            style=Pack(
+                flex=1,
+                background_color=Theme.ACCENT_BLUE
+            )
+        )
+        button_box.add(self.save_settings_button)
+        button_box.add(test_button)
+        container.add(button_box)
+
+        return toga.ScrollContainer(
+            content=container,
+            style=Pack()
+        )
+
+    # ========================================================================
+    # Helper Methods for Settings UI
+    # ========================================================================
+
+    def _create_settings_section(self, title: str, parent: toga.Box) -> toga.Box:
+        """
+        Create a settings section with a title and container.
+
+        Args:
+            title: Section title
+            parent: Parent container to add section to
+
+        Returns:
+            toga.Box: The section container
+        """
+        section = toga.Box(
+            style=Pack(
+                direction=COLUMN,
+                margin=10
+            )
+        )
+
+        section_title = toga.Label(
+            title,
+            style=Pack(
+                margin_bottom=10,
+                font_weight="bold"
+            )
+        )
+        section.add(section_title)
+        parent.add(section)
+
+        return section
+
+    def _create_input_row(
+        self,
+        label_text: str,
+        placeholder: str,
+        is_password: bool = False
+    ) -> toga.Box:
+        """
+        Create an input row with label and text field.
+
+        Args:
+            label_text: Label text
+            placeholder: Placeholder for input
+            is_password: Whether to use password input
+
+        Returns:
+            toga.Box: The input row
+        """
+        row = toga.Box(style=Pack(direction=ROW, margin=5))
+
+        label = toga.Label(
+            label_text,
+            style=Pack(width=150)
+        )
+
+        if is_password:
+            input_field = toga.PasswordInput(
+                placeholder=placeholder,
+                style=Pack(
+                    flex=1
+                )
+            )
+        else:
+            input_field = toga.TextInput(
+                placeholder=placeholder,
+                style=Pack(
+                    flex=1
+                )
+            )
+
+        row.add(label)
+        row.add(input_field)
+
+        return row
+
+    # ========================================================================
+    # Changelog Helper Methods
+    # ========================================================================
+
+    def _load_changelog_files(self):
+        """Load changelog files and populate selection."""
         changelog_path = Path("./changelog")
-
         if not changelog_path.exists():
-            no_files_label = ctk.CTkLabel(
-                self.changelog_listbox,
-                text="Нет файлов истории\n\nФайлы будут созданы\nпосле обработки\nдокументов",
-                text_color="gray",
-                font=ctk.CTkFont(size=11),
-            )
-            no_files_label.pack(pady=20)
+            self.changelog_file_selection.items = []
+            self.changelog_content.value = "No changelog directory found.\n\nFiles will be created after processing documents."
             return
 
-        # Find all .md files
-        files = sorted(changelog_path.glob("*.md"), reverse=True)  # Newest first
-
+        files = sorted(changelog_path.glob("*.md"), reverse=True)
         if not files:
-            no_files_label = ctk.CTkLabel(
-                self.changelog_listbox,
-                text="Нет файлов истории",
-                text_color="gray",
-            )
-            no_files_label.pack(pady=20)
+            self.changelog_file_selection.items = []
+            self.changelog_content.value = "No changelog files found.\n\nFiles will be created after processing documents."
             return
 
-        # Create button for each file
+        # Create display names
+        file_items = []
+        self.changelog_files_map = {}  # Map display name -> Path
+
         for file_path in files:
-            # Extract date from filename (YYYY-MM-DD_HH-MM-SS.md)
             filename = file_path.stem
             try:
                 date_part, time_part = filename.split('_')
-                display_name = f"{date_part}\n{time_part.replace('-', ':')}"
+                display_name = f"{date_part} {time_part.replace('-', ':')}"
             except:
                 display_name = filename
 
-            file_button = ctk.CTkButton(
-                self.changelog_listbox,
-                text=display_name,
-                width=200,
-                height=50,
-                command=lambda fp=file_path: self._on_changelog_file_selected(fp),
-            )
-            file_button.pack(pady=2)
+            file_items.append(display_name)
+            self.changelog_files_map[display_name] = file_path
 
-    def _on_changelog_file_selected(self, file_path: Path) -> None:
-        """Handle changelog file selection."""
+        self.changelog_file_selection.items = file_items
+        if file_items:
+            self.changelog_file_selection.value = file_items[0]
+            self._on_changelog_file_changed(None)
+
+        logger.info(f"Loaded {len(file_items)} changelog files")
+
+    def _on_changelog_file_changed(self, widget):
+        """Handle changelog file selection change."""
+        selected = self.changelog_file_selection.value
+        if not selected or selected not in self.changelog_files_map:
+            self.changelog_content.value = ""
+            return
+
+        file_path = self.changelog_files_map[selected]
         try:
-            # Read file content
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
+            self.changelog_content.value = content
+            logger.info(f"Loaded changelog file: {file_path.name}")
+        except Exception as e:
+            self.changelog_content.value = f"Error reading file:\n{str(e)}"
+            logger.error(f"Error loading changelog file: {e}")
 
-            # Display in textbox
-            self.changelog_content.delete("1.0", "end")
-            self.changelog_content.insert("1.0", content)
+    def _on_refresh_changelog(self, widget):
+        """Handle refresh button click."""
+        logger.info("Refreshing changelog files...")
+        self._load_changelog_files()
 
-            self.selected_changelog_file = file_path
+    # ========================================================================
+    # Event Handlers (Internal)
+    # ========================================================================
+
+    def _on_source_type_changed(self, widget):
+        """Handle source type selection change."""
+        if self.source_type_selection.value == "PDF / Markdown Files":
+            self.source_type_value = "pdf"
+            logger.info("Source type changed to: pdf")
+        else:  # "Web URLs"
+            self.source_type_value = "web"
+            logger.info("Source type changed to: web")
+
+    def _on_select_folder(self, widget):
+        """Handle folder selection button press."""
+        try:
+            folder_path = self.main_window.select_folder_dialog(
+                "Select PDF/Markdown Folder"
+            )
+            if folder_path:
+                self.folder_input.value = str(folder_path)
+                logger.info(f"Folder selected: {folder_path}")
+        except Exception as e:
+            logger.error(f"Error selecting folder: {e}")
+
+    def _on_start_processing(self, widget):
+        """Handle start processing button press."""
+        if self.on_ingest_callback:
+            self.on_ingest_callback()
+        else:
+            logger.warning("No ingest callback set")
+
+    def _on_clear_log(self, widget):
+        """Handle clear log button press."""
+        self.clear_log()
+
+    def _on_send_message(self, widget):
+        """Handle send message button press."""
+        if self.on_send_message_callback:
+            self.on_send_message_callback()
+        else:
+            logger.warning("No send message callback set")
+
+    def _on_clear_chat(self, widget):
+        """Handle clear chat button press."""
+        if self.on_clear_chat_callback:
+            self.on_clear_chat_callback()
+        else:
+            logger.warning("No clear chat callback set")
+
+    def _on_save_note(self, widget):
+        """Handle save note button press."""
+        if self.on_save_note_callback:
+            self.on_save_note_callback()
+        else:
+            logger.warning("No save note callback set")
+
+    def _on_clear_note(self, widget):
+        """Handle clear note button press."""
+        self.clear_note_text()
+
+    def _on_theme_changed(self, widget):
+        """Handle theme selection change."""
+        theme_name = self.theme_selection.value
+        logger.info(f"Theme changed to: {theme_name}")
+
+        # Update current theme (for saving to settings)
+        if theme_name == "Dark":
+            self.current_theme = DarkTheme
+        else:
+            self.current_theme = LightTheme
+
+        # Show info that restart is needed
+        logger.info("ℹ️  Theme will be applied after saving settings and restarting the app")
+        # Note: We don't call apply_theme() here because Toga can't change
+        # widget colors after they're created. The theme will be applied
+        # on next app launch via _load_theme_preference() in startup()
+
+    def apply_theme(self):
+        """
+        Apply the current theme to all UI elements.
+
+        This method updates the colors of all widgets based on the current theme.
+        NOTE: Toga has limited styling support, so we focus on background colors
+        and button accent colors. Text colors are harder to change dynamically.
+        """
+        global Theme
+        Theme = self.current_theme
+
+        logger.info(f"Applying {self.current_theme.NAME} theme...")
+
+        try:
+            # Update main window background
+            if hasattr(self, 'main_window') and self.main_window.content:
+                # Toga doesn't easily allow changing the main window background
+                # But we can change tab container backgrounds
+                pass
+
+            # Update button colors (they use Theme.ACCENT_*)
+            # The buttons will use the new theme's accent colors on next interaction
+            # We can't easily re-render them, but new buttons will use new colors
+
+            # For now, we'll need to recreate the UI to fully apply the theme
+            # This is a limitation of Toga's styling system
+            logger.info(f"✓ {self.current_theme.NAME.capitalize()} theme applied")
+            logger.info("ℹ️  Note: Some elements may need app restart for full theme change")
 
         except Exception as e:
-            error_text = f"Ошибка при чтении файла:\n{str(e)}"
-            self.changelog_content.delete("1.0", "end")
-            self.changelog_content.insert("1.0", error_text)
+            logger.error(f"Failed to apply theme: {e}", exc_info=True)
+
+    def _on_load_settings(self, widget):
+        """Handle load settings button press."""
+        if self.on_load_settings_callback:
+            self.on_load_settings_callback()
+        else:
+            logger.warning("No load settings callback set")
+
+    def _on_save_settings(self, widget):
+        """Handle save settings button press."""
+        if self.on_save_settings_callback:
+            self.on_save_settings_callback()
+        else:
+            logger.warning("No save settings callback set")
+
+    def _on_test_connection(self, widget):
+        """Handle test connection button press."""
+        # TODO: Implement connection testing
+        logger.info("Test connection clicked (not yet implemented)")
+        self.show_info_dialog(
+            "Test Connection",
+            "Connection testing will be implemented in the next phase."
+        )
 
     # ========================================================================
-    # Settings Tab
-    # ========================================================================
-
-    def _setup_settings_tab(self) -> None:
-        """Setup the Settings tab UI."""
-        tab = self.tabview.tab("Settings")
-
-        # Create scrollable frame for all content using native Tkinter scrolling
-        # (works with macOS trackpad unlike CTkScrollableFrame)
-        scrollable_container = TkScrollableFrame(tab)
-        scrollable_container.pack(fill="both", expand=True, padx=0, pady=0)
-        scrollable_frame = scrollable_container.scrollable_frame
-
-        # Title
-        title = ctk.CTkLabel(
-            scrollable_frame,
-            text="⚙️ LLM Settings",
-            font=ctk.CTkFont(size=20, weight="bold"),
-        )
-        title.pack(pady=(10, 20))
-
-        # Provider selection
-        provider_frame = ctk.CTkFrame(scrollable_frame)
-        provider_frame.pack(fill="x", padx=20, pady=10)
-
-        provider_label = ctk.CTkLabel(
-            provider_frame,
-            text="LLM Provider:",
-            font=ctk.CTkFont(size=14, weight="bold"),
-        )
-        provider_label.pack(anchor="w", padx=10, pady=(10, 5))
-
-        self.provider_dropdown = ctk.CTkOptionMenu(
-            provider_frame,
-            variable=self.llm_provider_var,
-            values=["ollama", "lmstudio", "claude", "gemini", "mistral"],
-            command=self._on_provider_changed,
-        )
-        self.provider_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
-
-        # Ollama settings frame
-        ollama_frame = ctk.CTkFrame(scrollable_frame)
-        ollama_frame.pack(fill="x", padx=20, pady=10)
-
-        ollama_title = ctk.CTkLabel(
-            ollama_frame,
-            text="Ollama Settings:",
-            font=ctk.CTkFont(size=14, weight="bold"),
-        )
-        ollama_title.pack(anchor="w", padx=10, pady=(10, 5))
-
-        ollama_url_label = ctk.CTkLabel(ollama_frame, text="Base URL:")
-        ollama_url_label.pack(anchor="w", padx=20, pady=(5, 0))
-
-        self.ollama_url_entry = ctk.CTkEntry(
-            ollama_frame,
-            textvariable=self.ollama_url_var,
-            width=300,
-        )
-        self.ollama_url_entry.pack(anchor="w", padx=20, pady=(0, 10))
-
-        ollama_model_label = ctk.CTkLabel(ollama_frame, text="Model Name:")
-        ollama_model_label.pack(anchor="w", padx=20, pady=(5, 0))
-
-        self.ollama_model_entry = ctk.CTkEntry(
-            ollama_frame,
-            textvariable=self.ollama_model_var,
-            width=300,
-        )
-        self.ollama_model_entry.pack(anchor="w", padx=20, pady=(0, 10))
-
-        # LM Studio settings frame
-        lmstudio_frame = ctk.CTkFrame(scrollable_frame)
-        lmstudio_frame.pack(fill="x", padx=20, pady=10)
-
-        lmstudio_title = ctk.CTkLabel(
-            lmstudio_frame,
-            text="LM Studio Settings:",
-            font=ctk.CTkFont(size=14, weight="bold"),
-        )
-        lmstudio_title.pack(anchor="w", padx=10, pady=(10, 5))
-
-        lmstudio_url_label = ctk.CTkLabel(lmstudio_frame, text="Base URL:")
-        lmstudio_url_label.pack(anchor="w", padx=20, pady=(5, 0))
-
-        self.lmstudio_url_entry = ctk.CTkEntry(
-            lmstudio_frame,
-            textvariable=self.lmstudio_url_var,
-            width=300,
-        )
-        self.lmstudio_url_entry.pack(anchor="w", padx=20, pady=(0, 10))
-
-        lmstudio_model_label = ctk.CTkLabel(lmstudio_frame, text="Model Name:")
-        lmstudio_model_label.pack(anchor="w", padx=20, pady=(5, 0))
-
-        self.lmstudio_model_entry = ctk.CTkEntry(
-            lmstudio_frame,
-            textvariable=self.lmstudio_model_var,
-            width=300,
-        )
-        self.lmstudio_model_entry.pack(anchor="w", padx=20, pady=(0, 10))
-
-        # Claude settings frame
-        claude_frame = ctk.CTkFrame(scrollable_frame)
-        claude_frame.pack(fill="x", padx=20, pady=10)
-
-        claude_title = ctk.CTkLabel(
-            claude_frame,
-            text="Claude (Anthropic) Settings:",
-            font=ctk.CTkFont(size=14, weight="bold"),
-        )
-        claude_title.pack(anchor="w", padx=10, pady=(10, 5))
-
-        claude_api_key_label = ctk.CTkLabel(claude_frame, text="API Key:")
-        claude_api_key_label.pack(anchor="w", padx=20, pady=(5, 0))
-
-        self.claude_api_key_entry = ctk.CTkEntry(
-            claude_frame,
-            textvariable=self.claude_api_key_var,
-            width=400,
-            show="*",  # Hide API key
-        )
-        self.claude_api_key_entry.pack(anchor="w", padx=20, pady=(0, 5))
-
-        claude_hint = ctk.CTkLabel(
-            claude_frame,
-            text="Get your API key from: https://console.anthropic.com/",
-            font=ctk.CTkFont(size=10),
-            text_color="gray",
-        )
-        claude_hint.pack(anchor="w", padx=20, pady=(0, 10))
-
-        claude_model_label = ctk.CTkLabel(claude_frame, text="Model:")
-        claude_model_label.pack(anchor="w", padx=20, pady=(5, 0))
-
-        self.claude_model_dropdown = ctk.CTkOptionMenu(
-            claude_frame,
-            variable=self.claude_model_var,
-            values=[
-                "claude-3-5-sonnet-20241022",  # Claude 3.5 Sonnet (October 2024)
-                "claude-3-7-sonnet-20250219",  # Claude 3.7 Sonnet (February 2025) - Latest
-                "claude-3-opus-20240229",      # Claude 3 Opus
-            ],
-            width=400,
-        )
-        self.claude_model_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
-
-        # Gemini settings frame
-        gemini_frame = ctk.CTkFrame(scrollable_frame)
-        gemini_frame.pack(fill="x", padx=20, pady=10)
-
-        gemini_title = ctk.CTkLabel(
-            gemini_frame,
-            text="Gemini (Google) Settings:",
-            font=ctk.CTkFont(size=14, weight="bold"),
-        )
-        gemini_title.pack(anchor="w", padx=10, pady=(10, 5))
-
-        gemini_api_key_label = ctk.CTkLabel(gemini_frame, text="API Key:")
-        gemini_api_key_label.pack(anchor="w", padx=20, pady=(5, 0))
-
-        self.gemini_api_key_entry = ctk.CTkEntry(
-            gemini_frame,
-            textvariable=self.gemini_api_key_var,
-            width=400,
-            show="*",  # Hide API key
-        )
-        self.gemini_api_key_entry.pack(anchor="w", padx=20, pady=(0, 5))
-
-        gemini_hint = ctk.CTkLabel(
-            gemini_frame,
-            text="Get your API key from: https://makersuite.google.com/app/apikey",
-            font=ctk.CTkFont(size=10),
-            text_color="gray",
-        )
-        gemini_hint.pack(anchor="w", padx=20, pady=(0, 10))
-
-        gemini_model_label = ctk.CTkLabel(gemini_frame, text="Model:")
-        gemini_model_label.pack(anchor="w", padx=20, pady=(5, 0))
-
-        self.gemini_model_dropdown = ctk.CTkOptionMenu(
-            gemini_frame,
-            variable=self.gemini_model_var,
-            values=[
-                "gemini-2.5-pro-preview-03-25",        # Fast and versatile (recommended)
-                "gemini-2.5-flash-preview-09-2025",    # More powerful, slower
-                "gemini-2.5-pro-preview-03-25",        # Experimental 2.0 (if available)
-            ],
-            width=400,
-        )
-        self.gemini_model_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
-
-        # Mistral settings frame
-        mistral_frame = ctk.CTkFrame(scrollable_frame)
-        mistral_frame.pack(fill="x", padx=20, pady=10)
-
-        mistral_title = ctk.CTkLabel(
-            mistral_frame,
-            text="Mistral AI Settings:",
-            font=ctk.CTkFont(size=14, weight="bold"),
-        )
-        mistral_title.pack(anchor="w", padx=10, pady=(10, 5))
-
-        mistral_api_key_label = ctk.CTkLabel(mistral_frame, text="API Key:")
-        mistral_api_key_label.pack(anchor="w", padx=20, pady=(5, 0))
-
-        self.mistral_api_key_entry = ctk.CTkEntry(
-            mistral_frame,
-            textvariable=self.mistral_api_key_var,
-            width=400,
-            show="*",
-        )
-        self.mistral_api_key_entry.pack(anchor="w", padx=20, pady=(0, 5))
-
-        mistral_help = ctk.CTkLabel(
-            mistral_frame,
-            text="Get your API key from: https://console.mistral.ai/",
-            font=ctk.CTkFont(size=10),
-            text_color="gray",
-        )
-        mistral_help.pack(anchor="w", padx=20, pady=(0, 5))
-
-        mistral_model_label = ctk.CTkLabel(mistral_frame, text="Model:")
-        mistral_model_label.pack(anchor="w", padx=20, pady=(5, 0))
-
-        self.mistral_model_dropdown = ctk.CTkOptionMenu(
-            mistral_frame,
-            variable=self.mistral_model_var,
-            values=[
-                "mistral-small-latest",       # Small, fast (recommended)
-                "mistral-large-2411",         # Large, powerful (Nov 2024)
-                "mistral-small-2506",         # Small 3.2 (June 2025)
-            ],
-            width=400,
-        )
-        self.mistral_model_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
-
-        # Vision settings frame (for image extraction)
-        vision_frame = ctk.CTkFrame(scrollable_frame)
-        vision_frame.pack(fill="x", padx=20, pady=10)
-
-        vision_title = ctk.CTkLabel(
-            vision_frame,
-            text="👁️ Vision Settings (Image Extraction):",
-            font=ctk.CTkFont(size=14, weight="bold"),
-        )
-        vision_title.pack(anchor="w", padx=10, pady=(10, 5))
-
-        vision_help = ctk.CTkLabel(
-            vision_frame,
-            text="Configure local vision provider for image extraction from PDFs (separate from main LLM).",
-            font=ctk.CTkFont(size=10),
-            text_color="gray",
-        )
-        vision_help.pack(anchor="w", padx=10, pady=(0, 10))
-
-        vision_provider_label = ctk.CTkLabel(vision_frame, text="Vision Provider:")
-        vision_provider_label.pack(anchor="w", padx=20, pady=(5, 0))
-
-        self.vision_provider_dropdown = ctk.CTkOptionMenu(
-            vision_frame,
-            variable=self.vision_provider_var,
-            values=["ollama", "lmstudio"],
-            width=200,
-        )
-        self.vision_provider_dropdown.pack(anchor="w", padx=20, pady=(0, 10))
-
-        vision_base_url_label = ctk.CTkLabel(vision_frame, text="Vision Base URL:")
-        vision_base_url_label.pack(anchor="w", padx=20, pady=(5, 0))
-
-        self.vision_base_url_entry = ctk.CTkEntry(
-            vision_frame,
-            textvariable=self.vision_base_url_var,
-            width=300,
-        )
-        self.vision_base_url_entry.pack(anchor="w", padx=20, pady=(0, 10))
-
-        vision_model_label = ctk.CTkLabel(vision_frame, text="Vision Model:")
-        vision_model_label.pack(anchor="w", padx=20, pady=(5, 0))
-
-        vision_model_help = ctk.CTkLabel(
-            vision_frame,
-            text="Recommended: granite-docling:258m (lightweight, document-specialized)",
-            font=ctk.CTkFont(size=10),
-            text_color="gray",
-        )
-        vision_model_help.pack(anchor="w", padx=20, pady=(0, 0))
-
-        self.vision_model_entry = ctk.CTkEntry(
-            vision_frame,
-            textvariable=self.vision_model_var,
-            width=300,
-        )
-        self.vision_model_entry.pack(anchor="w", padx=20, pady=(0, 10))
-
-        # Timeout setting
-        timeout_frame = ctk.CTkFrame(scrollable_frame)
-        timeout_frame.pack(fill="x", padx=20, pady=10)
-
-        timeout_label = ctk.CTkLabel(
-            timeout_frame,
-            text="Request Timeout (seconds):",
-            font=ctk.CTkFont(size=12),
-        )
-        timeout_label.pack(anchor="w", padx=10, pady=(10, 0))
-
-        self.timeout_entry = ctk.CTkEntry(
-            timeout_frame,
-            textvariable=self.timeout_var,
-            width=100,
-        )
-        self.timeout_entry.pack(anchor="w", padx=20, pady=(0, 10))
-
-        # Translation chunk size setting
-        chunk_frame = ctk.CTkFrame(scrollable_frame)
-        chunk_frame.pack(fill="x", padx=20, pady=10)
-
-        chunk_label = ctk.CTkLabel(
-            chunk_frame,
-            text="Translation Chunk Size (characters):",
-            font=ctk.CTkFont(size=12),
-        )
-        chunk_label.pack(anchor="w", padx=10, pady=(10, 0))
-
-        chunk_help = ctk.CTkLabel(
-            chunk_frame,
-            text="Size of text chunks for translation. Smaller values = more API calls but better quality.",
-            font=ctk.CTkFont(size=10),
-            text_color="gray",
-        )
-        chunk_help.pack(anchor="w", padx=10, pady=(0, 5))
-
-        self.translation_chunk_entry = ctk.CTkEntry(
-            chunk_frame,
-            textvariable=self.translation_chunk_var,
-            width=100,
-        )
-        self.translation_chunk_entry.pack(anchor="w", padx=20, pady=(0, 10))
-
-        # Storage paths settings
-        paths_frame = ctk.CTkFrame(scrollable_frame)
-        paths_frame.pack(fill="x", padx=20, pady=10)
-
-        paths_title = ctk.CTkLabel(
-            paths_frame,
-            text="📁 Storage Paths:",
-            font=ctk.CTkFont(size=14, weight="bold"),
-        )
-        paths_title.pack(anchor="w", padx=10, pady=(10, 5))
-
-        paths_help = ctk.CTkLabel(
-            paths_frame,
-            text="Paths for storing vector database and markdown files (relative to app directory).",
-            font=ctk.CTkFont(size=10),
-            text_color="gray",
-        )
-        paths_help.pack(anchor="w", padx=10, pady=(0, 10))
-
-        # Vector DB path
-        vector_db_label = ctk.CTkLabel(
-            paths_frame,
-            text="Vector Database Path:",
-            font=ctk.CTkFont(size=12),
-        )
-        vector_db_label.pack(anchor="w", padx=20, pady=(5, 0))
-
-        self.vector_db_path_entry = ctk.CTkEntry(
-            paths_frame,
-            textvariable=self.vector_db_path_var,
-            width=300,
-        )
-        self.vector_db_path_entry.pack(anchor="w", padx=20, pady=(0, 10))
-
-        # Markdown output path
-        markdown_output_label = ctk.CTkLabel(
-            paths_frame,
-            text="Markdown Output Path:",
-            font=ctk.CTkFont(size=12),
-        )
-        markdown_output_label.pack(anchor="w", padx=20, pady=(5, 0))
-
-        self.markdown_output_path_entry = ctk.CTkEntry(
-            paths_frame,
-            textvariable=self.markdown_output_path_var,
-            width=300,
-        )
-        self.markdown_output_path_entry.pack(anchor="w", padx=20, pady=(0, 10))
-
-        # Changelog path
-        changelog_path_label = ctk.CTkLabel(
-            paths_frame,
-            text="Changelog Path:",
-            font=ctk.CTkFont(size=12),
-        )
-        changelog_path_label.pack(anchor="w", padx=20, pady=(5, 0))
-
-        self.changelog_path_entry = ctk.CTkEntry(
-            paths_frame,
-            textvariable=self.changelog_path_var,
-            width=300,
-        )
-        self.changelog_path_entry.pack(anchor="w", padx=20, pady=(0, 10))
-
-        # Buttons frame
-        buttons_frame = ctk.CTkFrame(scrollable_frame)
-        buttons_frame.pack(fill="x", padx=20, pady=20)
-
-        self.test_connection_button = ctk.CTkButton(
-            buttons_frame,
-            text="Test Connection",
-            command=None,  # Will be set by controller
-            width=150,
-        )
-        self.test_connection_button.pack(side="left", padx=10, pady=10)
-
-        self.save_settings_button = ctk.CTkButton(
-            buttons_frame,
-            text="Save Settings",
-            command=None,  # Will be set by controller
-            width=150,
-        )
-        self.save_settings_button.pack(side="left", padx=10, pady=10)
-
-        # Status label
-        self.settings_status_label = ctk.CTkLabel(
-            tab,
-            text="",
-            font=ctk.CTkFont(size=12),
-        )
-        self.settings_status_label.pack(padx=20, pady=10)
-
-    def _on_provider_changed(self, choice: str) -> None:
-        """Called when LLM provider dropdown changes."""
-        # This callback is for future use if needed
-        pass
-
-    # ========================================================================
-    # Public API - Getters
+    # Public API (for app_controller.py) - V2: 100% Compatible with CustomTkinter
     # ========================================================================
 
     def get_ingestion_settings(self) -> dict:
         """
-        Get the current ingestion settings from the UI.
+        Get current ingestion settings from the UI.
+
+        V2: FIXED API - 100% compatible with CustomTkinter version
+        - web_url → web_urls (list)
+        - translate → do_translation
+        - auto_tag → do_tagging
+        - Added: use_cookies, browser_choice, save_raw_html
+        - Fixed: vision_mode mapping
 
         Returns:
-            dict: A dictionary containing:
+            dict: Ingestion settings with keys:
                 - source_type: str ("pdf" or "web")
-                - folder_path: str (for PDF sources)
-                - web_urls: list[str] (for web sources)
-                - do_translation: bool
-                - do_tagging: bool
-                - use_cookies: bool (for web sources)
-                - browser_choice: str (for web sources - "chrome", "firefox", "safari", "edge", "all")
-                - save_raw_html: bool (for web sources - save HTML for debugging)
-
-        Example:
-            >>> settings = view.get_ingestion_settings()
-            >>> print(settings['source_type'])
+                - folder_path: str
+                - web_urls: list[str]  ← FIXED (was web_url: str)
+                - do_translation: bool  ← FIXED (was translate)
+                - do_tagging: bool  ← FIXED (was auto_tag)
+                - vision_mode: str  ← FIXED (mapped from display text)
+                - use_cookies: bool  ← NEW
+                - browser_choice: str  ← NEW
+                - save_raw_html: bool  ← NEW
         """
-        # Parse web URLs from textbox
+        # Parse web URLs from multiline input (FIXED: returns list, not string)
         web_urls = []
-        if self.source_type_var.get() == "web":
-            urls_text = self.url_textbox.get("1.0", "end").strip()
+        if self.source_type_value == "web":
+            urls_text = self.url_input.value or ""
             web_urls = [url.strip() for url in urls_text.split("\n") if url.strip()]
 
-        # Map UI dropdown values to config values
+        # Map vision mode display text to config values (FIXED)
         vision_mode_map = {
             "Disabled": "disabled",
             "Auto (Smart Fallback)": "auto",
             "Local Vision Model": "local",
         }
-        vision_mode = vision_mode_map.get(self.vision_mode_var.get(), "auto")
+        vision_mode = vision_mode_map.get(self.vision_mode_selection.value, "auto")
 
         return {
-            "source_type": self.source_type_var.get(),
-            "folder_path": self.folder_path_var.get(),
-            "web_urls": web_urls,
-            "do_translation": self.translate_var.get(),
-            "do_tagging": self.tag_var.get(),
-            "vision_mode": vision_mode,
-            "use_cookies": self.use_cookies_var.get(),
-            "browser_choice": self.browser_choice_var.get(),
-            "save_raw_html": self.save_raw_html_var.get(),
+            "source_type": self.source_type_value,
+            "folder_path": self.folder_input.value or "",
+            "web_urls": web_urls,  # ← FIXED: list, not string
+            "do_translation": self.translate_switch.value,  # ← FIXED: "do_" prefix
+            "do_tagging": self.tagging_switch.value,  # ← FIXED: "do_" prefix
+            "vision_mode": vision_mode,  # ← FIXED: mapped value
+            "use_cookies": self.use_cookies_switch.value,  # ← NEW
+            "browser_choice": self.browser_selection.value,  # ← NEW
+            "save_raw_html": self.save_html_switch.value,  # ← NEW
         }
 
     def get_chat_input(self) -> str:
-        """
-        Get the current text in the chat input field.
-
-        Returns:
-            str: The user's input text
-
-        Example:
-            >>> query = view.get_chat_input()
-        """
-        return self.chat_entry.get()
+        """Get the current chat input text."""
+        return self.chat_input.value or ""
 
     def clear_chat_input(self) -> None:
-        """
-        Clear the chat input field.
-
-        Example:
-            >>> view.clear_chat_input()
-        """
-        self.chat_entry.delete(0, "end")
+        """Clear the chat input field."""
+        self.chat_input.value = ""
 
     def get_search_type(self) -> Optional[str]:
         """
-        Get the current search type filter.
+        Get the selected search type.
+
+        V2: FIXED - Correct mapping to CustomTkinter values
+        - "Всё" → None (means "all")
+        - "Документы" → "document"
+        - "Заметки" → "note"
 
         Returns:
             Optional[str]: "document", "note", or None (for "all")
-
-        Example:
-            >>> search_type = view.get_search_type()
         """
-        value = self.search_type_var.get()
+        mapping = {
+            "Всё": "all",
+            "Документы": "document",
+            "Заметки": "note",
+        }
+        value = mapping.get(self.search_type_selection.value, "all")
         if value == "all":
-            return None
+            return None  # ← IMPORTANT: None means "all"
         return value
 
     def get_note_text(self) -> str:
-        """
-        Get the current text in the note input field.
-
-        Returns:
-            str: The note text
-
-        Example:
-            >>> note = view.get_note_text()
-        """
-        return self.note_textbox.get("1.0", "end-1c")
+        """Get the current note text."""
+        return self.note_text.value or ""
 
     def clear_note_text(self) -> None:
-        """
-        Clear the note input field.
-
-        Example:
-            >>> view.clear_note_text()
-        """
-        self.note_textbox.delete("1.0", "end")
+        """Clear the note text area."""
+        self.note_text.value = ""
 
     def show_note_status(self, message: str, is_error: bool = False) -> None:
         """
@@ -1299,441 +1538,350 @@ class AppView:
 
         Args:
             message: The status message to display
-            is_error: Whether this is an error message
-
-        Example:
-            >>> view.show_note_status("✓ Note saved!", is_error=False)
-            >>> view.show_note_status("✗ Failed to save", is_error=True)
+            is_error: Whether this is an error message (red text vs green)
         """
-        self.note_status_label.configure(
-            text=message,
-            text_color="red" if is_error else "green"
-        )
+        self.note_status_label.text = message
+        # Toga doesn't support text color on labels easily, but message emojis (✓/✗) help
 
     def get_llm_settings(self) -> dict:
         """
-        Get the current LLM settings from the UI.
+        Get current LLM settings from the UI.
+
+        V2: FIXED API - Added missing fields
+        - Added: translation_chunk_size
+        - Added: vision_mode (from ingestion tab)
+        - Added: vector_db_path
+        - Added: markdown_output_path
+        - Added: changelog_path
 
         Returns:
-            dict: A dictionary containing LLM configuration
-
-        Example:
-            >>> settings = view.get_llm_settings()
-            >>> print(settings['llm_provider'])
+            dict: LLM settings with all provider configurations
         """
-        # Map UI dropdown values to config values for vision mode
+        # Map UI display text to internal values
+        db_lang_map = {
+            "English": "en",
+            "Russian": "ru"
+        }
+        db_language = db_lang_map.get(self.db_language_selection.value, "en")
+
+        # Get vision_mode from ingestion settings (for compatibility)
         vision_mode_map = {
             "Disabled": "disabled",
             "Auto (Smart Fallback)": "auto",
             "Local Vision Model": "local",
         }
-        vision_mode = vision_mode_map.get(self.vision_mode_var.get(), "auto")
+        vision_mode = vision_mode_map.get(self.vision_mode_selection.value, "auto")
 
         return {
-            "llm_provider": self.llm_provider_var.get(),
-            "ollama_base_url": self.ollama_url_var.get(),
-            "ollama_model": self.ollama_model_var.get(),
-            "lmstudio_base_url": self.lmstudio_url_var.get(),
-            "lmstudio_model": self.lmstudio_model_var.get(),
-            "claude_api_key": self.claude_api_key_var.get(),
-            "claude_model": self.claude_model_var.get(),
-            "gemini_api_key": self.gemini_api_key_var.get(),
-            "gemini_model": self.gemini_model_var.get(),
-            "mistral_api_key": self.mistral_api_key_var.get(),
-            "mistral_model": self.mistral_model_var.get(),
-            "timeout": int(self.timeout_var.get()),
-            "translation_chunk_size": int(self.translation_chunk_var.get()),
-            "vision_mode": vision_mode,
-            "vision_provider": self.vision_provider_var.get(),
-            "vision_base_url": self.vision_base_url_var.get(),
-            "vision_model": self.vision_model_var.get(),
-            "vector_db_path": self.vector_db_path_var.get(),
-            "markdown_output_path": self.markdown_output_path_var.get(),
-            "changelog_path": self.changelog_path_var.get(),
+            "llm_provider": self.llm_provider_selection.value,
+            # Ollama
+            "ollama_base_url": self.ollama_url_input.value or "http://localhost:11434",
+            "ollama_model": self.ollama_model_input.value or "qwen2.5:7b-instruct",
+            # LM Studio
+            "lmstudio_base_url": self.lmstudio_url_input.value or "http://localhost:1234/v1",
+            "lmstudio_model": self.lmstudio_model_input.value or "meta-llama-3.1-8b-instruct",
+            # Claude
+            "claude_api_key": self.claude_api_key_input.value or "",
+            "claude_model": self.claude_model_input.value or "claude-3-5-sonnet-20241022",
+            # Gemini
+            "gemini_api_key": self.gemini_api_key_input.value or "",
+            "gemini_model": self.gemini_model_input.value or "gemini-2.5-pro-preview-03-25",
+            # Mistral
+            "mistral_api_key": self.mistral_api_key_input.value or "",
+            "mistral_model": self.mistral_model_input.value or "mistral-small-latest",
+            # Vision
+            "vision_mode": vision_mode,  # ← NEW (from ingestion)
+            "vision_provider": self.vision_provider_input.value or "ollama",
+            "vision_base_url": self.vision_base_url_input.value or "http://localhost:11434",
+            "vision_model": self.vision_model_input.value or "granite-docling:258m",
+            # General
+            "timeout": int(self.timeout_input.value or "300"),
+            "translation_chunk_size": int(self.translation_chunk_input.value or "2000"),  # ← NEW
+            # Storage Paths (NEW)
+            "vector_db_path": self.vector_db_path_input.value or "./lokal_rag_db",  # ← NEW
+            "markdown_output_path": self.markdown_output_path_input.value or "./output_markdown",  # ← NEW
+            "changelog_path": self.changelog_path_input.value or "./changelog",  # ← NEW
+            # Database
+            "database_language": db_language,
+            # Appearance
+            "theme": self.theme_selection.value.lower(),  # ← NEW: "light" or "dark"
+            "window_size": self.window_size_selection.value,  # ← NEW: window size
         }
+
+    def get_config_location(self) -> str:
+        """
+        Get the selected config file location.
+
+        Returns:
+            str: Either "home" or "project"
+        """
+        if "Project" in self.config_location_selection.value:
+            return "project"
+        return "home"
 
     def set_llm_settings(self, settings: dict) -> None:
         """
-        Update the LLM settings UI with values from a dictionary.
+        Set LLM settings in the UI.
+
+        V2: Updated to handle new fields (translation_chunk_size, storage paths, vision_mode)
 
         Args:
-            settings: Dictionary containing LLM configuration
-
-        Example:
-            >>> settings = {"llm_provider": "ollama", "ollama_model": "llama3:8b"}
-            >>> view.set_llm_settings(settings)
+            settings: Dictionary of settings to populate
         """
+        logger.info(f"Loading settings into UI V2: {list(settings.keys())}")
+
         if "llm_provider" in settings:
-            self.llm_provider_var.set(settings["llm_provider"])
+            provider = settings["llm_provider"]
+            logger.info(f"Setting LLM provider to: {provider}")
+            self.llm_provider_selection.value = provider
 
+        # Ollama
         if "ollama_base_url" in settings:
-            self.ollama_url_var.set(settings["ollama_base_url"])
-
+            self.ollama_url_input.value = settings["ollama_base_url"]
         if "ollama_model" in settings:
-            self.ollama_model_var.set(settings["ollama_model"])
+            self.ollama_model_input.value = settings["ollama_model"]
 
+        # LM Studio
         if "lmstudio_base_url" in settings:
-            self.lmstudio_url_var.set(settings["lmstudio_base_url"])
-
+            self.lmstudio_url_input.value = settings["lmstudio_base_url"]
         if "lmstudio_model" in settings:
-            self.lmstudio_model_var.set(settings["lmstudio_model"])
+            self.lmstudio_model_input.value = settings["lmstudio_model"]
 
+        # Claude
         if "claude_api_key" in settings:
-            self.claude_api_key_var.set(settings["claude_api_key"])
-
+            self.claude_api_key_input.value = settings["claude_api_key"]
         if "claude_model" in settings:
-            self.claude_model_var.set(settings["claude_model"])
+            self.claude_model_input.value = settings["claude_model"]
 
+        # Gemini
         if "gemini_api_key" in settings:
-            self.gemini_api_key_var.set(settings["gemini_api_key"])
-
+            self.gemini_api_key_input.value = settings["gemini_api_key"]
         if "gemini_model" in settings:
-            self.gemini_model_var.set(settings["gemini_model"])
+            self.gemini_model_input.value = settings["gemini_model"]
 
+        # Mistral
         if "mistral_api_key" in settings:
-            self.mistral_api_key_var.set(settings["mistral_api_key"])
-
+            self.mistral_api_key_input.value = settings["mistral_api_key"]
         if "mistral_model" in settings:
-            self.mistral_model_var.set(settings["mistral_model"])
+            self.mistral_model_input.value = settings["mistral_model"]
 
-        if "timeout" in settings:
-            self.timeout_var.set(str(settings["timeout"]))
-
-        if "translation_chunk_size" in settings:
-            self.translation_chunk_var.set(str(settings["translation_chunk_size"]))
-
-        # Vision settings - map config values back to UI dropdown values
+        # Vision (V2: Added vision_mode mapping)
         if "vision_mode" in settings:
             vision_mode_reverse_map = {
                 "disabled": "Disabled",
                 "auto": "Auto (Smart Fallback)",
                 "local": "Local Vision Model",
             }
-            ui_value = vision_mode_reverse_map.get(settings["vision_mode"], "Auto (Smart Fallback)")
-            self.vision_mode_var.set(ui_value)
+            display_value = vision_mode_reverse_map.get(settings["vision_mode"], "Auto (Smart Fallback)")
+            self.vision_mode_selection.value = display_value
+            logger.info(f"Setting vision mode to: {display_value}")
 
         if "vision_provider" in settings:
-            self.vision_provider_var.set(settings["vision_provider"])
-
+            self.vision_provider_input.value = settings["vision_provider"]
         if "vision_base_url" in settings:
-            self.vision_base_url_var.set(settings["vision_base_url"])
-
+            self.vision_base_url_input.value = settings["vision_base_url"]
         if "vision_model" in settings:
-            self.vision_model_var.set(settings["vision_model"])
+            self.vision_model_input.value = settings["vision_model"]
 
+        # General
+        if "timeout" in settings:
+            timeout_val = str(settings["timeout"])
+            logger.info(f"Setting timeout to: {timeout_val}")
+            self.timeout_input.value = timeout_val
+
+        # V2: Translation chunk size (NEW)
+        if "translation_chunk_size" in settings:
+            chunk_val = str(settings["translation_chunk_size"])
+            logger.info(f"Setting translation chunk size to: {chunk_val}")
+            self.translation_chunk_input.value = chunk_val
+
+        # V2: Storage paths (NEW)
         if "vector_db_path" in settings:
-            self.vector_db_path_var.set(settings["vector_db_path"])
+            self.vector_db_path_input.value = settings["vector_db_path"]
+            logger.info(f"Setting vector DB path to: {settings['vector_db_path']}")
 
         if "markdown_output_path" in settings:
-            self.markdown_output_path_var.set(settings["markdown_output_path"])
+            self.markdown_output_path_input.value = settings["markdown_output_path"]
+            logger.info(f"Setting markdown output path to: {settings['markdown_output_path']}")
 
         if "changelog_path" in settings:
-            self.changelog_path_var.set(settings["changelog_path"])
+            self.changelog_path_input.value = settings["changelog_path"]
+            logger.info(f"Setting changelog path to: {settings['changelog_path']}")
 
-    def show_settings_status(self, message: str, is_error: bool = False) -> None:
-        """
-        Display a status message in the Settings tab.
+        # Database language
+        if "database_language" in settings:
+            db_lang = settings["database_language"]
+            # Map internal values to UI display text
+            db_lang_reverse_map = {
+                "en": "English",
+                "ru": "Russian"
+            }
+            display_value = db_lang_reverse_map.get(db_lang, "English")
+            self.db_language_selection.value = display_value
+            logger.info(f"Setting database language to: {display_value}")
 
-        Args:
-            message: The message to display
-            is_error: True if this is an error message (red text), False for success (green)
+        # Appearance (V2: Theme)
+        if "theme" in settings:
+            theme = settings["theme"]
+            # Map internal values to UI display text
+            theme_reverse_map = {
+                "light": "Light",
+                "dark": "Dark"
+            }
+            display_value = theme_reverse_map.get(theme, "Light")
+            self.theme_selection.value = display_value
+            logger.info(f"Setting theme to: {display_value}")
 
-        Example:
-            >>> view.show_settings_status("Settings saved!", is_error=False)
-        """
-        color = "red" if is_error else "green"
-        self.settings_status_label.configure(text=message, text_color=color)
+            # Note: Theme is already applied in startup() before UI creation
+            # We just update the selection to reflect the current theme
+            if theme == "dark":
+                self.current_theme = DarkTheme
+            else:
+                self.current_theme = LightTheme
 
-    # ========================================================================
-    # Public API - Setters
-    # ========================================================================
+        # Window size
+        if "window_size" in settings:
+            window_size = settings["window_size"]
+            self.window_size_selection.value = window_size
+            logger.info(f"Setting window size to: {window_size}")
+
+            # Apply window size immediately
+            try:
+                # Parse: "1440x900 (16:10 Wide)" -> width=1440, height=900
+                dimensions = window_size.split(" ")[0]  # Get "1440x900"
+                width, height = dimensions.split("x")
+                width, height = int(width), int(height)
+
+                if hasattr(self, 'main_window'):
+                    # Note: In Toga, window size is set as a tuple (width, height)
+                    self.main_window.size = (width, height)
+                    logger.info(f"✓ Window resized to: {width}x{height}")
+            except Exception as e:
+                logger.warning(f"Failed to apply window size: {e}", exc_info=True)
+
+        logger.info("✓ Settings loaded into UI V2 successfully")
 
     def set_processing_state(self, is_processing: bool) -> None:
         """
-        Update the UI to reflect processing state.
-
-        When processing:
-        - Disable input controls
-        - Change button text to indicate progress
+        Update UI to reflect processing state.
 
         Args:
-            is_processing: True if processing is active, False otherwise
-
-        Example:
-            >>> view.set_processing_state(True)  # Start processing
-            >>> view.set_processing_state(False)  # Done processing
+            is_processing: True if processing is active
         """
+        self.start_button.enabled = not is_processing
         if is_processing:
-            self.start_button.configure(text="Processing...", state="disabled")
-            self.select_folder_button.configure(state="disabled")
-            self.translate_checkbox.configure(state="disabled")
-            self.tag_checkbox.configure(state="disabled")
+            self.start_button.text = "⏳ Processing..."
+            self.start_button.style.update(background_color=Theme.ACCENT_ORANGE)
         else:
-            self.start_button.configure(text="Start Processing", state="normal")
-            self.select_folder_button.configure(state="normal")
-            self.translate_checkbox.configure(state="normal")
-            self.tag_checkbox.configure(state="normal")
+            self.start_button.text = "🚀 Start Processing"
+            self.start_button.style.update(background_color=Theme.ACCENT_GREEN)
 
     def set_chat_state(self, is_processing: bool) -> None:
         """
-        Update the chat UI to reflect processing state.
+        Update UI to reflect chat processing state.
 
         Args:
-            is_processing: True if a query is being processed, False otherwise
-
-        Example:
-            >>> view.set_chat_state(True)  # Waiting for response
-            >>> view.set_chat_state(False)  # Ready for new query
+            is_processing: True if chat is processing
         """
+        self.send_button.enabled = not is_processing
+        self.chat_input.enabled = not is_processing
         if is_processing:
-            self.send_button.configure(text="Thinking...", state="disabled")
-            self.chat_entry.configure(state="disabled")
+            self.send_button.text = "⏳ Thinking..."
+            self.send_button.style.update(background_color=Theme.ACCENT_ORANGE)
         else:
-            self.send_button.configure(text="Send", state="normal")
-            self.chat_entry.configure(state="normal")
+            self.send_button.text = "Send"
+            self.send_button.style.update(background_color=Theme.ACCENT_BLUE)
 
     def append_log(self, message: str) -> None:
         """
-        Append a message to the ingestion log textbox.
-
-        This method is thread-safe and can be called from worker threads
-        via the controller's queue mechanism.
+        Append a message to the processing log.
 
         Args:
-            message: The log message to append
+            message: The message to append (can contain newlines for batch updates)
 
-        Example:
-            >>> view.append_log("Processing document.pdf...")
+        OPTIMIZATION: For large logs, we limit the buffer size to prevent slowdowns
         """
-        self.log_textbox.configure(state="normal")
-        self.log_textbox.insert("end", f"{message}\n")
-        self.log_textbox.see("end")  # Auto-scroll to bottom
-        self.log_textbox.configure(state="disabled")
+        current = self.log_output.value or ""
+
+        # Add message (may already contain newlines from batching)
+        new_text = current + message + "\n"
+
+        # Limit log buffer to last 10,000 lines to prevent UI slowdown
+        lines = new_text.split("\n")
+        if len(lines) > 10000:
+            # Keep only the last 10,000 lines
+            new_text = "\n".join(lines[-10000:])
+
+        self.log_output.value = new_text
+        # Auto-scroll to bottom by setting cursor to end
+        # NOTE: Toga may handle this automatically
 
     def append_chat_message(self, role: str, message: str) -> None:
         """
-        Append a message to the chat history textbox.
+        Append a message to the chat history.
 
         Args:
-            role: Either "user" or "assistant"
+            role: The role (user/assistant)
             message: The message content
-
-        Example:
-            >>> view.append_chat_message("user", "What is Python?")
-            >>> view.append_chat_message("assistant", "Python is a programming language")
         """
-        self.chat_history_textbox.configure(state="normal")
+        current = self.chat_history.value or ""
 
-        # Format message with role prefix
-        if role.lower() == "user":
-            prefix = "You: "
-            self.chat_history_textbox.insert("end", f"\n{prefix}", "user_tag")
+        # Format the message
+        if role == "user":
+            formatted = f"👤 You: {message}\n"
+        elif role == "assistant":
+            formatted = f"🤖 Assistant: {message}\n"
         else:
-            prefix = "Assistant: "
-            self.chat_history_textbox.insert("end", f"\n{prefix}", "assistant_tag")
+            formatted = f"{role}: {message}\n"
 
-        self.chat_history_textbox.insert("end", f"{message}\n")
-
-        # Configure tags for styling
-        self.chat_history_textbox.tag_config("user_tag", foreground="#4A9EFF")
-        self.chat_history_textbox.tag_config("assistant_tag", foreground="#7FFF7F")
-
-        self.chat_history_textbox.see("end")  # Auto-scroll to bottom
-        self.chat_history_textbox.configure(state="disabled")
+        self.chat_history.value = current + formatted + "\n"
 
     def clear_log(self) -> None:
-        """
-        Clear all text from the ingestion log.
+        """Clear the processing log."""
+        self.log_output.value = ""
 
-        Example:
-            >>> view.clear_log()
+    def show_error_dialog(self, title: str, message: str) -> None:
         """
-        self.log_textbox.configure(state="normal")
-        self.log_textbox.delete("1.0", "end")
-        self.log_textbox.configure(state="disabled")
-
-    def show_warning(self, title: str, message: str) -> None:
-        """
-        Show a warning dialog to the user.
+        Show an error dialog to the user.
 
         Args:
-            title: The dialog title
-            message: The warning message
-
-        Example:
-            >>> view.show_warning("Error", "Ollama is not running")
+            title: Dialog title
+            message: Error message
         """
-        from tkinter import messagebox
-        messagebox.showwarning(title, message)
+        self.main_window.error_dialog(title, message)
 
-    def show_info(self, title: str, message: str) -> None:
+    def show_info_dialog(self, title: str, message: str) -> None:
         """
         Show an info dialog to the user.
 
         Args:
-            title: The dialog title
-            message: The info message
-
-        Example:
-            >>> view.show_info("Success", "Processing complete!")
+            title: Dialog title
+            message: Info message
         """
-        from tkinter import messagebox
-        messagebox.showinfo(title, message)
+        # V2: Use new dialog API (Toga 0.4+)
+        try:
+            import asyncio
+            asyncio.create_task(
+                self.main_window.dialog(toga.InfoDialog(title, message))
+            )
+        except Exception:
+            # Fallback to deprecated API if async fails
+            self.main_window.info_dialog(title, message)
 
-    # ========================================================================
-    # Utility Methods
-    # ========================================================================
+    # V2: Compatibility aliases for CustomTkinter API
+    def show_warning(self, title: str, message: str) -> None:
+        """Alias for show_error_dialog (for CustomTkinter compatibility)."""
+        self.show_error_dialog(title, message)
 
-    def _enable_mousewheel_scrolling(self, widget) -> None:
-        """
-        Enable mouse wheel and trackpad scrolling for a scrollable widget.
+    def show_info(self, title: str, message: str) -> None:
+        """Alias for show_info_dialog (for CustomTkinter compatibility)."""
+        self.show_info_dialog(title, message)
 
-        This method binds mouse wheel events to allow scrolling with:
-        - macOS trackpad (two-finger swipe)
-        - Windows/Linux mouse wheel
-        - Linux touchpad scroll
 
-        Args:
-            widget: A CTkScrollableFrame or CTkTextbox widget
+def main():
+    """Entry point for running the Toga app standalone."""
+    return LokalRAGApp()
 
-        Note:
-            This is particularly important for macOS users where trackpad
-            scrolling is not enabled by default in CustomTkinter widgets.
 
-            CRITICAL FIX: For CTkScrollableFrame created inside a class,
-            we must fix the master reference to enable mousewheel event
-            propagation. See: https://github.com/TomSchimansky/CustomTkinter/issues/1816
-        """
-        import sys
-        import logging
-        logger = logging.getLogger(__name__)
-
-        # Check if this is a CTkScrollableFrame with internal canvas
-        if hasattr(widget, '_parent_canvas'):
-            canvas = widget._parent_canvas
-            widget_name = widget.__class__.__name__
-
-            # Make canvas and widget focusable (required for macOS mousewheel events)
-            try:
-                canvas.config(takefocus=1)
-                widget.configure(takefocus=1)
-            except Exception:
-                pass
-
-            # Track which widget has mouse focus
-            mouse_over_canvas = [False]
-
-            def on_enter(event):
-                """Mouse entered the canvas area."""
-                mouse_over_canvas[0] = True
-                widget.focus_set()
-                logger.debug(f"[SCROLL] Mouse entered {widget_name}")
-
-            def on_leave(event):
-                """Mouse left the canvas area."""
-                mouse_over_canvas[0] = False
-                logger.debug(f"[SCROLL] Mouse left {widget_name}")
-
-            # Use CustomTkinter's own _mouse_wheel_all method
-            if hasattr(widget, '_mouse_wheel_all'):
-                original_handler = widget._mouse_wheel_all
-
-                def wrapped_handler(event):
-                    """Wrapper that only scrolls if mouse is over this canvas"""
-                    logger.debug(f"[SCROLL] MouseWheel event on {widget_name}: delta={event.delta}, mouse_over={mouse_over_canvas[0]}")
-                    if not mouse_over_canvas[0]:
-                        return
-                    return original_handler(event)
-
-                # CRITICAL FIX for macOS: Bind to BOTH canvas AND widget
-                # Trackpad events may arrive at either place
-                canvas.bind("<MouseWheel>", wrapped_handler, add="+")
-                widget.bind("<MouseWheel>", wrapped_handler, add="+")
-                logger.info(f"[SCROLL] Bound <MouseWheel> to canvas and widget for {widget_name}")
-            else:
-                # Fallback: direct scrolling
-                def on_mousewheel(event):
-                    logger.debug(f"[SCROLL] MouseWheel event (fallback) on {widget_name}: delta={event.delta}, mouse_over={mouse_over_canvas[0]}")
-                    if not mouse_over_canvas[0]:
-                        return
-                    scroll_amount = -1 * int(event.delta)
-                    canvas.yview_scroll(scroll_amount, "units")
-
-                # CRITICAL FIX for macOS: Bind to BOTH canvas AND widget
-                canvas.bind("<MouseWheel>", on_mousewheel, add="+")
-                widget.bind("<MouseWheel>", on_mousewheel, add="+")
-                logger.info(f"[SCROLL] Bound <MouseWheel> to canvas and widget (fallback) for {widget_name}")
-
-            # Bind Enter/Leave to track mouse position
-            canvas.bind("<Enter>", on_enter, add="+")
-            canvas.bind("<Leave>", on_leave, add="+")
-            widget.bind("<Enter>", on_enter, add="+")
-            widget.bind("<Leave>", on_leave, add="+")
-
-            # DEBUG: Bind various event types to see what macOS trackpad actually sends
-            if sys.platform == "darwin" and logger.isEnabledFor(logging.DEBUG):
-                def log_all_events(event):
-                    """Log all events to debug what macOS trackpad sends"""
-                    logger.debug(f"[SCROLL] Event on {widget_name}: type={event.type}, num={getattr(event, 'num', 'N/A')}, delta={getattr(event, 'delta', 'N/A')}, x={event.x}, y={event.y}")
-
-                # Try various event types that might work on macOS trackpad
-                for event_type in ["<MouseWheel>", "<Button-4>", "<Button-5>"]:
-                    try:
-                        canvas.bind(event_type, log_all_events, add="+")
-                        widget.bind(event_type, log_all_events, add="+")
-                        logger.debug(f"[SCROLL] Bound {event_type} for debugging")
-                    except Exception as e:
-                        logger.debug(f"[SCROLL] Could not bind {event_type}: {e}")
-
-        else:
-            # CTkTextbox - bind directly to the textbox
-            widget_name = widget.__class__.__name__
-
-            def _on_mousewheel_textbox(event):
-                """Handle mouse wheel scroll event for textbox."""
-                logger.debug(f"[SCROLL] MouseWheel event on {widget_name} (textbox): delta={event.delta}, platform={sys.platform}")
-                if sys.platform == "darwin":  # macOS
-                    widget.yview_scroll(-1 * int(event.delta), "units")
-                elif sys.platform == "win32":  # Windows
-                    widget.yview_scroll(-1 * int(event.delta / 120), "units")
-                else:  # Linux
-                    if event.num == 4:
-                        widget.yview_scroll(-1, "units")
-                    elif event.num == 5:
-                        widget.yview_scroll(1, "units")
-
-            if sys.platform != "linux":
-                widget.bind("<MouseWheel>", _on_mousewheel_textbox, add="+")
-                logger.info(f"[SCROLL] Bound <MouseWheel> directly to {widget_name} (textbox)")
-            else:
-                widget.bind("<Button-4>", _on_mousewheel_textbox, add="+")
-                widget.bind("<Button-5>", _on_mousewheel_textbox, add="+")
-                logger.info(f"[SCROLL] Bound <Button-4/5> to {widget_name} (textbox)")
-
-    # ========================================================================
-    # Public API - Event Binding
-    # ========================================================================
-
-    def bind_start_button(self, callback: Callable) -> None:
-        """
-        Bind a callback to the start processing button.
-
-        Args:
-            callback: Function to call when button is clicked
-
-        Example:
-            >>> view.bind_start_button(controller.on_start_ingestion)
-        """
-        self.start_button.configure(command=callback)
-
-    def bind_send_button(self, callback: Callable) -> None:
-        """
-        Bind a callback to the send chat message button.
-
-        Args:
-            callback: Function to call when button is clicked
-
-        Example:
-            >>> view.bind_send_button(controller.on_send_chat_message)
-        """
-        self.send_button.configure(command=callback)
+if __name__ == "__main__":
+    main().main_loop()

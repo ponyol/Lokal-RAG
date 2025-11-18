@@ -1,14 +1,15 @@
 """
 Application Controller - Orchestration Layer
 
-This module contains the AppOrchestrator class, which is the central state machine
-of the application. It coordinates between the View, Services, and Storage layers.
+This module contains the TogaAppOrchestrator class, which is the central state machine
+of the application. It coordinates between the View (Toga UI), Services,
+and Storage layers.
 
 Key responsibilities:
 1. Manage application state (idle, processing, etc.)
-2. Handle user events from the View
+2. Handle user events from the View via callbacks
 3. Spawn worker threads for heavy operations
-4. Update the View with results (via queue for thread safety)
+4. Update the View with results (thread-safe updates using async queues)
 
 The Controller is the only "imperative" part of the application.
 It calls the pure functional services and manages side effects.
@@ -17,6 +18,7 @@ It calls the pure functional services and manages side effects.
 import logging
 import queue
 import threading
+import asyncio
 from pathlib import Path
 from typing import Optional
 
@@ -35,37 +37,48 @@ from app_services import (
     fn_translate_text,
 )
 from app_storage import StorageService, fn_save_markdown_to_disk
-from app_view import AppView
+from app_view import LokalRAGApp
 
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 
-class AppOrchestrator:
+class TogaAppOrchestrator:
     """
-    The central orchestrator for the Lokal-RAG application.
+    The central orchestrator for the Lokal-RAG application (Toga version).
 
     This class manages application state and coordinates all layers:
-    - View: CustomTkinter GUI
+    - View: Toga native GUI
     - Services: Pure functional business logic
     - Storage: ChromaDB and file I/O
 
     It uses threading and queues to ensure the GUI never freezes.
     """
 
-    def __init__(self, view: AppView, config: AppConfig, storage: StorageService):
+    def __init__(
+        self,
+        view: LokalRAGApp,
+        config: AppConfig,
+        storage: StorageService,
+        ollama_available: bool = True,
+        doc_count: int = 0
+    ):
         """
         Initialize the orchestrator.
 
         Args:
-            view: The application view (GUI)
+            view: The Toga application view (GUI)
             config: Application configuration
             storage: The storage service
+            ollama_available: Whether Ollama is available (for status display)
+            doc_count: Initial document count (for status display)
         """
         self.view = view
         self.config = config
         self.storage = storage
+        self.ollama_available = ollama_available
+        self.doc_count = doc_count
 
         # State management
         self.is_processing = False
@@ -75,94 +88,156 @@ class AppOrchestrator:
         self.chat_history: list[dict] = []
 
         # Queue for worker threads to send messages to the GUI
-        # This is the ONLY thread-safe way to update CustomTkinter widgets
+        # This is the ONLY thread-safe way to update Toga widgets
         self.view_queue: queue.Queue = queue.Queue()
 
-        # Bind events
-        self.bind_events()
+        # Set up event callbacks
+        self.setup_callbacks()
 
-        # Load saved settings into UI
+        # Start the queue checker (async loop)
+        self.view.add_background_task(self.check_view_queue_loop)
+
+    def setup_callbacks(self) -> None:
+        """
+        Set up View callbacks to Controller methods.
+
+        This connects user interactions to business logic via Toga callbacks.
+        """
+        self.view.on_ingest_callback = self.on_start_ingestion
+        self.view.on_send_message_callback = self.on_send_chat_message
+        self.view.on_save_settings_callback = self.on_save_settings
+        self.view.on_load_settings_callback = self.on_load_settings
+        self.view.on_save_note_callback = self.on_save_note
+        self.view.on_clear_chat_callback = self.on_clear_chat  # V2: Added
+        self.view.on_ui_ready_callback = self._init_ui  # V2: Called when UI is ready
+
+        logger.info("Callbacks set up successfully")
+
+    def _init_ui(self) -> None:
+        """
+        Initialize the UI after widgets are created.
+
+        This method:
+        1. Loads saved settings from JSON
+        2. Displays initial status messages
+        """
+        # Load settings
         self.load_settings_to_ui()
 
-        # Start the queue checker
-        self.check_view_queue()
-
-    def bind_events(self) -> None:
-        """
-        Bind View widgets to Controller methods.
-
-        This connects user interactions to business logic.
-        """
-        self.view.bind_start_button(self.on_start_ingestion)
-        self.view.bind_send_button(self.on_send_chat_message)
-
-        # Bind Chat tab buttons
-        self.view.clear_chat_button.configure(command=self.on_clear_chat)
-
-        # Bind Notes tab buttons
-        self.view.save_note_button.configure(command=self.on_save_note)
-
-        # Bind Settings tab buttons
-        self.view.test_connection_button.configure(command=self.on_test_connection)
-        self.view.save_settings_button.configure(command=self.on_save_settings)
-
-        logger.info("Events bound successfully")
+        # Display initial status
+        self._display_initial_status()
 
     def load_settings_to_ui(self) -> None:
         """Load saved settings from JSON into the UI."""
         from app_config import load_settings_from_json
 
-        settings = load_settings_from_json()
-        if settings:
-            self.view.set_llm_settings(settings)
-            logger.info("Loaded settings into UI")
+        try:
+            settings = load_settings_from_json()
+            if settings:
+                logger.info(f"Found settings file with keys: {list(settings.keys())}")
+                self.view.set_llm_settings(settings)
+            else:
+                logger.info("No settings file found, using defaults")
+        except Exception as e:
+            logger.error(f"Failed to load settings into UI: {e}", exc_info=True)
+
+    def _display_initial_status(self) -> None:
+        """Display initial status messages in the ingestion log."""
+        try:
+            if self.config.LLM_PROVIDER == "ollama":
+                if not self.ollama_available:
+                    self.view.append_log("⚠️  WARNING: Ollama is not available!")
+                    self.view.append_log("Please ensure Ollama is running: ollama serve")
+                    self.view.append_log(f"And the model is downloaded: ollama pull {self.config.OLLAMA_MODEL}")
+                    self.view.append_log("=" * 50)
+                    self.view.append_log("")
+                else:
+                    self.view.append_log("✓ Ollama is running and ready")
+                    self.view.append_log(f"✓ Model available: {self.config.OLLAMA_MODEL}")
+                    self.view.append_log(f"✓ Documents in database: {self.doc_count}")
+                    self.view.append_log("=" * 50)
+                    self.view.append_log("")
+            else:
+                # LM Studio - assume it's configured correctly
+                self.view.append_log(f"✓ LLM Provider: LM Studio ({self.config.LMSTUDIO_BASE_URL})")
+                self.view.append_log(f"✓ Model: {self.config.LMSTUDIO_MODEL}")
+                self.view.append_log(f"✓ Documents in database: {self.doc_count}")
+                self.view.append_log("=" * 50)
+                self.view.append_log("")
+        except Exception as e:
+            logger.error(f"Failed to display initial status: {e}", exc_info=True)
 
     # ========================================================================
     # Queue Management (Thread-Safe GUI Updates)
     # ========================================================================
 
-    def check_view_queue(self) -> None:
+    async def check_view_queue_loop(self, widget, **kwargs):
         """
-        Check the view queue for messages from worker threads.
+        Async loop to check the view queue for messages from worker threads.
 
-        This method is called every 100ms by the CustomTkinter main loop.
-        It's the ONLY way to safely update the GUI from background threads.
+        This method runs as a Toga background task and processes messages from
+        background threads. It's the thread-safe way to update the Toga GUI.
 
         Messages can be:
         - "LOG: <message>" - Append to ingestion log
         - "CHAT: <role>: <message>" - Append to chat history
         - "STOP_PROCESSING" - Reset processing state
         - "STOP_CHATTING" - Reset chat state
-        """
-        try:
-            while True:
-                # Non-blocking get
-                message = self.view_queue.get_nowait()
 
-                if message == "STOP_PROCESSING":
+        OPTIMIZATION: Batches log messages to reduce UI redraws
+        """
+        logger.info("Starting view queue checker loop...")
+
+        while True:
+            try:
+                # Batch log messages to reduce UI updates
+                log_batch = []
+                chat_messages = []
+                stop_processing = False
+                stop_chatting = False
+
+                # Process all pending messages (up to 50 per iteration)
+                for _ in range(50):
+                    try:
+                        message = self.view_queue.get_nowait()
+
+                        if message == "STOP_PROCESSING":
+                            stop_processing = True
+                        elif message == "STOP_CHATTING":
+                            stop_chatting = True
+                        elif message.startswith("LOG: "):
+                            log_batch.append(message[5:])
+                        elif message.startswith("CHAT: "):
+                            parts = message[6:].split(": ", 1)
+                            if len(parts) == 2:
+                                chat_messages.append((parts[0], parts[1]))
+                    except queue.Empty:
+                        break
+
+                # Apply batched updates
+                if log_batch:
+                    # Batch append all log messages at once
+                    batch_text = "\n".join(log_batch)
+                    self.view.append_log(batch_text)
+
+                for role, content in chat_messages:
+                    self.view.append_chat_message(role, content)
+
+                if stop_processing:
                     self.is_processing = False
                     self.view.set_processing_state(False)
+                    logger.info("Processing completed")
 
-                elif message == "STOP_CHATTING":
+                if stop_chatting:
                     self.is_chatting = False
                     self.view.set_chat_state(False)
+                    logger.info("Chat completed")
 
-                elif message.startswith("LOG: "):
-                    log_message = message[5:]
-                    self.view.append_log(log_message)
+            except Exception as e:
+                logger.error(f"Error in view queue checker: {e}", exc_info=True)
 
-                elif message.startswith("CHAT: "):
-                    # Format: "CHAT: role: message"
-                    parts = message[6:].split(": ", 1)
-                    if len(parts) == 2:
-                        role, content = parts
-                        self.view.append_chat_message(role, content)
-
-        except queue.Empty:
-            pass
-
-        # Schedule next check
-        self.view.master.after(100, self.check_view_queue)
+            # Sleep for 100ms before next check
+            await asyncio.sleep(0.1)
 
     # ========================================================================
     # Event Handlers
@@ -348,11 +423,45 @@ class AppOrchestrator:
         # Optionally show a visual confirmation
         self.view.append_chat_message("system", "Chat history cleared")
 
+    def on_load_settings(self) -> None:
+        """
+        Handle the "Load Settings" button click.
+
+        Loads LLM configuration from the selected path (home or project).
+        """
+        try:
+            from app_config import load_settings_from_json
+
+            # Get the selected config location from UI
+            location = self.view.get_config_location()
+
+            # Load settings from the selected path
+            settings = load_settings_from_json(location)
+
+            if settings:
+                logger.info(f"Loading settings from {location}: {list(settings.keys())}")
+                self.view.set_llm_settings(settings)
+                self.view.show_info_dialog(
+                    "Settings Loaded",
+                    f"Settings loaded successfully from {location} location!"
+                )
+            else:
+                logger.info(f"No settings file found at {location} location")
+                self.view.show_info_dialog(
+                    "No Settings Found",
+                    f"No settings file found at {location} location. Using defaults."
+                )
+
+        except Exception as e:
+            error_msg = f"Failed to load settings: {e}"
+            self.view.show_error_dialog("Load Error", error_msg)
+            logger.error(error_msg, exc_info=True)
+
     def on_save_settings(self) -> None:
         """
         Handle the "Save Settings" button click.
 
-        Saves LLM configuration to ~/.lokal-rag/settings.json
+        Saves LLM configuration to the selected path (home or project).
         """
         try:
             from app_config import save_settings_to_json, create_config_from_settings
@@ -361,19 +470,25 @@ class AppOrchestrator:
             # Get settings from UI
             settings = self.view.get_llm_settings()
 
-            # Save to JSON
-            save_settings_to_json(settings)
+            # Get the selected config location from UI
+            location = self.view.get_config_location()
+
+            # Save to JSON at the selected location
+            save_settings_to_json(settings, location)
 
             # Update the controller's config
             self.config = create_config_from_settings(settings)
 
             # Show success message
-            self.view.show_settings_status("✓ Settings saved successfully!", is_error=False)
-            logger.info(f"Settings saved: Provider={settings['llm_provider']}")
+            self.view.show_info_dialog(
+                "Settings Saved",
+                f"Settings saved successfully to {location} location!"
+            )
+            logger.info(f"Settings saved to {location}: Provider={settings['llm_provider']}, DB Language={settings.get('database_language', 'en')}")
 
         except Exception as e:
             error_msg = f"Failed to save settings: {e}"
-            self.view.show_settings_status(f"✗ {error_msg}", is_error=True)
+            self.view.show_error_dialog("Save Error", error_msg)
             logger.error(error_msg, exc_info=True)
 
     def on_test_connection(self) -> None:
