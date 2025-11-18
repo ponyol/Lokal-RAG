@@ -297,8 +297,8 @@ class SearchPipeline:
         The StorageService ALWAYS performs hybrid search (BM25+Vector), regardless of mode.
         """
         # Call storage service
-        # NOTE: The search_similar_documents method returns a list of tuples:
-        # (Document, score, metadata)
+        # NOTE: The search_similar_documents method returns a list of Document objects
+        # NOT tuples - just plain Document instances from LangChain
 
         # IMPORTANT: search_type is a DOCUMENT TYPE FILTER (document/note), not a search mode!
         # StorageService.search_similar_documents() ALWAYS does hybrid search (BM25+Vector)
@@ -322,23 +322,26 @@ class SearchPipeline:
         # DEBUG: Log raw results from storage service
         logger.debug(
             f"STAGE1_RESULT: Got {len(results)} results from storage_service, "
-            f"result_type={type(results)}"
+            f"result_type={type(results)}, "
+            f"first_item_type={type(results[0]) if results else 'N/A'}"
         )
 
         # Convert to dict format
         docs = []
-        for doc, score, metadata in results:
+        for doc in results:
+            # Document objects don't have scores from ensemble retriever
+            # We'll use a placeholder score (could be improved with custom retriever)
             doc_dict = {
                 "id": doc.metadata.get("id", ""),
                 "title": doc.metadata.get("title", ""),
                 "content": doc.page_content,
-                "score": score,
+                "score": 1.0,  # Placeholder score (ensemble doesn't return scores)
                 "type": doc.metadata.get("type", "document"),
                 "tags": doc.metadata.get("tags", []),
                 "language": doc.metadata.get("language", "en"),
                 "created_at": doc.metadata.get("created_at", ""),
                 "source": doc.metadata.get("source"),
-                "snippet_context": metadata.get("snippet_context"),
+                "snippet_context": None,  # No snippet context from ensemble
             }
 
             # Filter by tags if specified
