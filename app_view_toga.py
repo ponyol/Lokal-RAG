@@ -132,6 +132,54 @@ class LokalRAGApp(toga.App):
 
         logger.info("Toga app V2 initialized with native theme and fixed API")
 
+    def _load_theme_preference(self):
+        """
+        Load theme preference from settings file BEFORE creating UI.
+
+        This is critical because Toga widgets get their colors at creation time
+        and can't be easily changed afterwards.
+        """
+        global Theme
+
+        try:
+            from pathlib import Path
+            import json
+
+            # Try to load settings from home directory first
+            home_settings = Path.home() / ".lokal-rag" / "settings.json"
+            project_settings = Path(".lokal-rag") / "settings.json"
+
+            settings_path = None
+            if home_settings.exists():
+                settings_path = home_settings
+            elif project_settings.exists():
+                settings_path = project_settings
+
+            if settings_path:
+                with open(settings_path, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+
+                theme_pref = settings.get("theme", "light")
+                logger.info(f"Loaded theme preference from settings: {theme_pref}")
+
+                if theme_pref == "dark":
+                    self.current_theme = DarkTheme
+                    Theme = DarkTheme
+                    logger.info("✓ Dark theme will be applied to UI")
+                else:
+                    self.current_theme = LightTheme
+                    Theme = LightTheme
+                    logger.info("✓ Light theme will be applied to UI")
+            else:
+                logger.info("No settings file found, using default Light theme")
+                self.current_theme = LightTheme
+                Theme = LightTheme
+
+        except Exception as e:
+            logger.warning(f"Failed to load theme preference: {e}")
+            self.current_theme = LightTheme
+            Theme = LightTheme
+
     def startup(self):
         """
         Build the UI when the app starts.
@@ -140,6 +188,9 @@ class LokalRAGApp(toga.App):
         It creates the main window and all tabs.
         """
         logger.info("Building Toga UI V2...")
+
+        # Load theme preference BEFORE creating UI
+        self._load_theme_preference()
 
         # Create main window
         self.main_window = toga.MainWindow(title=self.formal_name)
@@ -1251,14 +1302,17 @@ class LokalRAGApp(toga.App):
         theme_name = self.theme_selection.value
         logger.info(f"Theme changed to: {theme_name}")
 
-        # Switch theme
+        # Update current theme (for saving to settings)
         if theme_name == "Dark":
             self.current_theme = DarkTheme
         else:
             self.current_theme = LightTheme
 
-        # Apply theme to all UI elements
-        self.apply_theme()
+        # Show info that restart is needed
+        logger.info("ℹ️  Theme will be applied after saving settings and restarting the app")
+        # Note: We don't call apply_theme() here because Toga can't change
+        # widget colors after they're created. The theme will be applied
+        # on next app launch via _load_theme_preference() in startup()
 
     def apply_theme(self):
         """
@@ -1605,12 +1659,12 @@ class LokalRAGApp(toga.App):
             self.theme_selection.value = display_value
             logger.info(f"Setting theme to: {display_value}")
 
-            # Apply the theme
+            # Note: Theme is already applied in startup() before UI creation
+            # We just update the selection to reflect the current theme
             if theme == "dark":
                 self.current_theme = DarkTheme
             else:
                 self.current_theme = LightTheme
-            self.apply_theme()
 
         logger.info("✓ Settings loaded into UI V2 successfully")
 
