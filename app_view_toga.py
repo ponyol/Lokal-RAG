@@ -239,9 +239,8 @@ class LokalRAGApp(toga.App):
 
         # Set window size from preferences
         try:
-            from toga.position import Position
-            from toga.size import Size
-            self.main_window.size = Size(self.window_width, self.window_height)
+            # Note: In Toga, window size is set as a tuple (width, height)
+            self.main_window.size = (self.window_width, self.window_height)
             logger.info(f"✓ Window size set to: {self.window_width}x{self.window_height}")
         except Exception as e:
             logger.warning(f"Failed to set window size: {e}")
@@ -1754,11 +1753,11 @@ class LokalRAGApp(toga.App):
                 width, height = int(width), int(height)
 
                 if hasattr(self, 'main_window'):
-                    from toga.size import Size
-                    self.main_window.size = Size(width, height)
+                    # Note: In Toga, window size is set as a tuple (width, height)
+                    self.main_window.size = (width, height)
                     logger.info(f"✓ Window resized to: {width}x{height}")
             except Exception as e:
-                logger.warning(f"Failed to apply window size: {e}")
+                logger.warning(f"Failed to apply window size: {e}", exc_info=True)
 
         logger.info("✓ Settings loaded into UI V2 successfully")
 
