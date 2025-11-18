@@ -130,6 +130,10 @@ class LokalRAGApp(toga.App):
             "buttons": [],  # Buttons (keep accent colors)
         }
 
+        # Window size (will be set from settings)
+        self.window_width = 1280  # Default
+        self.window_height = 800
+
         logger.info("Toga app V2 initialized with native theme and fixed API")
 
     def _get_container_style(self, **kwargs):
@@ -192,6 +196,20 @@ class LokalRAGApp(toga.App):
                     self.current_theme = LightTheme
                     Theme = LightTheme
                     logger.info("✓ Light theme will be applied to UI")
+
+                # Load window size preference
+                window_size_pref = settings.get("window_size", "1280x800 (MacBook Air)")
+                # Parse: "1280x800 (MacBook Air)" -> width=1280, height=800
+                try:
+                    dimensions = window_size_pref.split(" ")[0]  # Get "1280x800"
+                    width, height = dimensions.split("x")
+                    self.window_width = int(width)
+                    self.window_height = int(height)
+                    logger.info(f"✓ Window size: {self.window_width}x{self.window_height}")
+                except Exception as e:
+                    logger.warning(f"Failed to parse window size '{window_size_pref}': {e}")
+                    # Keep defaults
+
             else:
                 logger.info("No settings file found, using default Light theme")
                 self.current_theme = LightTheme
@@ -216,6 +234,15 @@ class LokalRAGApp(toga.App):
 
         # Create main window
         self.main_window = toga.MainWindow(title=self.formal_name)
+
+        # Set window size from preferences
+        try:
+            from toga.position import Position
+            from toga.size import Size
+            self.main_window.size = Size(self.window_width, self.window_height)
+            logger.info(f"✓ Window size set to: {self.window_width}x{self.window_height}")
+        except Exception as e:
+            logger.warning(f"Failed to set window size: {e}")
 
         # Create tabs
         self.tabs = toga.OptionContainer(
@@ -817,6 +844,28 @@ class LokalRAGApp(toga.App):
         theme_box.add(theme_label)
         theme_box.add(self.theme_selection)
         appearance_section.add(theme_box)
+
+        # Window size selection
+        window_size_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        window_size_label = toga.Label(
+            "Window Size:",
+            style=Pack(width=150)
+        )
+        self.window_size_selection = toga.Selection(
+            items=[
+                "1024x768 (4:3 Classic)",
+                "1280x720 (HD 720p)",
+                "1280x800 (MacBook Air)",
+                "1440x900 (16:10 Wide)",
+                "1920x1080 (Full HD)"
+            ],
+            style=Pack(flex=1)
+        )
+        self.window_size_selection.value = "1280x800 (MacBook Air)"  # Default
+
+        window_size_box.add(window_size_label)
+        window_size_box.add(self.window_size_selection)
+        appearance_section.add(window_size_box)
 
         # ---- Database Language Selection ----
         db_section = self._create_settings_section(
@@ -1555,6 +1604,7 @@ class LokalRAGApp(toga.App):
             "database_language": db_language,
             # Appearance
             "theme": self.theme_selection.value.lower(),  # ← NEW: "light" or "dark"
+            "window_size": self.window_size_selection.value,  # ← NEW: window size
         }
 
     def get_config_location(self) -> str:
@@ -1687,6 +1737,13 @@ class LokalRAGApp(toga.App):
                 self.current_theme = DarkTheme
             else:
                 self.current_theme = LightTheme
+
+        # Window size
+        if "window_size" in settings:
+            window_size = settings["window_size"]
+            self.window_size_selection.value = window_size
+            logger.info(f"Setting window size to: {window_size}")
+            # Note: Window size will be applied on next app startup
 
         logger.info("✓ Settings loaded into UI V2 successfully")
 
