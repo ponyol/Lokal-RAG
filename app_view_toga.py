@@ -149,11 +149,17 @@ class LokalRAGApp(toga.App):
             home_settings = Path.home() / ".lokal-rag" / "settings.json"
             project_settings = Path(".lokal-rag") / "settings.json"
 
+            logger.info(f"🔍 Looking for theme settings...")
+            logger.info(f"   Home: {home_settings} (exists: {home_settings.exists()})")
+            logger.info(f"   Project: {project_settings} (exists: {project_settings.exists()})")
+
             settings_path = None
             if home_settings.exists():
                 settings_path = home_settings
+                logger.info(f"📂 Using home settings: {settings_path}")
             elif project_settings.exists():
                 settings_path = project_settings
+                logger.info(f"📂 Using project settings: {settings_path}")
 
             if settings_path:
                 with open(settings_path, 'r', encoding='utf-8') as f:
