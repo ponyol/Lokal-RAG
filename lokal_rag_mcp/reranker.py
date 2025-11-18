@@ -162,6 +162,7 @@ class ReRanker:
                 self.config.model,
                 device=self._device,
                 max_length=1024,  # jina-reranker-v2 context length
+                trust_remote_code=True,  # Required for jina-reranker-v2
             )
             self._model_loaded = True
 

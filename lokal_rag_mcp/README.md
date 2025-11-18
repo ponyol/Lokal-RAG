@@ -380,6 +380,32 @@ mypy lokal_rag_mcp/
    python -m lokal_rag_mcp.server --rerank-device cpu --test
    ```
 
+### Custom Code Warning
+
+**Problem:** Error about custom code when loading jina-reranker model:
+```
+ValueError: The repository contains custom code which must be executed to correctly load the model.
+```
+
+**Solution:**
+
+This is expected! The jina-reranker-v2 model uses custom code and requires `trust_remote_code=True`, which is **already configured in the code** (v2.0.1+).
+
+If you see this error:
+1. **Update to latest version:**
+   ```bash
+   cd lokal_rag_mcp
+   git pull
+   pip install -e ".[rerank]" --upgrade
+   ```
+
+2. **Verify the fix:**
+   ```bash
+   python -c "from lokal_rag_mcp.reranker import ReRanker; from lokal_rag_mcp.config import ReRankConfig; r = ReRanker(ReRankConfig(device='cpu')); print('OK')"
+   ```
+
+**Note:** `trust_remote_code=True` is safe for official models like jina-reranker-v2. The code is reviewed and comes from a trusted source (Jina AI).
+
 ### Slow Performance
 
 **Problem:** Re-ranking is slow (>500ms for 25 docs on M1).
