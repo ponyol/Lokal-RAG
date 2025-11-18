@@ -158,11 +158,18 @@ class ReRanker:
 
         # Load model
         try:
+            # Use 'dtype' instead of deprecated 'torch_dtype'
+            # NOTE: Pass through model_kwargs to use the new API in transformers
+            import torch
+
             self._model = CrossEncoder(
                 self.config.model,
                 device=self._device,
                 max_length=1024,  # jina-reranker-v2 context length
                 trust_remote_code=True,  # Required for jina-reranker-v2
+                model_kwargs={
+                    "dtype": torch.float32,  # Use 'dtype' instead of deprecated 'torch_dtype'
+                },
             )
             self._model_loaded = True
 
