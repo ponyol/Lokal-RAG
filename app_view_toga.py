@@ -526,6 +526,16 @@ class LokalRAGApp(toga.App):
         button_box.add(clear_button)
         container.add(button_box)
 
+        # Status label (for showing save success/error messages)
+        self.note_status_label = toga.Label(
+            "",
+            style=Pack(
+                margin_top=10,
+                font_size=12
+            )
+        )
+        container.add(self.note_status_label)
+
         return toga.ScrollContainer(
             content=container,
             style=Pack()
@@ -1286,6 +1296,17 @@ class LokalRAGApp(toga.App):
     def clear_note_text(self) -> None:
         """Clear the note text area."""
         self.note_text.value = ""
+
+    def show_note_status(self, message: str, is_error: bool = False) -> None:
+        """
+        Display a status message for note operations.
+
+        Args:
+            message: The status message to display
+            is_error: Whether this is an error message (red text vs green)
+        """
+        self.note_status_label.text = message
+        # Toga doesn't support text color on labels easily, but message emojis (✓/✗) help
 
     def get_llm_settings(self) -> dict:
         """
