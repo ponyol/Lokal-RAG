@@ -1,6 +1,6 @@
 # Lokal-RAG
 
-A local-first desktop application for building a private RAG (Retrieval-Augmented Generation) knowledge base from PDF documents.
+A local-first desktop application for building a private RAG (Retrieval-Augmented Generation) knowledge base from PDF documents and web articles.
 
 ## Features
 
@@ -15,12 +15,14 @@ A local-first desktop application for building a private RAG (Retrieval-Augmente
 - 📝 **Notes**: Create searchable notes that integrate with your knowledge base
 - 🔍 **Hybrid Search**: BM25 + Vector search for better retrieval (dates, keywords, semantics)
 - 🔒 **Privacy-First**: Uses local Ollama instance or API providers (Claude, Gemini, Mistral)
+- 🎨 **Native UI**: Cross-platform native interface using Toga (BeeWare)
+- ⚙️ **Customizable**: Theme selection (Light/Dark) and window size presets
 
 ## Architecture
 
 The application follows a clean 4-layer architecture:
-- **View**: CustomTkinter GUI
-- **Controller**: State management and event coordination
+- **View**: Toga native GUI (cross-platform, native look & feel)
+- **Controller**: State management and event coordination (async-based)
 - **Services**: Pure functional business logic
 - **Storage**: Vector database and file operations
 
@@ -241,16 +243,17 @@ CLEANUP_MEMORY_AFTER_PDF: bool = True  # Default: True
 
 ```
 Lokal-RAG/
-├── main.py                    # Application entry point
+├── main.py                    # Application entry point (Toga UI)
 ├── app_config.py              # Configuration (immutable dataclass)
 ├── app_services.py            # Pure functional business logic
 ├── app_storage.py             # Storage layer (ChromaDB, file I/O)
-├── app_view.py                # CustomTkinter GUI
-├── app_controller.py          # Controller/Orchestrator
+├── app_view.py                # Toga native GUI
+├── app_controller.py          # Controller/Orchestrator (async-based)
 ├── requirements.txt           # Python dependencies
 ├── setup_marker.py            # marker-pdf installation script
 ├── output_markdown/           # Generated Markdown files (by tag)
-└── lokal_rag_db/              # ChromaDB persistent storage
+├── lokal_rag_db/              # ChromaDB persistent storage
+└── changelog/                 # Processing history logs
 ```
 
 ## Troubleshooting
@@ -368,13 +371,14 @@ The application now includes automatic memory cleanup **after batch completion**
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| GUI | CustomTkinter | Modern, cross-platform UI |
-| Orchestration | threading + queue.Queue | Non-blocking task execution |
+| GUI | Toga (BeeWare) | Native cross-platform UI with platform look & feel |
+| Orchestration | asyncio + threading | Async event loop with background workers |
 | PDF Parser | marker-pdf | SOTA PDF-to-Markdown conversion |
 | LLM | Ollama + Qwen2.5-7B | Translation, tagging, RAG |
 | Vector DB | ChromaDB | Local persistent vector store |
 | Embeddings | paraphrase-multilingual-MiniLM-L12-v2 | Fast multilingual embeddings |
 | Text Processing | LangChain | Text splitting and RAG utilities |
+| Web Scraping | browser-cookie3 + httpx | Authenticated web article fetching |
 
 ## License
 

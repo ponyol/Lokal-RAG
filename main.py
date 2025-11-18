@@ -7,13 +7,13 @@ This module:
 1. Sets up logging
 2. Creates the configuration
 3. Initializes the storage layer
-4. Creates the GUI
+4. Creates the Toga GUI (native cross-platform UI)
 5. Initializes the controller
 6. Starts the application
 
 Usage:
     python main.py              # Normal mode
-    python main.py --debug      # Debug mode (logs scroll events)
+    python main.py --debug      # Debug mode with verbose logging
 """
 
 import argparse
@@ -22,13 +22,11 @@ import sys
 import warnings
 from pathlib import Path
 
-import customtkinter as ctk
-
 from app_config import create_config_from_settings
-from app_controller import AppOrchestrator
+from app_controller import TogaAppOrchestrator
 from app_services import fn_check_ollama_availability
 from app_storage import StorageService, fn_ensure_directories_exist
-from app_view import AppView
+from app_view import LokalRAGApp
 
 # Suppress resource_tracker warnings
 # NOTE: ChromaDB 1.3+ and sentence-transformers (PyTorch) may still use multiprocessing
@@ -73,6 +71,7 @@ def setup_logging(debug: bool = False) -> None:
         logging.getLogger("httpx").setLevel(logging.WARNING)
         logging.getLogger("chromadb").setLevel(logging.WARNING)
         logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+        logging.getLogger("toga").setLevel(logging.INFO)
 
     logger = logging.getLogger(__name__)
     logger.info("=" * 60)
@@ -106,7 +105,7 @@ def check_prerequisites(config) -> bool:
 
 def main() -> None:
     """
-    Main application entry point.
+    Main application entry point for Toga version.
 
     This function:
     1. Parses command-line arguments
@@ -114,16 +113,16 @@ def main() -> None:
     3. Creates configuration
     4. Checks prerequisites
     5. Initializes all components
-    6. Starts the GUI main loop
+    6. Starts the Toga GUI main loop
     """
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
-        description="Lokal-RAG - Local Knowledge Base Application"
+        description="Lokal-RAG - Local Knowledge Base Application (Toga UI)"
     )
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="Enable DEBUG level logging (useful for troubleshooting scroll events on macOS)"
+        help="Enable DEBUG level logging (useful for troubleshooting)"
     )
     args = parser.parse_args()
 
@@ -132,7 +131,7 @@ def main() -> None:
     logger = logging.getLogger(__name__)
 
     if args.debug:
-        logger.debug("DEBUG mode enabled - scroll events will be logged")
+        logger.debug("DEBUG mode enabled - verbose logging active")
 
     try:
         # Create configuration
@@ -165,55 +164,28 @@ def main() -> None:
         doc_count = storage.get_document_count()
         logger.info(f"  - Documents in database: {doc_count}")
 
-        # Create GUI
-        logger.info("Creating GUI...")
-        root = ctk.CTk()
-        view = AppView(root)
-        logger.info("✓ GUI created")
-
-        # Show LLM status in logs
-        if config.LLM_PROVIDER == "ollama":
-            if not ollama_available:
-                view.append_log("⚠️  WARNING: Ollama is not available!")
-                view.append_log("Please ensure Ollama is running: ollama serve")
-                view.append_log(f"And the model is downloaded: ollama pull {config.OLLAMA_MODEL}")
-                view.append_log("=" * 50)
-                view.append_log("")
-            else:
-                view.append_log("✓ Ollama is running and ready")
-                view.append_log(f"✓ Model available: {config.OLLAMA_MODEL}")
-                view.append_log(f"✓ Documents in database: {doc_count}")
-                view.append_log("=" * 50)
-                view.append_log("")
-        else:
-            # LM Studio - assume it's configured correctly
-            view.append_log(f"✓ LLM Provider: LM Studio ({config.LMSTUDIO_BASE_URL})")
-            view.append_log(f"✓ Model: {config.LMSTUDIO_MODEL}")
-            view.append_log(f"✓ Documents in database: {doc_count}")
-            view.append_log("=" * 50)
-            view.append_log("")
+        # Create Toga app
+        logger.info("Creating Toga GUI V2...")
+        app = LokalRAGApp()
+        logger.info("✓ Toga GUI V2 created")
 
         # Initialize controller
         logger.info("Initializing controller...")
-        orchestrator = AppOrchestrator(view, config, storage)
+        orchestrator = TogaAppOrchestrator(
+            view=app,
+            config=config,
+            storage=storage,
+            ollama_available=ollama_available,
+            doc_count=doc_count
+        )
         logger.info("✓ Controller initialized")
 
-        # Define cleanup handler for graceful shutdown
-        def on_closing():
-            """Handle application window close event."""
-            logger.info("Application closing...")
-            orchestrator.cleanup()
-            root.destroy()
-            logger.info("Application closed successfully")
-
-        # Bind cleanup to window close event
-        root.protocol("WM_DELETE_WINDOW", on_closing)
-
         # Start the application
-        logger.info("Starting application main loop...")
+        logger.info("Starting Toga application main loop...")
         logger.info("=" * 60)
 
-        root.mainloop()
+        # Run the Toga main loop
+        app.main_loop()
 
     except KeyboardInterrupt:
         logger.info("Application interrupted by user")
