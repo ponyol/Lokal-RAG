@@ -167,34 +167,17 @@ def main() -> None:
         # Create Toga app
         logger.info("Creating Toga GUI V2...")
         app = LokalRAGApp()
-
-        # Show LLM status in logs
-        if config.LLM_PROVIDER == "ollama":
-            if not ollama_available:
-                app.append_log("⚠️  WARNING: Ollama is not available!")
-                app.append_log("Please ensure Ollama is running: ollama serve")
-                app.append_log(f"And the model is downloaded: ollama pull {config.OLLAMA_MODEL}")
-                app.append_log("=" * 50)
-                app.append_log("")
-            else:
-                app.append_log("✓ Ollama is running and ready")
-                app.append_log(f"✓ Model available: {config.OLLAMA_MODEL}")
-                app.append_log(f"✓ Documents in database: {doc_count}")
-                app.append_log("=" * 50)
-                app.append_log("")
-        else:
-            # LM Studio - assume it's configured correctly
-            app.append_log(f"✓ LLM Provider: LM Studio ({config.LMSTUDIO_BASE_URL})")
-            app.append_log(f"✓ Model: {config.LMSTUDIO_MODEL}")
-            app.append_log(f"✓ Documents in database: {doc_count}")
-            app.append_log("=" * 50)
-            app.append_log("")
-
         logger.info("✓ Toga GUI V2 created")
 
         # Initialize controller
         logger.info("Initializing controller...")
-        orchestrator = TogaAppOrchestrator(app, config, storage)
+        orchestrator = TogaAppOrchestrator(
+            view=app,
+            config=config,
+            storage=storage,
+            ollama_available=ollama_available,
+            doc_count=doc_count
+        )
         logger.info("✓ Controller initialized")
 
         # Start the application

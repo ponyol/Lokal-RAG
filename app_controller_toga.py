@@ -55,7 +55,14 @@ class TogaAppOrchestrator:
     It uses threading and queues to ensure the GUI never freezes.
     """
 
-    def __init__(self, view: LokalRAGApp, config: AppConfig, storage: StorageService):
+    def __init__(
+        self,
+        view: LokalRAGApp,
+        config: AppConfig,
+        storage: StorageService,
+        ollama_available: bool = True,
+        doc_count: int = 0
+    ):
         """
         Initialize the orchestrator.
 
@@ -63,10 +70,14 @@ class TogaAppOrchestrator:
             view: The Toga application view (GUI)
             config: Application configuration
             storage: The storage service
+            ollama_available: Whether Ollama is available (for status display)
+            doc_count: Initial document count (for status display)
         """
         self.view = view
         self.config = config
         self.storage = storage
+        self.ollama_available = ollama_available
+        self.doc_count = doc_count
 
         # State management
         self.is_processing = False
@@ -85,10 +96,10 @@ class TogaAppOrchestrator:
         # Start the queue checker
         self.check_view_queue()
 
-        # Load saved settings into UI (deferred to ensure widgets are ready)
+        # Initialize UI (deferred to ensure widgets are ready)
         # Use a small delay to ensure UI is fully rendered
         import threading
-        threading.Timer(0.1, self.load_settings_to_ui).start()
+        threading.Timer(0.1, self._init_ui).start()
 
     def setup_callbacks(self) -> None:
         """
@@ -105,6 +116,20 @@ class TogaAppOrchestrator:
 
         logger.info("Callbacks set up successfully")
 
+    def _init_ui(self) -> None:
+        """
+        Initialize the UI after widgets are created.
+
+        This method:
+        1. Loads saved settings from JSON
+        2. Displays initial status messages
+        """
+        # Load settings
+        self.load_settings_to_ui()
+
+        # Display initial status
+        self._display_initial_status()
+
     def load_settings_to_ui(self) -> None:
         """Load saved settings from JSON into the UI."""
         from app_config import load_settings_from_json
@@ -118,6 +143,32 @@ class TogaAppOrchestrator:
                 logger.info("No settings file found, using defaults")
         except Exception as e:
             logger.error(f"Failed to load settings into UI: {e}", exc_info=True)
+
+    def _display_initial_status(self) -> None:
+        """Display initial status messages in the ingestion log."""
+        try:
+            if self.config.LLM_PROVIDER == "ollama":
+                if not self.ollama_available:
+                    self.view.append_log("⚠️  WARNING: Ollama is not available!")
+                    self.view.append_log("Please ensure Ollama is running: ollama serve")
+                    self.view.append_log(f"And the model is downloaded: ollama pull {self.config.OLLAMA_MODEL}")
+                    self.view.append_log("=" * 50)
+                    self.view.append_log("")
+                else:
+                    self.view.append_log("✓ Ollama is running and ready")
+                    self.view.append_log(f"✓ Model available: {self.config.OLLAMA_MODEL}")
+                    self.view.append_log(f"✓ Documents in database: {self.doc_count}")
+                    self.view.append_log("=" * 50)
+                    self.view.append_log("")
+            else:
+                # LM Studio - assume it's configured correctly
+                self.view.append_log(f"✓ LLM Provider: LM Studio ({self.config.LMSTUDIO_BASE_URL})")
+                self.view.append_log(f"✓ Model: {self.config.LMSTUDIO_MODEL}")
+                self.view.append_log(f"✓ Documents in database: {self.doc_count}")
+                self.view.append_log("=" * 50)
+                self.view.append_log("")
+        except Exception as e:
+            logger.error(f"Failed to display initial status: {e}", exc_info=True)
 
     # ========================================================================
     # Queue Management (Thread-Safe GUI Updates)
