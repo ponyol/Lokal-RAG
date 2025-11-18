@@ -81,18 +81,23 @@ class SearchPipeline:
 
         Args:
             query: Search query
-            mode: Stage 1 search mode ("hybrid", "vector", "fulltext")
+            mode: Stage 1 search mode (DEPRECATED: currently ignored, always uses hybrid)
             initial_limit: Number of candidates to retrieve in Stage 1
             rerank_top_n: Number of results to return after Stage 2
             enable_rerank: Enable Stage 2 re-ranking
             filter_tags: Optional list of tags to filter by
-            filter_type: Optional type filter ("document", "note")
+            filter_type: Optional document type filter ("document", "note", or None for all)
             include_scores: Include Stage 1 and Stage 2 scores in results
 
         Returns:
             Dict with:
                 - results: List of documents with scores and metadata
                 - search_info: Metadata about the search (timings, counts, etc.)
+
+        IMPORTANT:
+        - StorageService.search_similar_documents() ALWAYS uses hybrid search (BM25+Vector)
+        - The 'mode' parameter is kept for API compatibility but is currently ignored
+        - The 'filter_type' parameter filters by document type (document/note), not search mode
 
         NOTE: If enable_rerank=False or reranker is None, only Stage 1 runs.
 
@@ -155,7 +160,8 @@ class SearchPipeline:
                 query=expanded_query,  # ← USE EXPANDED QUERY!
                 mode=mode,
                 limit=stage1_limit,
-                filter_tags=filter_tags
+                filter_tags=filter_tags,
+                filter_type=filter_type,  # ← Pass filter_type!
             )
         except Exception as e:
             logger.error(f"Stage 1 search failed: {e}")
@@ -272,33 +278,45 @@ class SearchPipeline:
         mode: str,
         limit: int,
         filter_tags: Optional[List[str]] = None,
+        filter_type: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Execute Stage 1 search (hybrid, vector, or fulltext).
+        Execute Stage 1 search using hybrid search (BM25 + Vector).
 
         Args:
             query: Search query
-            mode: Search mode
+            mode: Search mode (currently ignored - StorageService always uses hybrid)
             limit: Number of candidates to retrieve
             filter_tags: Optional tag filter
+            filter_type: Optional document type filter ("document", "note", or None for all)
 
         Returns:
             List of documents with Stage 1 scores
 
         NOTE: This method wraps the storage_service.search_similar_documents() method.
+        The StorageService ALWAYS performs hybrid search (BM25+Vector), regardless of mode.
         """
         # Call storage service
         # NOTE: The search_similar_documents method returns a list of tuples:
         # (Document, score, metadata)
 
+        # IMPORTANT: search_type is a DOCUMENT TYPE FILTER (document/note), not a search mode!
+        # StorageService.search_similar_documents() ALWAYS does hybrid search (BM25+Vector)
+
+        # Only pass filter_type if it's "document" or "note"
+        search_type_filter = None
+        if filter_type in ("document", "note"):
+            search_type_filter = filter_type
+
         # DEBUG: Log storage service call parameters
         logger.debug(
             f"STAGE1_CALL: Calling storage_service.search_similar_documents with "
-            f"query='{query[:100]}...', k={limit}, search_type={mode}"
+            f"query='{query[:100]}...', k={limit}, search_type={search_type_filter} "
+            f"(mode={mode} is IGNORED, always hybrid)"
         )
 
         results = self.storage_service.search_similar_documents(
-            query=query, k=limit, search_type=mode
+            query=query, k=limit, search_type=search_type_filter
         )
 
         # DEBUG: Log raw results from storage service

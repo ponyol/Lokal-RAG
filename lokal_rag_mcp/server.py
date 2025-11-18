@@ -102,20 +102,27 @@ def lokal_rag_search(
     """
     Universal search with optional two-stage re-ranking for maximum precision.
 
+    Stage 1: Hybrid search (BM25 + Vector) for broad recall
+    Stage 2: Cross-Encoder re-ranking for precision
+
     Args:
         query: Search query (required)
-        mode: Stage 1 search mode - "hybrid" (BM25+Vector), "vector", or "fulltext" (default: "hybrid")
+        mode: (DEPRECATED, kept for API compatibility) Always uses "hybrid" (BM25+Vector)
         initial_limit: Number of candidates for Stage 1 (default: 25, max: 100)
         rerank_top_n: Final results after Stage 2 re-ranking (default: 5, max: 20)
         enable_rerank: Enable Stage 2 re-ranking (default: True)
         filter_tags: Filter by tags (optional, list of strings)
-        filter_type: Content type filter - "document", "note", or "all" (default: "all")
+        filter_type: Document type filter - "document", "note", or None for all (default: None)
         include_scores: Include Stage 1 & 2 scores in metadata (default: False)
 
     Returns:
         Dict with:
             - results: List of documents with scores and metadata
             - search_info: Search metadata (timings, counts, etc.)
+
+    IMPORTANT:
+    - Search is ALWAYS hybrid (BM25+Vector), the 'mode' parameter is ignored
+    - Use 'filter_type' to filter by document type, not as a search mode
 
     Example:
         Basic search with re-ranking:
