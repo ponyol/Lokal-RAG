@@ -132,6 +132,22 @@ class LokalRAGApp(toga.App):
 
         logger.info("Toga app V2 initialized with native theme and fixed API")
 
+    def _get_container_style(self, **kwargs):
+        """
+        Get Pack style for containers with theme background color.
+
+        This ensures containers use the theme's background color.
+        """
+        return Pack(background_color=Theme.BG_PRIMARY, **kwargs)
+
+    def _get_secondary_container_style(self, **kwargs):
+        """
+        Get Pack style for secondary containers (cards, panels).
+
+        This ensures secondary containers use a slightly different background.
+        """
+        return Pack(background_color=Theme.BG_SECONDARY, **kwargs)
+
     def _load_theme_preference(self):
         """
         Load theme preference from settings file BEFORE creating UI.
@@ -248,9 +264,9 @@ class LokalRAGApp(toga.App):
         Returns:
             toga.Widget: The ingestion tab content
         """
-        # Main container (vertical layout)
+        # Main container (vertical layout) - Apply theme background
         container = toga.Box(
-            style=Pack(
+            style=self._get_container_style(
                 direction=COLUMN,
                 margin=20
             )
@@ -479,7 +495,7 @@ class LokalRAGApp(toga.App):
             toga.Widget: The chat tab content
         """
         container = toga.Box(
-            style=Pack(
+            style=self._get_container_style(
                 direction=COLUMN,
                 margin=20
             )
@@ -569,7 +585,7 @@ class LokalRAGApp(toga.App):
             toga.Widget: The notes tab content
         """
         container = toga.Box(
-            style=Pack(
+            style=self._get_container_style(
                 direction=COLUMN,
                 margin=20
             )
@@ -650,7 +666,7 @@ class LokalRAGApp(toga.App):
             toga.Widget: The changelog tab content
         """
         container = toga.Box(
-            style=Pack(
+            style=self._get_container_style(
                 direction=COLUMN,
                 margin=20
             )
@@ -733,7 +749,7 @@ class LokalRAGApp(toga.App):
             toga.Widget: The settings tab content
         """
         container = toga.Box(
-            style=Pack(
+            style=self._get_container_style(
                 direction=COLUMN,
                 margin=20
             )
