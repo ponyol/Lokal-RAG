@@ -1,0 +1,76 @@
+{
+  "_comment": "Claude Desktop MCP Configuration Example",
+  "_comment2": "Copy relevant section to your Claude Desktop config file",
+  "_paths": {
+    "macOS": "~/Library/Application Support/Claude/claude_desktop_config.json",
+    "Windows": "%APPDATA%\\Claude\\claude_desktop_config.json",
+    "Linux": "~/.config/Claude/claude_desktop_config.json"
+  },
+
+  "mcpServers": {
+    "lokal-rag": {
+      "_comment": "Basic configuration (auto-detects settings)",
+      "command": "python",
+      "args": [
+        "-m",
+        "lokal_rag_mcp.server"
+      ],
+      "env": {
+        "PYTHONPATH": "/path/to/Lokal-RAG"
+      }
+    },
+
+    "lokal-rag-custom": {
+      "_comment": "Custom configuration with explicit settings",
+      "command": "python",
+      "args": [
+        "-m",
+        "lokal_rag_mcp.server",
+        "--settings", "/Users/yourname/.lokal-rag/settings.json",
+        "--log-level", "INFO"
+      ],
+      "env": {
+        "PYTHONPATH": "/path/to/Lokal-RAG"
+      }
+    },
+
+    "lokal-rag-no-rerank": {
+      "_comment": "Disable re-ranking for faster responses",
+      "command": "python",
+      "args": [
+        "-m",
+        "lokal_rag_mcp.server",
+        "--no-rerank"
+      ],
+      "env": {
+        "PYTHONPATH": "/path/to/Lokal-RAG"
+      }
+    },
+
+    "lokal-rag-cpu": {
+      "_comment": "Force CPU (useful for testing or low-memory systems)",
+      "command": "python",
+      "args": [
+        "-m",
+        "lokal_rag_mcp.server",
+        "--rerank-device", "cpu"
+      ],
+      "env": {
+        "PYTHONPATH": "/path/to/Lokal-RAG"
+      }
+    },
+
+    "lokal-rag-debug": {
+      "_comment": "Debug mode with verbose logging",
+      "command": "python",
+      "args": [
+        "-m",
+        "lokal_rag_mcp.server",
+        "--log-level", "DEBUG"
+      ],
+      "env": {
+        "PYTHONPATH": "/path/to/Lokal-RAG"
+      }
+    }
+  }
+}
