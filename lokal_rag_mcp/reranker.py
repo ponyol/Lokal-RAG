@@ -252,14 +252,25 @@ class ReRanker:
             scores = self.model.predict(pairs, batch_size=self.config.batch_size)
         except Exception as e:
             logger.error(f"Re-ranking failed: {e}")
-            # Fallback: return documents as-is
+            # Fallback: return documents as-is (without rerank_score)
+            logger.warning("Returning documents without re-ranking due to error")
             return documents[:top_n]
+
+        # Convert scores to list if needed (handles numpy arrays)
+        try:
+            scores = list(scores)
+        except Exception:
+            pass  # Already a list
+
+        logger.debug(f"Got {len(scores)} scores from model")
 
         # Attach scores to documents
         for doc, score in zip(documents, scores):
             if return_scores:
                 doc["rerank_score"] = float(score)
             doc["reranked"] = True
+
+        logger.debug(f"Attached scores to {len(documents)} documents")
 
         # Filter by threshold if configured
         if self.config.threshold > 0:

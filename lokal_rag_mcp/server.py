@@ -673,26 +673,14 @@ def lokal_rag_get_stats(include_tag_stats: bool = True) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-@mcp.tool()
-def lokal_rag_health_check(
+def _perform_health_check(
     include_diagnostics: bool = False, check_reranker: bool = True
 ) -> Dict[str, Any]:
     """
-    Check the health and status of the Lokal-RAG system, including re-ranker.
+    Internal function to perform health check.
 
-    Args:
-        include_diagnostics: Include detailed diagnostics (default: False)
-        check_reranker: Test re-ranker model loading (default: True)
-
-    Returns:
-        Dict with system health status
-
-    Example:
-        >>> health = lokal_rag_health_check(check_reranker=True)
-        >>> print(health['status'])
-        'healthy'
-        >>> print(health['components']['reranker']['device'])
-        'mps'
+    This is the actual implementation, used by both the MCP tool
+    and the test mode.
     """
     logger.info("Health check")
 
@@ -771,6 +759,30 @@ def lokal_rag_health_check(
 
     logger.info(f"Health check: {health['status']}")
     return health
+
+
+@mcp.tool()
+def lokal_rag_health_check(
+    include_diagnostics: bool = False, check_reranker: bool = True
+) -> Dict[str, Any]:
+    """
+    Check the health and status of the Lokal-RAG system, including re-ranker.
+
+    Args:
+        include_diagnostics: Include detailed diagnostics (default: False)
+        check_reranker: Test re-ranker model loading (default: True)
+
+    Returns:
+        Dict with system health status
+
+    Example:
+        >>> health = lokal_rag_health_check(check_reranker=True)
+        >>> print(health['status'])
+        'healthy'
+        >>> print(health['components']['reranker']['device'])
+        'mps'
+    """
+    return _perform_health_check(include_diagnostics, check_reranker)
 
 
 # ============================================================================
@@ -884,7 +896,7 @@ def main():
     # Test mode: run health check and exit
     if args.test:
         print("\n=== Test Mode ===")
-        health = lokal_rag_health_check(include_diagnostics=True, check_reranker=True)
+        health = _perform_health_check(include_diagnostics=True, check_reranker=True)
 
         import json
         print(json.dumps(health, indent=2))
