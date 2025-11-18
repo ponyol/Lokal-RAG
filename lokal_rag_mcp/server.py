@@ -143,10 +143,19 @@ def lokal_rag_search(
         ... )
     """
     if _search_pipeline is None:
+        logger.error("MCP_SEARCH_ERROR: Search pipeline not initialized")
         return {
             "results": [],
             "search_info": {"error": "Search pipeline not initialized"},
         }
+
+    # DEBUG: Log incoming MCP tool request with all parameters
+    logger.debug(
+        f"MCP_TOOL_CALL: lokal_rag_search | query='{query}', mode={mode}, "
+        f"initial_limit={initial_limit}, rerank_top_n={rerank_top_n}, "
+        f"enable_rerank={enable_rerank}, filter_tags={filter_tags}, "
+        f"filter_type={filter_type}, include_scores={include_scores}"
+    )
 
     logger.info(f"Search query: '{query}', mode: {mode}, rerank: {enable_rerank}")
 
@@ -165,6 +174,12 @@ def lokal_rag_search(
         logger.info(
             f"Search completed: {result['search_info']['total_returned']} results, "
             f"{result['search_info']['search_time_ms']:.1f}ms"
+        )
+
+        # DEBUG: Log result summary
+        logger.debug(
+            f"MCP_TOOL_RESULT: lokal_rag_search | returned {len(result.get('results', []))} results, "
+            f"search_info={result.get('search_info', {})}"
         )
 
         return result

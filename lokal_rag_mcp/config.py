@@ -219,18 +219,19 @@ def setup_logging(mcp_config: MCPConfig) -> None:
     log_level = getattr(logging, mcp_config.log_level.upper(), logging.INFO)
 
     if mcp_config.log_format == "json":
-        # JSON structured logging
+        # JSON structured logging with additional context fields
         logging.basicConfig(
             level=log_level,
             format='{"timestamp": "%(asctime)s", "level": "%(levelname)s", '
-            '"logger": "%(name)s", "message": "%(message)s"}',
+            '"logger": "%(name)s", "function": "%(funcName)s", '
+            '"line": %(lineno)d, "message": "%(message)s"}',
             datefmt="%Y-%m-%dT%H:%M:%S",
         )
     else:
         # Human-readable text logging
         logging.basicConfig(
             level=log_level,
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            format="%(asctime)s - %(name)s - %(levelname)s - [%(funcName)s:%(lineno)d] - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
 

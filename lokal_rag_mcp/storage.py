@@ -170,7 +170,17 @@ def list_all_documents(
 
         # Format results
         items = []
-        for doc in paginated_docs:
+        for idx, doc in enumerate(paginated_docs):
+            # DEBUG: Log first document metadata to see available fields
+            if idx == 0:
+                logger.debug(
+                    f"LIST_DOCS_SAMPLE: First document metadata keys: {list(doc.metadata.keys())}"
+                )
+                logger.debug(
+                    f"LIST_DOCS_SAMPLE: created_at='{doc.metadata.get('created_at', '')}', "
+                    f"updated_at='{doc.metadata.get('updated_at', '')}'"
+                )
+
             items.append(
                 {
                     "id": doc.metadata.get("id", ""),
@@ -183,6 +193,8 @@ def list_all_documents(
                     "updated_at": doc.metadata.get("updated_at", ""),
                 }
             )
+
+        logger.debug(f"LIST_DOCS_RESULT: Returning {len(items)} items out of {total} total")
 
         return {
             "items": items,

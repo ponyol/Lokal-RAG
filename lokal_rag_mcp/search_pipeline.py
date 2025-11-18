@@ -114,9 +114,13 @@ class SearchPipeline:
         # Determine if we should re-rank
         should_rerank = enable_rerank and self.reranker is not None
 
+        # DEBUG: Log full search parameters
         logger.debug(
-            f"Search query='{query}', mode={mode}, initial_limit={initial_limit}, "
-            f"rerank={'enabled' if should_rerank else 'disabled'}"
+            f"SEARCH_START: query='{query[:100]}...', mode={mode}, "
+            f"initial_limit={initial_limit}, rerank_top_n={rerank_top_n}, "
+            f"enable_rerank={enable_rerank}, should_rerank={should_rerank}, "
+            f"filter_tags={filter_tags}, filter_type={filter_type}, "
+            f"include_scores={include_scores}, reranker_available={self.reranker is not None}"
         )
 
         # ============================================================================
@@ -267,8 +271,20 @@ class SearchPipeline:
         # NOTE: The search_similar_documents method returns a list of tuples:
         # (Document, score, metadata)
 
+        # DEBUG: Log storage service call parameters
+        logger.debug(
+            f"STAGE1_CALL: Calling storage_service.search_similar_documents with "
+            f"query='{query[:100]}...', k={limit}, search_type={mode}"
+        )
+
         results = self.storage_service.search_similar_documents(
-            query=query, k=limit, search_mode=mode
+            query=query, k=limit, search_type=mode
+        )
+
+        # DEBUG: Log raw results from storage service
+        logger.debug(
+            f"STAGE1_RESULT: Got {len(results)} results from storage_service, "
+            f"result_type={type(results)}"
         )
 
         # Convert to dict format

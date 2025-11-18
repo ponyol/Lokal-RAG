@@ -356,6 +356,106 @@ ruff check lokal_rag_mcp/
 mypy lokal_rag_mcp/
 ```
 
+## Debug Logging
+
+Enable detailed debug logging to troubleshoot issues with search, re-ranking, or MCP tool calls.
+
+### Enable DEBUG Mode
+
+**Method 1: Via settings.json**
+
+Update `~/.lokal-rag/settings.json`:
+
+```json
+{
+  "mcp": {
+    "log_level": "DEBUG",
+    "log_format": "json"
+  }
+}
+```
+
+**Method 2: Via command line**
+
+```bash
+python -m lokal_rag_mcp.server --log-level DEBUG
+```
+
+**Method 3: In Claude Desktop config**
+
+Update `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "lokal-rag": {
+      "command": "python",
+      "args": [
+        "-m",
+        "lokal_rag_mcp.server",
+        "--log-level", "DEBUG"
+      ]
+    }
+  }
+}
+```
+
+### Debug Log Format
+
+Logs are JSON-formatted by default for easy parsing:
+
+```json
+{
+  "timestamp": "2025-11-18T15:30:45",
+  "level": "DEBUG",
+  "logger": "lokal_rag_mcp.search_pipeline",
+  "function": "search",
+  "line": 118,
+  "message": "SEARCH_START: query='какие документы...', mode=hybrid, initial_limit=25, ..."
+}
+```
+
+### Key Debug Tags
+
+Look for these prefixes in debug logs:
+
+- **`MCP_TOOL_CALL:`** - Incoming MCP tool request with all parameters
+- **`MCP_TOOL_RESULT:`** - MCP tool response summary
+- **`SEARCH_START:`** - Search pipeline started with full parameters
+- **`STAGE1_CALL:`** - Calling storage_service with exact parameters
+- **`STAGE1_RESULT:`** - Raw results from storage service
+- **`LIST_DOCS_SAMPLE:`** - Sample document metadata (for debugging empty fields)
+- **`LIST_DOCS_RESULT:`** - List documents result summary
+
+### Example Debug Session
+
+```bash
+# Start server with DEBUG logging
+python -m lokal_rag_mcp.server --log-level DEBUG --test
+
+# Look for specific debug tags
+python -m lokal_rag_mcp.server --log-level DEBUG 2>&1 | grep "SEARCH_START"
+python -m lokal_rag_mcp.server --log-level DEBUG 2>&1 | grep "STAGE1_CALL"
+```
+
+### Human-Readable Format
+
+For local debugging, use text format instead of JSON:
+
+```json
+{
+  "mcp": {
+    "log_level": "DEBUG",
+    "log_format": "text"
+  }
+}
+```
+
+Output:
+```
+2025-11-18 15:30:45 - lokal_rag_mcp.search_pipeline - DEBUG - [search:118] - SEARCH_START: query='какие документы...', mode=hybrid, ...
+```
+
 ## Troubleshooting
 
 ### Re-ranker Not Loading
