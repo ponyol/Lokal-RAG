@@ -154,7 +154,7 @@ class LokalRAGApp(toga.App):
         container = toga.Box(
             style=Pack(
                 direction=COLUMN,
-                padding=20
+                margin=20
             )
         )
 
@@ -162,7 +162,7 @@ class LokalRAGApp(toga.App):
         title = toga.Label(
             "📚 Content Ingestion",
             style=Pack(
-                padding_bottom=20,
+                margin_bottom=20,
                 font_size=20,
                 font_weight="bold"
             )
@@ -173,8 +173,8 @@ class LokalRAGApp(toga.App):
         source_label = toga.Label(
             "Source Type (choose one):",
             style=Pack(
-                padding_top=10,
-                padding_bottom=10,
+                margin_top=10,
+                margin_bottom=10,
                 font_weight="bold"
             )
         )
@@ -183,14 +183,14 @@ class LokalRAGApp(toga.App):
         # Source type selector
         self.source_type_selection = toga.Selection(
             items=["PDF / Markdown Files", "Web URLs"],
-            style=Pack(padding=5)
+            style=Pack(margin=5)
         )
         self.source_type_selection.value = "PDF / Markdown Files"
         self.source_type_selection.on_change = self._on_source_type_changed
         container.add(self.source_type_selection)
 
         # ---- PDF/Folder Selection ----
-        folder_box = toga.Box(style=Pack(direction=ROW, padding=5))
+        folder_box = toga.Box(style=Pack(direction=ROW, margin=5))
         folder_label = toga.Label(
             "PDF/Markdown Folder:",
             style=Pack(width=180)
@@ -198,7 +198,7 @@ class LokalRAGApp(toga.App):
         self.folder_input = toga.TextInput(
             readonly=True,
             placeholder="No folder selected",
-            style=Pack(flex=1, padding_right=5)
+            style=Pack(flex=1, margin_right=5)
         )
         folder_button = toga.Button(
             "Browse...",
@@ -213,13 +213,13 @@ class LokalRAGApp(toga.App):
         # ---- Web URL Input (Multiline for multiple URLs) ----
         url_label = toga.Label(
             "Web URLs (one per line):",
-            style=Pack(padding=5, padding_bottom=2)
+            style=Pack(margin=5, margin_bottom=2)
         )
         container.add(url_label)
 
         self.url_input = toga.MultilineTextInput(
             placeholder="https://example.com/article1\nhttps://example.com/article2\n...",
-            style=Pack(height=100, padding=5)
+            style=Pack(height=100, margin=5)
         )
         container.add(self.url_input)
 
@@ -227,8 +227,8 @@ class LokalRAGApp(toga.App):
         auth_label = toga.Label(
             "Web Authentication Options:",
             style=Pack(
-                padding_top=10,
-                padding_bottom=5,
+                margin_top=10,
+                margin_bottom=5,
                 font_weight="bold"
             )
         )
@@ -238,12 +238,12 @@ class LokalRAGApp(toga.App):
         self.use_cookies_switch = toga.Switch(
             "Use browser cookies for authentication",
             value=True,
-            style=Pack(padding=5)
+            style=Pack(margin=5)
         )
         container.add(self.use_cookies_switch)
 
         # Browser selection
-        browser_box = toga.Box(style=Pack(direction=ROW, padding=5))
+        browser_box = toga.Box(style=Pack(direction=ROW, margin=5))
         browser_label = toga.Label(
             "Browser:",
             style=Pack(width=180)
@@ -259,7 +259,7 @@ class LokalRAGApp(toga.App):
 
         browser_hint = toga.Label(
             "(Select where you're logged in to the site)",
-            style=Pack(padding_left=185, padding_bottom=5, font_size=10)
+            style=Pack(margin_left=185, margin_bottom=5, font_size=10)
         )
         container.add(browser_hint)
 
@@ -267,7 +267,7 @@ class LokalRAGApp(toga.App):
         self.save_html_switch = toga.Switch(
             "Save raw HTML for debugging (output_markdown/_debug/)",
             value=False,
-            style=Pack(padding=5)
+            style=Pack(margin=5)
         )
         container.add(self.save_html_switch)
 
@@ -275,8 +275,8 @@ class LokalRAGApp(toga.App):
         options_label = toga.Label(
             "Processing Options:",
             style=Pack(
-                padding_top=20,
-                padding_bottom=10,
+                margin_top=20,
+                margin_bottom=10,
                 font_weight="bold"
             )
         )
@@ -286,7 +286,7 @@ class LokalRAGApp(toga.App):
         self.translate_switch = toga.Switch(
             "Enable Translation (auto-detect language → Russian)",
             value=False,
-            style=Pack(padding=5)
+            style=Pack(margin=5)
         )
         container.add(self.translate_switch)
 
@@ -294,12 +294,12 @@ class LokalRAGApp(toga.App):
         self.tagging_switch = toga.Switch(
             "Enable Auto-Tagging (extract topics/themes)",
             value=True,
-            style=Pack(padding=5)
+            style=Pack(margin=5)
         )
         container.add(self.tagging_switch)
 
         # V2: Vision mode selection (FIXED - display text + mapping)
-        vision_box = toga.Box(style=Pack(direction=ROW, padding=5))
+        vision_box = toga.Box(style=Pack(direction=ROW, margin=5))
         vision_label = toga.Label(
             "Image Extraction Mode:",
             style=Pack(width=180)
@@ -317,15 +317,15 @@ class LokalRAGApp(toga.App):
         button_box = toga.Box(
             style=Pack(
                 direction=ROW,
-                padding_top=20,
-                padding_bottom=10
+                margin_top=20,
+                margin_bottom=10
             )
         )
         self.start_button = toga.Button(
             "🚀 Start Processing",
             on_press=self._on_start_processing,
             style=Pack(
-                padding_right=10,
+                margin_right=10,
                 flex=1,
                 background_color=Theme.ACCENT_GREEN
             )
@@ -346,8 +346,8 @@ class LokalRAGApp(toga.App):
         log_label = toga.Label(
             "Processing Log:",
             style=Pack(
-                padding_top=10,
-                padding_bottom=5,
+                margin_top=10,
+                margin_bottom=5,
                 font_weight="bold"
             )
         )
@@ -383,14 +383,14 @@ class LokalRAGApp(toga.App):
         container = toga.Box(
             style=Pack(
                 direction=COLUMN,
-                padding=20
+                margin=20
             )
         )
 
         title = toga.Label(
             "💬 Chat with Your Knowledge Base",
             style=Pack(
-                padding_bottom=20,
+                margin_bottom=20,
                 font_size=20,
                 font_weight="bold"
             )
@@ -401,7 +401,7 @@ class LokalRAGApp(toga.App):
         search_box = toga.Box(
             style=Pack(
                 direction=ROW,
-                padding_bottom=10
+                margin_bottom=10
             )
         )
         search_label = toga.Label(
@@ -410,7 +410,7 @@ class LokalRAGApp(toga.App):
         )
         self.search_type_selection = toga.Selection(
             items=["Всё", "Документы", "Заметки"],
-            style=Pack(flex=1, padding_right=10)
+            style=Pack(flex=1, margin_right=10)
         )
         self.search_type_selection.value = "Всё"
 
@@ -438,12 +438,12 @@ class LokalRAGApp(toga.App):
         container.add(self.chat_history)
 
         # Message input
-        input_box = toga.Box(style=Pack(direction=ROW, padding_top=10))
+        input_box = toga.Box(style=Pack(direction=ROW, margin_top=10))
         self.chat_input = toga.TextInput(
             placeholder="Type your message here...",
             style=Pack(
                 flex=1,
-                padding_right=10
+                margin_right=10
             )
         )
         self.send_button = toga.Button(
@@ -473,14 +473,14 @@ class LokalRAGApp(toga.App):
         container = toga.Box(
             style=Pack(
                 direction=COLUMN,
-                padding=20
+                margin=20
             )
         )
 
         title = toga.Label(
             "📝 Заметки",
             style=Pack(
-                padding_bottom=10,
+                margin_bottom=10,
                 font_size=20,
                 font_weight="bold"
             )
@@ -489,7 +489,7 @@ class LokalRAGApp(toga.App):
 
         desc = toga.Label(
             "Создавайте заметки, которые будут доступны для поиска в чате",
-            style=Pack(padding_bottom=20, font_size=12)
+            style=Pack(margin_bottom=20, font_size=12)
         )
         container.add(desc)
 
@@ -504,13 +504,13 @@ class LokalRAGApp(toga.App):
         container.add(self.note_text)
 
         # Action buttons
-        button_box = toga.Box(style=Pack(direction=ROW, padding_top=15))
+        button_box = toga.Box(style=Pack(direction=ROW, margin_top=15))
         save_button = toga.Button(
             "💾 Сохранить заметку",
             on_press=self._on_save_note,
             style=Pack(
                 flex=1,
-                padding_right=10,
+                margin_right=10,
                 background_color=Theme.ACCENT_GREEN
             )
         )
@@ -544,14 +544,14 @@ class LokalRAGApp(toga.App):
         container = toga.Box(
             style=Pack(
                 direction=COLUMN,
-                padding=20
+                margin=20
             )
         )
 
         title = toga.Label(
             "📋 История обработки",
             style=Pack(
-                padding_bottom=20,
+                margin_bottom=20,
                 font_size=20,
                 font_weight="bold"
             )
@@ -559,11 +559,11 @@ class LokalRAGApp(toga.App):
         container.add(title)
 
         # File selection row
-        file_box = toga.Box(style=Pack(direction=ROW, padding=5))
+        file_box = toga.Box(style=Pack(direction=ROW, margin=5))
         file_label = toga.Label("Select File:", style=Pack(width=120))
         self.changelog_file_selection = toga.Selection(
             items=[],  # Will be populated by _load_changelog_files()
-            style=Pack(flex=1, padding_right=10)
+            style=Pack(flex=1, margin_right=10)
         )
         self.changelog_file_selection.on_change = self._on_changelog_file_changed
         refresh_button = toga.Button(
@@ -580,8 +580,8 @@ class LokalRAGApp(toga.App):
         content_label = toga.Label(
             "Содержимое:",
             style=Pack(
-                padding_top=10,
-                padding_bottom=5,
+                margin_top=10,
+                margin_bottom=5,
                 font_weight="bold"
             )
         )
@@ -627,14 +627,14 @@ class LokalRAGApp(toga.App):
         container = toga.Box(
             style=Pack(
                 direction=COLUMN,
-                padding=20
+                margin=20
             )
         )
 
         title = toga.Label(
             "⚙️ LLM Settings",
             style=Pack(
-                padding_bottom=20,
+                margin_bottom=20,
                 font_size=20,
                 font_weight="bold"
             )
@@ -647,14 +647,14 @@ class LokalRAGApp(toga.App):
             container
         )
 
-        config_location_box = toga.Box(style=Pack(direction=ROW, padding=5))
+        config_location_box = toga.Box(style=Pack(direction=ROW, margin=5))
         config_location_label = toga.Label(
             "Config Path:",
             style=Pack(width=150)
         )
         self.config_location_selection = toga.Selection(
             items=["Home (~/.lokal-rag/settings.json)", "Project (.lokal-rag/settings.json)"],
-            style=Pack(flex=1, padding_right=10)
+            style=Pack(flex=1, margin_right=10)
         )
         self.config_location_selection.value = "Home (~/.lokal-rag/settings.json)"
 
@@ -678,7 +678,7 @@ class LokalRAGApp(toga.App):
             container
         )
 
-        db_language_box = toga.Box(style=Pack(direction=ROW, padding=5))
+        db_language_box = toga.Box(style=Pack(direction=ROW, margin=5))
         db_language_label = toga.Label(
             "Database Language:",
             style=Pack(width=150)
@@ -696,7 +696,7 @@ class LokalRAGApp(toga.App):
         # Info label
         db_info_label = toga.Label(
             "Note: Database language affects which ChromaDB is used for search. Documents are always added to both databases.",
-            style=Pack(padding=5, font_size=10)
+            style=Pack(margin=5, font_size=10)
         )
         db_section.add(db_info_label)
 
@@ -709,7 +709,7 @@ class LokalRAGApp(toga.App):
         self.llm_provider_selection = toga.Selection(
             items=["ollama", "lmstudio", "claude", "gemini", "mistral"],
             style=Pack(
-                padding=5
+                margin=5
             )
         )
         self.llm_provider_selection.value = "ollama"
@@ -771,7 +771,7 @@ class LokalRAGApp(toga.App):
 
         claude_help = toga.Label(
             "Get your API key from: https://console.anthropic.com/",
-            style=Pack(padding=5, font_size=10)
+            style=Pack(margin=5, font_size=10)
         )
         claude_section.add(claude_help)
 
@@ -798,7 +798,7 @@ class LokalRAGApp(toga.App):
 
         gemini_help = toga.Label(
             "Get your API key from: https://makersuite.google.com/app/apikey",
-            style=Pack(padding=5, font_size=10)
+            style=Pack(margin=5, font_size=10)
         )
         gemini_section.add(gemini_help)
 
@@ -825,7 +825,7 @@ class LokalRAGApp(toga.App):
 
         mistral_help = toga.Label(
             "Get your API key from: https://console.mistral.ai/",
-            style=Pack(padding=5, font_size=10)
+            style=Pack(margin=5, font_size=10)
         )
         mistral_section.add(mistral_help)
 
@@ -844,7 +844,7 @@ class LokalRAGApp(toga.App):
 
         vision_help = toga.Label(
             "Configure local vision provider for image extraction from PDFs (separate from main LLM).",
-            style=Pack(padding=5, font_size=10)
+            style=Pack(margin=5, font_size=10)
         )
         vision_section.add(vision_help)
 
@@ -871,7 +871,7 @@ class LokalRAGApp(toga.App):
 
         vision_model_help = toga.Label(
             "Recommended: granite-docling:258m (lightweight, document-specialized)",
-            style=Pack(padding_left=155, font_size=10)
+            style=Pack(margin_left=155, font_size=10)
         )
         vision_section.add(vision_model_help)
 
@@ -898,7 +898,7 @@ class LokalRAGApp(toga.App):
 
         chunk_help = toga.Label(
             "Size of text chunks for translation. Smaller values = more API calls but better quality.",
-            style=Pack(padding_left=155, padding_bottom=5, font_size=10)
+            style=Pack(margin_left=155, margin_bottom=5, font_size=10)
         )
         general_section.add(chunk_help)
 
@@ -910,7 +910,7 @@ class LokalRAGApp(toga.App):
 
         paths_help = toga.Label(
             "Paths for storing vector database and markdown files (relative to app directory).",
-            style=Pack(padding=5, font_size=10)
+            style=Pack(margin=5, font_size=10)
         )
         paths_section.add(paths_help)
 
@@ -942,8 +942,8 @@ class LokalRAGApp(toga.App):
         button_box = toga.Box(
             style=Pack(
                 direction=ROW,
-                padding_top=25,
-                padding_bottom=10
+                margin_top=25,
+                margin_bottom=10
             )
         )
         self.save_settings_button = toga.Button(
@@ -951,7 +951,7 @@ class LokalRAGApp(toga.App):
             on_press=self._on_save_settings,
             style=Pack(
                 flex=1,
-                padding_right=10,
+                margin_right=10,
                 background_color=Theme.ACCENT_GREEN
             )
         )
@@ -990,14 +990,14 @@ class LokalRAGApp(toga.App):
         section = toga.Box(
             style=Pack(
                 direction=COLUMN,
-                padding=10
+                margin=10
             )
         )
 
         section_title = toga.Label(
             title,
             style=Pack(
-                padding_bottom=10,
+                margin_bottom=10,
                 font_weight="bold"
             )
         )
@@ -1023,7 +1023,7 @@ class LokalRAGApp(toga.App):
         Returns:
             toga.Box: The input row
         """
-        row = toga.Box(style=Pack(direction=ROW, padding=5))
+        row = toga.Box(style=Pack(direction=ROW, margin=5))
 
         label = toga.Label(
             label_text,
@@ -1191,7 +1191,7 @@ class LokalRAGApp(toga.App):
         """Handle test connection button press."""
         # TODO: Implement connection testing
         logger.info("Test connection clicked (not yet implemented)")
-        self.main_window.info_dialog(
+        self.show_info_dialog(
             "Test Connection",
             "Connection testing will be implemented in the next phase."
         )
@@ -1548,7 +1548,15 @@ class LokalRAGApp(toga.App):
             title: Dialog title
             message: Info message
         """
-        self.main_window.info_dialog(title, message)
+        # V2: Use new dialog API (Toga 0.4+)
+        try:
+            import asyncio
+            asyncio.create_task(
+                self.main_window.dialog(toga.InfoDialog(title, message))
+            )
+        except Exception:
+            # Fallback to deprecated API if async fails
+            self.main_window.info_dialog(title, message)
 
     # V2: Compatibility aliases for CustomTkinter API
     def show_warning(self, title: str, message: str) -> None:
