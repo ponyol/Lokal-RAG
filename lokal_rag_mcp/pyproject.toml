@@ -36,6 +36,7 @@ rerank = [
     "sentence-transformers>=3.3.0",
     "transformers>=4.50.0",
     "torch>=2.5.0",
+    "einops>=0.8.0",
 ]
 apple-silicon = [
     "optimum>=1.23.0",

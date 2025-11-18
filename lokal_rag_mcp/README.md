@@ -380,6 +380,25 @@ mypy lokal_rag_mcp/
    python -m lokal_rag_mcp.server --rerank-device cpu --test
    ```
 
+### Missing einops Package
+
+**Problem:** Error when loading re-ranker model:
+```
+This modeling file requires the following packages that were not found in your environment: einops.
+Run `pip install einops`
+```
+
+**Solution:**
+
+The `einops` package is required by jina-reranker-v2. It should be installed automatically, but if not:
+
+```bash
+pip install einops>=0.8.0
+
+# Or reinstall with re-ranking dependencies
+pip install -e ".[rerank]" --upgrade
+```
+
 ### Custom Code Warning
 
 **Problem:** Error about custom code when loading jina-reranker model:
