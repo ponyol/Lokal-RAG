@@ -32,6 +32,8 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
+from .query_utils import fn_expand_query_with_dates
+
 logger = logging.getLogger(__name__)
 
 
@@ -114,10 +116,25 @@ class SearchPipeline:
         # Determine if we should re-rank
         should_rerank = enable_rerank and self.reranker is not None
 
+        # ============================================================================
+        # Query Expansion for Date-Based Searches
+        # ============================================================================
+
+        # Expand query with date variations for better BM25 matching
+        # This is CRITICAL for queries like "документы за октябрь"
+        # because documents contain dates in genitive case: "8 октября 2025"
+        expanded_query = fn_expand_query_with_dates(query)
+
+        # DEBUG: Log query expansion
+        if expanded_query != query:
+            logger.debug(
+                f"QUERY_EXPANDED: '{query[:100]}...' → '{expanded_query[:150]}...'"
+            )
+
         # DEBUG: Log full search parameters
         logger.debug(
-            f"SEARCH_START: query='{query[:100]}...', mode={mode}, "
-            f"initial_limit={initial_limit}, rerank_top_n={rerank_top_n}, "
+            f"SEARCH_START: query='{query[:100]}...', expanded='{expanded_query[:100]}...', "
+            f"mode={mode}, initial_limit={initial_limit}, rerank_top_n={rerank_top_n}, "
             f"enable_rerank={enable_rerank}, should_rerank={should_rerank}, "
             f"filter_tags={filter_tags}, filter_type={filter_type}, "
             f"include_scores={include_scores}, reranker_available={self.reranker is not None}"
@@ -129,13 +146,16 @@ class SearchPipeline:
 
         stage1_start = time.time()
 
-        # Call storage service search
+        # Call storage service search with EXPANDED query
         # NOTE: We request more documents if re-ranking is enabled
         stage1_limit = initial_limit if should_rerank else rerank_top_n
 
         try:
             stage1_results = self._execute_stage1(
-                query=query, mode=mode, limit=stage1_limit, filter_tags=filter_tags
+                query=expanded_query,  # ← USE EXPANDED QUERY!
+                mode=mode,
+                limit=stage1_limit,
+                filter_tags=filter_tags
             )
         except Exception as e:
             logger.error(f"Stage 1 search failed: {e}")
