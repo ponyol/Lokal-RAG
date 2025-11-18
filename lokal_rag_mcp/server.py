@@ -98,12 +98,15 @@ def lokal_rag_search(
     filter_tags: Optional[List[str]] = None,
     filter_type: Optional[str] = None,
     include_scores: bool = False,
+    language: str = "ru",
+    validate_language: bool = True,
 ) -> Dict[str, Any]:
     """
-    Universal search with optional two-stage re-ranking for maximum precision.
+    Universal search with optional two-stage re-ranking and language validation.
 
     Stage 1: Hybrid search (BM25 + Vector) for broad recall
     Stage 2: Cross-Encoder re-ranking for precision
+    Language Check: Validates query language matches knowledge base language
 
     Args:
         query: Search query (required)
@@ -114,15 +117,22 @@ def lokal_rag_search(
         filter_tags: Filter by tags (optional, list of strings)
         filter_type: Document type filter - "document", "note", or None for all (default: None)
         include_scores: Include Stage 1 & 2 scores in metadata (default: False)
+        language: Knowledge base language - "ru" or "en" (default: "ru" for Russian documents)
+        validate_language: Enable language validation (default: True)
 
     Returns:
         Dict with:
             - results: List of documents with scores and metadata
             - search_info: Search metadata (timings, counts, etc.)
 
+        If language mismatch:
+            - results: Empty list
+            - search_info: Contains error="language_mismatch" with detected_language and suggestion
+
     IMPORTANT:
     - Search is ALWAYS hybrid (BM25+Vector), the 'mode' parameter is ignored
     - Use 'filter_type' to filter by document type, not as a search mode
+    - Language validation prevents poor results from mismatched query/knowledge base languages
 
     Example:
         Basic search with re-ranking:
@@ -161,10 +171,11 @@ def lokal_rag_search(
         f"MCP_TOOL_CALL: lokal_rag_search | query='{query}', mode={mode}, "
         f"initial_limit={initial_limit}, rerank_top_n={rerank_top_n}, "
         f"enable_rerank={enable_rerank}, filter_tags={filter_tags}, "
-        f"filter_type={filter_type}, include_scores={include_scores}"
+        f"filter_type={filter_type}, include_scores={include_scores}, "
+        f"language={language}, validate_language={validate_language}"
     )
 
-    logger.info(f"Search query: '{query}', mode: {mode}, rerank: {enable_rerank}")
+    logger.info(f"Search query: '{query}', mode: {mode}, rerank: {enable_rerank}, language: {language}")
 
     try:
         result = _search_pipeline.search(
@@ -176,6 +187,8 @@ def lokal_rag_search(
             filter_tags=filter_tags,
             filter_type=filter_type,
             include_scores=include_scores,
+            language=language,  # type: ignore
+            validate_language=validate_language,
         )
 
         logger.info(

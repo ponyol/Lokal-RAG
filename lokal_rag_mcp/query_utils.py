@@ -6,7 +6,124 @@ These utilities improve search quality, especially for date-based queries.
 """
 
 import re
-from typing import Optional
+from typing import Literal, Optional
+
+
+def detect_query_language(query: str) -> Literal["ru", "en", "mixed"]:
+    """
+    Detect the primary language of a search query.
+
+    Uses simple heuristic based on character sets:
+    - Cyrillic characters → Russian
+    - Latin characters → English
+    - Mix of both → Mixed
+
+    Args:
+        query: The search query text
+
+    Returns:
+        "ru" if primarily Russian (Cyrillic)
+        "en" if primarily English (Latin)
+        "mixed" if contains significant amounts of both
+
+    Example:
+        >>> detect_query_language("документы за октябрь")
+        'ru'
+        >>> detect_query_language("documents in october")
+        'en'
+        >>> detect_query_language("документы machine learning")
+        'mixed'
+        >>> detect_query_language("октябрь 2024")
+        'ru'
+    """
+    # Count Cyrillic characters (Russian alphabet)
+    cyrillic_count = len(re.findall(r'[а-яёА-ЯЁ]', query))
+
+    # Count Latin characters (English alphabet)
+    latin_count = len(re.findall(r'[a-zA-Z]', query))
+
+    # If no alphabetic characters, return "en" as default
+    if cyrillic_count == 0 and latin_count == 0:
+        return "en"
+
+    # Calculate percentages
+    total_alpha = cyrillic_count + latin_count
+    cyrillic_percent = cyrillic_count / total_alpha if total_alpha > 0 else 0
+    latin_percent = latin_count / total_alpha if total_alpha > 0 else 0
+
+    # If more than 20% of characters are from the other alphabet, it's mixed
+    if cyrillic_percent > 0.2 and latin_percent > 0.2:
+        return "mixed"
+
+    # Primary language is whichever has more characters
+    if cyrillic_count > latin_count:
+        return "ru"
+    else:
+        return "en"
+
+
+def validate_query_language(
+    query: str,
+    expected_language: Literal["ru", "en"],
+) -> Optional[dict]:
+    """
+    Validate that query language matches expected language.
+
+    Returns None if valid, or an error dict if language mismatch.
+
+    Args:
+        query: The search query
+        expected_language: Expected language ("ru" or "en")
+
+    Returns:
+        None if query language matches expected_language
+        Error dict with details if language mismatch
+
+    Example:
+        >>> validate_query_language("документы за октябрь", "ru")
+        None  # Valid
+
+        >>> error = validate_query_language("documents in october", "ru")
+        >>> error["error"]
+        'language_mismatch'
+        >>> error["detected_language"]
+        'en'
+    """
+    detected = detect_query_language(query)
+
+    # Mixed queries are allowed (e.g., "документы machine learning")
+    if detected == "mixed":
+        return None
+
+    # Check if detected language matches expected
+    if detected != expected_language:
+        # Create helpful error message
+        if expected_language == "ru":
+            suggestion = (
+                "Пожалуйста, переведите запрос на русский язык. "
+                "База знаний содержит только русские документы."
+            )
+            suggestion_en = (
+                "Please translate your query to Russian. "
+                "The knowledge base contains only Russian documents."
+            )
+        else:  # expected_language == "en"
+            suggestion = (
+                "Please translate your query to English. "
+                "The knowledge base contains only English documents."
+            )
+            suggestion_en = suggestion
+
+        return {
+            "error": "language_mismatch",
+            "detected_language": detected,
+            "expected_language": expected_language,
+            "original_query": query,
+            "suggestion_ru": suggestion if expected_language == "ru" else None,
+            "suggestion_en": suggestion_en,
+        }
+
+    return None
 
 
 def fn_expand_query_with_dates(query: str) -> str:

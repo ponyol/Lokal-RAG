@@ -30,9 +30,9 @@ Example:
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
-from .query_utils import fn_expand_query_with_dates
+from .query_utils import fn_expand_query_with_dates, validate_query_language
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +75,11 @@ class SearchPipeline:
         filter_tags: Optional[List[str]] = None,
         filter_type: Optional[str] = None,
         include_scores: bool = False,
+        language: Literal["ru", "en"] = "ru",
+        validate_language: bool = True,
     ) -> Dict[str, Any]:
         """
-        Execute two-stage search with optional re-ranking.
+        Execute two-stage search with optional re-ranking and language validation.
 
         Args:
             query: Search query
@@ -88,16 +90,23 @@ class SearchPipeline:
             filter_tags: Optional list of tags to filter by
             filter_type: Optional document type filter ("document", "note", or None for all)
             include_scores: Include Stage 1 and Stage 2 scores in results
+            language: Expected language of the knowledge base ("ru" or "en", default: "ru")
+            validate_language: Enable language validation (default: True)
 
         Returns:
             Dict with:
                 - results: List of documents with scores and metadata
                 - search_info: Metadata about the search (timings, counts, etc.)
 
+            If language mismatch detected:
+                - results: Empty list
+                - search_info: Contains error details with detected_language and suggestion
+
         IMPORTANT:
         - StorageService.search_similar_documents() ALWAYS uses hybrid search (BM25+Vector)
         - The 'mode' parameter is kept for API compatibility but is currently ignored
         - The 'filter_type' parameter filters by document type (document/note), not search mode
+        - Language validation helps users avoid poor results from mismatched languages
 
         NOTE: If enable_rerank=False or reranker is None, only Stage 1 runs.
 
@@ -117,6 +126,31 @@ class SearchPipeline:
             5
         """
         total_start = time.time()
+
+        # ============================================================================
+        # Language Validation
+        # ============================================================================
+
+        if validate_language:
+            language_error = validate_query_language(query, language)
+            if language_error:
+                logger.warning(
+                    f"LANGUAGE_MISMATCH: Query language '{language_error['detected_language']}' "
+                    f"does not match expected '{language}'. Query: '{query[:100]}...'"
+                )
+                return {
+                    "results": [],
+                    "search_info": {
+                        "query": query,
+                        "mode": mode,
+                        "stage1_candidates": 0,
+                        "stage2_reranked": 0,
+                        "total_returned": 0,
+                        "rerank_enabled": False,
+                        "search_time_ms": 0,
+                        **language_error,  # Include all error details
+                    },
+                }
 
         # Determine if we should re-rank
         should_rerank = enable_rerank and self.reranker is not None
