@@ -88,42 +88,65 @@ def validate_query_language(
         'language_mismatch'
         >>> error["detected_language"]
         'en'
+
+        >>> validate_query_language("память Claude команды", "ru")
+        None  # Valid - mixed, but majority is Russian
+
+        >>> error = validate_query_language("память Claude команды", "en")
+        >>> error["error"]
+        'language_mismatch'
+        >>> error["detected_language"]
+        'mixed_ru'  # Mixed but majority Russian
     """
     detected = detect_query_language(query)
 
-    # Mixed queries are allowed (e.g., "документы machine learning")
+    # Determine the actual language to validate against
     if detected == "mixed":
-        return None
+        # For mixed queries, check majority language
+        cyrillic_count = len(re.findall(r'[а-яёА-ЯЁ]', query))
+        latin_count = len(re.findall(r'[a-zA-Z]', query))
 
-    # Check if detected language matches expected
-    if detected != expected_language:
-        # Create helpful error message
-        if expected_language == "ru":
-            suggestion = (
-                "Пожалуйста, переведите запрос на русский язык. "
-                "База знаний содержит только русские документы."
-            )
-            suggestion_en = (
-                "Please translate your query to Russian. "
-                "The knowledge base contains only Russian documents."
-            )
-        else:  # expected_language == "en"
-            suggestion = (
-                "Please translate your query to English. "
-                "The knowledge base contains only English documents."
-            )
-            suggestion_en = suggestion
+        majority_language = "ru" if cyrillic_count > latin_count else "en"
 
-        return {
-            "error": "language_mismatch",
-            "detected_language": detected,
-            "expected_language": expected_language,
-            "original_query": query,
-            "suggestion_ru": suggestion if expected_language == "ru" else None,
-            "suggestion_en": suggestion_en,
-        }
+        # If majority matches expected, allow it
+        if majority_language == expected_language:
+            return None  # Valid mixed query
 
-    return None
+        # Otherwise, it's a mismatch
+        detected_label = f"mixed_{majority_language}"
+    else:
+        # Pure language - must match exactly
+        if detected == expected_language:
+            return None  # Valid
+
+        detected_label = detected
+
+    # If we got here, there's a language mismatch
+    # Create helpful error message
+    if expected_language == "ru":
+        suggestion = (
+            "Пожалуйста, переведите запрос на русский язык. "
+            "База знаний содержит только русские документы."
+        )
+        suggestion_en = (
+            "Please translate your query to Russian. "
+            "The knowledge base contains only Russian documents."
+        )
+    else:  # expected_language == "en"
+        suggestion = (
+            "Please translate your query to English. "
+            "The knowledge base contains only English documents."
+        )
+        suggestion_en = suggestion
+
+    return {
+        "error": "language_mismatch",
+        "detected_language": detected_label,
+        "expected_language": expected_language,
+        "original_query": query,
+        "suggestion_ru": suggestion if expected_language == "ru" else None,
+        "suggestion_en": suggestion_en,
+    }
 
 
 def fn_expand_query_with_dates(query: str) -> str:
