@@ -96,11 +96,6 @@ class TogaAppOrchestrator:
         # Start the queue checker
         self.check_view_queue()
 
-        # Initialize UI (deferred to ensure widgets are ready)
-        # Use a small delay to ensure UI is fully rendered
-        import threading
-        threading.Timer(0.1, self._init_ui).start()
-
     def setup_callbacks(self) -> None:
         """
         Set up View callbacks to Controller methods.
@@ -113,6 +108,7 @@ class TogaAppOrchestrator:
         self.view.on_load_settings_callback = self.on_load_settings
         self.view.on_save_note_callback = self.on_save_note
         self.view.on_clear_chat_callback = self.on_clear_chat  # V2: Added
+        self.view.on_ui_ready_callback = self._init_ui  # V2: Called when UI is ready
 
         logger.info("Callbacks set up successfully")
 

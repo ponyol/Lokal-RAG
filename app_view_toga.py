@@ -81,6 +81,7 @@ class LokalRAGApp(toga.App):
         self.on_load_settings_callback: Optional[Callable] = None
         self.on_save_note_callback: Optional[Callable] = None
         self.on_clear_chat_callback: Optional[Callable] = None  # NEW
+        self.on_ui_ready_callback: Optional[Callable] = None  # NEW: Called when UI is ready
 
         # Source type tracking
         self.source_type_value = "pdf"  # Default to PDF
@@ -121,6 +122,11 @@ class LokalRAGApp(toga.App):
         self.main_window.show()
 
         logger.info("✓ Toga UI V2 created successfully")
+
+        # Notify controller that UI is ready
+        if self.on_ui_ready_callback:
+            logger.info("Calling UI ready callback...")
+            self.on_ui_ready_callback()
 
     # ========================================================================
     # Tab Creation Methods
