@@ -2167,15 +2167,28 @@ class LokalRAGApp(toga.App):
         # Helper function to convert Toga color to hex string
         def color_to_hex(color):
             """Convert Toga color object to hex string."""
+            # Try the most common methods first
             if hasattr(color, 'hex'):
                 return color.hex
-            # Fallback: try to get rgba values and convert
+            # Toga's rgb() returns an object with rgba property that has r, g, b, a attributes
             elif hasattr(color, 'rgba'):
-                r, g, b, a = color.rgba
-                return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
-            else:
-                # Default fallback
-                return "#000000"
+                rgba = color.rgba
+                # rgba is an object with r, g, b, a attributes (not a tuple)
+                if hasattr(rgba, 'r'):
+                    r = int(rgba.r * 255) if rgba.r <= 1 else int(rgba.r)
+                    g = int(rgba.g * 255) if rgba.g <= 1 else int(rgba.g)
+                    b = int(rgba.b * 255) if rgba.b <= 1 else int(rgba.b)
+                    return f"#{r:02x}{g:02x}{b:02x}"
+            # Last resort: convert to string and try to parse
+            color_str = str(color)
+            if color_str.startswith('rgb('):
+                # Parse "rgb(255, 255, 255)"
+                values = color_str.replace('rgb(', '').replace(')', '').split(',')
+                if len(values) >= 3:
+                    r, g, b = [int(v.strip()) for v in values[:3]]
+                    return f"#{r:02x}{g:02x}{b:02x}"
+            # Default fallback
+            return "#000000"
 
         # Get current theme colors
         theme = self.current_theme
