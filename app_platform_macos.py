@@ -11,132 +11,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Global storage for delegate callbacks
-# Using dict to map delegate instance ID to callback data
-_delegate_callbacks = {}
-_delegate_counter = 0
-
-# Import and define delegate class at module level (once)
-_ChatTextViewDelegate = None
-
-def _get_delegate_class():
-    """Get or create the ChatTextViewDelegate class (singleton)."""
-    global _ChatTextViewDelegate
-
-    if _ChatTextViewDelegate is not None:
-        return _ChatTextViewDelegate
-
-    # Only create on macOS
-    if sys.platform != "darwin":
-        return None
-
-    try:
-        from rubicon.objc import ObjCClass, objc_method, ObjCInstance
-        from rubicon.objc.runtime import objc_id, send_super
-
-        NSObject = ObjCClass("NSObject")
-        NSEvent = ObjCClass("NSEvent")
-
-        # Create custom delegate class as NSObject subclass
-        class ChatTextViewDelegate(NSObject):
-            """
-            Custom NSTextView delegate that intercepts keyboard events.
-            """
-
-            @objc_method
-            def init(self):
-                """Initialize the delegate."""
-                self = ObjCInstance(send_super(__class__, self, 'init', restype=objc_id, argtypes=[]))
-                logger.info(f"ChatTextViewDelegate.init() called, id={id(self)}")
-                return self
-
-            @objc_method
-            def textViewDidChangeSelection_(self, notification) -> None:
-                """Called when text selection changes (for testing delegate works)."""
-                logger.debug("✓ Delegate is working - selection changed")
-
-            @objc_method
-            def textView_doCommandBySelector_(self, text_view, selector) -> bool:
-                """
-                Handle keyboard commands in NSTextView.
-
-                Returns:
-                    True if we handled the command, False to use default behavior
-                """
-                try:
-                    logger.info(f"🔑 textView_doCommandBySelector_ called! selector={selector}")
-
-                    # Get callback data from global storage using self's address
-                    delegate_id = id(self)
-                    if delegate_id not in _delegate_callbacks:
-                        logger.warning(f"Delegate {delegate_id} not found in callbacks")
-                        return False
-
-                    callback_data = _delegate_callbacks[delegate_id]
-                    send_func = callback_data['send_func']
-                    send_mode = callback_data['send_mode']
-                    original_delegate = callback_data.get('original_delegate')
-
-                    # Get selector name
-                    selector_name = str(selector)
-                    logger.info(f"Selector received: {selector_name}")
-
-                    # We only care about Enter/Return key
-                    if "insertNewline" not in selector_name:
-                        # Not our selector, delegate to original if exists
-                        if original_delegate and hasattr(original_delegate, 'textView_doCommandBySelector_'):
-                            logger.debug(f"Delegating {selector_name} to original delegate")
-                            return original_delegate.textView_doCommandBySelector_(text_view, selector)
-                        return False
-
-                    # Get current event to check modifier flags
-                    current_event = NSEvent.currentEvent()
-
-                    if current_event is None:
-                        logger.debug("No current event")
-                        return False
-
-                    # Check modifier flags
-                    # NSEventModifierFlagShift = 1 << 17 (131072)
-                    modifier_flags = int(current_event.modifierFlags)
-                    shift_pressed = (modifier_flags & (1 << 17)) != 0
-
-                    logger.info(f"Shift pressed: {shift_pressed}, mode: {send_mode}")
-
-                    # Determine if we should send based on mode
-                    should_send = False
-
-                    if send_mode == "shift_enter":
-                        # Send on Shift+Enter, regular Enter adds newline
-                        should_send = shift_pressed
-                    else:  # "enter"
-                        # Send on Enter, Shift+Enter adds newline
-                        should_send = not shift_pressed
-
-                    if should_send:
-                        # Trigger send callback
-                        logger.info(f"🚀 Sending message via {send_mode} shortcut")
-                        send_func()
-                        return True  # Consume the event
-                    else:
-                        # Let default behavior happen (insert newline)
-                        logger.info("Allowing newline insertion")
-                        # Delegate to original if exists
-                        if original_delegate and hasattr(original_delegate, 'textView_doCommandBySelector_'):
-                            return original_delegate.textView_doCommandBySelector_(text_view, selector)
-                        return False
-
-                except Exception as e:
-                    logger.error(f"Error in keyboard handler: {e}", exc_info=True)
-                    return False
-
-        _ChatTextViewDelegate = ChatTextViewDelegate
-        logger.info("Created ChatTextViewDelegate class")
-        return ChatTextViewDelegate
-
-    except Exception as e:
-        logger.error(f"Failed to create delegate class: {e}", exc_info=True)
-        return None
+# Global storage for keyboard handler callback
+_keyboard_handler_callback = None
+_keyboard_handler_mode = None
 
 
 def setup_chat_input_keyboard_handler(
@@ -147,8 +24,8 @@ def setup_chat_input_keyboard_handler(
     """
     Set up keyboard handler for chat input on macOS.
 
-    This function uses native macOS NSTextView delegate to intercept
-    keyboard events and trigger message sending based on user preference.
+    This function intercepts keyDown events in TogaTextView to handle
+    Enter/Shift+Enter for sending messages.
 
     Args:
         chat_input: Toga MultilineTextInput widget
@@ -161,81 +38,108 @@ def setup_chat_input_keyboard_handler(
         return
 
     try:
-        global _delegate_callbacks
+        from rubicon.objc import ObjCClass, objc_method, ObjCInstance, Block
+        from rubicon.objc.runtime import objc_id, SEL, libobjc
+        from ctypes import c_void_p, c_bool
 
-        # Get the delegate class (created once at module level)
-        ChatTextViewDelegate = _get_delegate_class()
-        if ChatTextViewDelegate is None:
-            logger.warning("Failed to get delegate class")
-            return
+        global _keyboard_handler_callback, _keyboard_handler_mode
 
-        # Get the native widget from Toga - might be NSScrollView or NSTextView
+        # Store callback globally
+        _keyboard_handler_callback = send_callback
+        _keyboard_handler_mode = send_key
+
+        NSEvent = ObjCClass("NSEvent")
+
+        # Get the native widget
         native_widget = chat_input._impl.native
+        logger.info(f"Native widget: {native_widget.className if hasattr(native_widget, 'className') else type(native_widget)}")
 
-        logger.info(f"Native widget type: {type(native_widget)}, class: {native_widget.__class__.__name__ if hasattr(native_widget, '__class__') else 'unknown'}")
-
-        # Check what ObjC class this actually is
-        from rubicon.objc import ObjCClass
-        try:
-            widget_class_name = native_widget.className if hasattr(native_widget, 'className') else str(type(native_widget))
-            logger.info(f"Native widget ObjC class: {widget_class_name}")
-        except:
-            pass
-
-        # MultilineTextInput uses NSScrollView containing NSTextView
-        # Try to get the documentView which is the actual NSTextView
+        # Get TogaTextView
         native_text_view = None
-
         if hasattr(native_widget, 'documentView'):
-            # This is an NSScrollView, get the text view inside
             native_text_view = native_widget.documentView
-            logger.info(f"Found documentView: {type(native_text_view)}")
-
-            # Check documentView's class
-            try:
-                doc_class_name = native_text_view.className if hasattr(native_text_view, 'className') else str(type(native_text_view))
-                logger.info(f"DocumentView ObjC class: {doc_class_name}")
-            except:
-                pass
-        elif hasattr(native_widget, 'delegate'):
-            # This is already an NSTextView
-            native_text_view = native_widget
-            logger.info("Native widget is already NSTextView")
+            logger.info(f"DocumentView: {native_text_view.className if hasattr(native_text_view, 'className') else type(native_text_view)}")
         else:
-            logger.warning(f"Could not find NSTextView in widget hierarchy")
+            logger.warning("Could not find documentView")
             return
 
-        # Verify we have a text view with delegate support
-        if not hasattr(native_text_view, 'delegate'):
-            logger.warning(f"Text view doesn't have delegate property: {type(native_text_view)}")
+        # Get TogaTextView class
+        TogaTextView = ObjCClass(native_text_view.className)
+
+        # Check if we already swizzled
+        if hasattr(TogaTextView, '_lokal_rag_keydown_swizzled'):
+            logger.info("TogaTextView already swizzled, updating callback")
             return
 
-        # Check if there's already a delegate
-        existing_delegate = native_text_view.delegate
-        logger.info(f"Existing delegate: {existing_delegate}")
+        # Store original keyDown implementation
+        original_keydown = TogaTextView.instancemethod('keyDown:')
 
-        # Create delegate instance
-        delegate = ChatTextViewDelegate.alloc().init()
+        @objc_method
+        def lokal_rag_keyDown_(self, event):
+            """
+            Replacement keyDown: method that intercepts Enter key.
+            """
+            try:
+                global _keyboard_handler_callback, _keyboard_handler_mode
 
-        # Store callback data in global dict
-        delegate_id = id(delegate)
-        _delegate_callbacks[delegate_id] = {
-            'send_func': send_callback,
-            'send_mode': send_key,
-            'original_delegate': existing_delegate  # Save original delegate
-        }
+                # Get key code
+                key_code = event.keyCode
+                # Enter key = 36, Return key = 76
+                if key_code in (36, 76):
+                    # Check modifier flags
+                    modifier_flags = int(event.modifierFlags)
+                    shift_pressed = (modifier_flags & (1 << 17)) != 0
 
-        # Set the delegate
-        native_text_view.delegate = delegate
+                    logger.info(f"🔑 Enter key pressed! keyCode={key_code}, shift={shift_pressed}, mode={_keyboard_handler_mode}")
 
-        logger.info(f"✓ macOS keyboard handler installed (mode: {send_key}, delegate_id: {delegate_id})")
-        logger.info(f"  Text view: {native_text_view}")
-        logger.info(f"  Delegate set to: {native_text_view.delegate}")
+                    # Determine if we should send
+                    should_send = False
+                    if _keyboard_handler_mode == "shift_enter":
+                        should_send = shift_pressed
+                    else:  # "enter"
+                        should_send = not shift_pressed
+
+                    if should_send and _keyboard_handler_callback:
+                        logger.info(f"🚀 Sending message via keyboard shortcut")
+                        _keyboard_handler_callback()
+                        return  # Don't call original (consume event)
+
+                # Not our event or not sending - call original implementation
+                original_keydown(self, event)
+
+            except Exception as e:
+                logger.error(f"Error in keyDown handler: {e}", exc_info=True)
+                # Fall back to original
+                original_keydown(self, event)
+
+        # Swizzle the method
+        try:
+            # Add our method to the class
+            TogaTextView.lokal_rag_keyDown_ = lokal_rag_keyDown_
+
+            # Get method implementation pointers
+            original_method = libobjc.class_getInstanceMethod(
+                TogaTextView.ptr,
+                SEL(b'keyDown:')
+            )
+            swizzled_method = libobjc.class_getInstanceMethod(
+                TogaTextView.ptr,
+                SEL(b'lokal_rag_keyDown:')
+            )
+
+            if original_method and swizzled_method:
+                # Swap implementations
+                libobjc.method_exchangeImplementations(original_method, swizzled_method)
+                TogaTextView._lokal_rag_keydown_swizzled = True
+                logger.info(f"✓ Successfully swizzled TogaTextView.keyDown: (mode: {send_key})")
+            else:
+                logger.warning(f"Could not get method pointers for swizzling")
+
+        except Exception as e:
+            logger.error(f"Failed to swizzle keyDown: {e}", exc_info=True)
 
     except ImportError as e:
         logger.warning(f"Could not import rubicon.objc: {e}")
-    except AttributeError as e:
-        logger.warning(f"Could not access native widget: {e}")
     except Exception as e:
         logger.error(f"Failed to setup macOS keyboard handler: {e}", exc_info=True)
 
@@ -248,14 +152,14 @@ def update_chat_input_send_mode(
     """
     Update the send mode for an already configured chat input.
 
-    This re-applies the keyboard handler with new settings.
-    Useful when user changes settings without restarting the app.
-
     Args:
         chat_input: Toga MultilineTextInput widget
         send_callback: Function to call when send key is pressed
         send_key: "shift_enter" or "enter" - determines send behavior
     """
-    # Just re-run the setup (it will replace the delegate)
-    setup_chat_input_keyboard_handler(chat_input, send_callback, send_key)
-    logger.info(f"Updated chat input send mode to: {send_key}")
+    global _keyboard_handler_callback, _keyboard_handler_mode
+
+    _keyboard_handler_callback = send_callback
+    _keyboard_handler_mode = send_key
+
+    logger.info(f"Updated keyboard handler (mode: {send_key})")
