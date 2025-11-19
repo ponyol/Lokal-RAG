@@ -407,18 +407,24 @@ LANGUAGE DETECTION AND RESPONSE:
 
 TASK:
 Answer the user's question based on the provided context from the document database.
+- Use ALL available context chunks when answering
 - If the context contains the answer, provide it clearly
 - If the context doesn't contain enough information, say so (in the same language as the question)
 - Be accurate and helpful
 
 RESPONSE LENGTH:
 - For general questions: Provide concise, focused answers
-- If the user explicitly requests full content (e.g., "выведи полностью", "show full document", "give me all details"):
-  * Provide complete information from the available context
-  * Include all relevant details from the retrieved documents
-  * Do not summarize - output everything available
+- If the user explicitly requests full content (e.g., "выведи полностью", "покажи весь документ", "show full document", "give me all details", "дай полное содержание"):
+  * OUTPUT EVERYTHING from ALL available document chunks
+  * Combine all chunks sequentially to reconstruct the full document
+  * Include ALL text from ALL chunks - DO NOT summarize or omit anything
+  * Preserve structure, headings, lists, and formatting from the source
+  * If you have 10, 20, or more chunks - use them ALL
 
-IMPORTANT: Always match your response language to the user's question language!"""
+IMPORTANT:
+- The document chunks you receive are parts of the SAME document
+- When asked for "full content", you MUST output ALL chunks combined
+- Always match your response language to the user's question language!"""
 
 VISION_SYSTEM_PROMPT = """You are an expert at analyzing images from documents.
 

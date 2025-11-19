@@ -1924,12 +1924,12 @@ def fn_get_rag_response(
         >>> answer = fn_get_rag_response("What is Python?", docs, config, history)
     """
     # Format the context from retrieved documents
-    context = "\n\n".join(
-        [
-            f"[Source: {doc.metadata.get('source', 'unknown')}]\n{doc.page_content}"
-            for doc in retrieved_docs
-        ]
-    )
+    context_chunks = []
+    for i, doc in enumerate(retrieved_docs, 1):
+        source = doc.metadata.get('source', 'unknown')
+        context_chunks.append(f"[Document Chunk {i}/{len(retrieved_docs)} - Source: {source}]\n{doc.page_content}")
+
+    context = "\n\n---\n\n".join(context_chunks)
 
     # Format chat history if available
     history_text = ""
@@ -1946,7 +1946,9 @@ def fn_get_rag_response(
             history_text = "\n\nPrevious conversation:\n" + "\n".join(history_lines) + "\n"
 
     # Construct the prompt
-    prompt = f"""Context:
+    prompt = f"""You have access to {len(retrieved_docs)} document chunks from the knowledge base.
+
+Context from database:
 {context}{history_text}
 
 Question: {query}
