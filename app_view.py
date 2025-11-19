@@ -948,18 +948,16 @@ class LokalRAGApp(toga.App):
             container
         )
 
-        ollama_url_box = self._create_input_row(
+        ollama_url_box, self.ollama_url_input = self._create_input_row(
             "Base URL:",
             "http://localhost:11434"
         )
-        self.ollama_url_input = ollama_url_box.children[1]
         ollama_section.add(ollama_url_box)
 
-        ollama_model_box = self._create_input_row(
+        ollama_model_box, self.ollama_model_input = self._create_input_row(
             "Model Name:",
             "qwen2.5:7b-instruct"
         )
-        self.ollama_model_input = ollama_model_box.children[1]
         ollama_section.add(ollama_model_box)
 
         # ---- LM Studio Settings ----
@@ -968,18 +966,16 @@ class LokalRAGApp(toga.App):
             container
         )
 
-        lmstudio_url_box = self._create_input_row(
+        lmstudio_url_box, self.lmstudio_url_input = self._create_input_row(
             "Base URL:",
             "http://localhost:1234/v1"
         )
-        self.lmstudio_url_input = lmstudio_url_box.children[1]
         lmstudio_section.add(lmstudio_url_box)
 
-        lmstudio_model_box = self._create_input_row(
+        lmstudio_model_box, self.lmstudio_model_input = self._create_input_row(
             "Model Name:",
             "meta-llama-3.1-8b-instruct"
         )
-        self.lmstudio_model_input = lmstudio_model_box.children[1]
         lmstudio_section.add(lmstudio_model_box)
 
         # ---- Claude Settings ----
@@ -988,12 +984,11 @@ class LokalRAGApp(toga.App):
             container
         )
 
-        claude_key_box = self._create_input_row(
+        claude_key_box, self.claude_api_key_input = self._create_input_row(
             "API Key:",
             "sk-ant-...",
             is_password=True
         )
-        self.claude_api_key_input = claude_key_box.children[1]
         claude_section.add(claude_key_box)
 
         claude_help = toga.Label(
@@ -1002,11 +997,10 @@ class LokalRAGApp(toga.App):
         )
         claude_section.add(claude_help)
 
-        claude_model_box = self._create_input_row(
+        claude_model_box, self.claude_model_input = self._create_input_row(
             "Model:",
             "claude-3-5-sonnet-20241022"
         )
-        self.claude_model_input = claude_model_box.children[1]
         claude_section.add(claude_model_box)
 
         # ---- Gemini Settings ----
@@ -1015,12 +1009,11 @@ class LokalRAGApp(toga.App):
             container
         )
 
-        gemini_key_box = self._create_input_row(
+        gemini_key_box, self.gemini_api_key_input = self._create_input_row(
             "API Key:",
             "AIza...",
             is_password=True
         )
-        self.gemini_api_key_input = gemini_key_box.children[1]
         gemini_section.add(gemini_key_box)
 
         gemini_help = toga.Label(
@@ -1029,11 +1022,10 @@ class LokalRAGApp(toga.App):
         )
         gemini_section.add(gemini_help)
 
-        gemini_model_box = self._create_input_row(
+        gemini_model_box, self.gemini_model_input = self._create_input_row(
             "Model:",
             "gemini-2.5-pro-preview-03-25"
         )
-        self.gemini_model_input = gemini_model_box.children[1]
         gemini_section.add(gemini_model_box)
 
         # ---- Mistral Settings ----
@@ -1042,12 +1034,11 @@ class LokalRAGApp(toga.App):
             container
         )
 
-        mistral_key_box = self._create_input_row(
+        mistral_key_box, self.mistral_api_key_input = self._create_input_row(
             "API Key:",
             "...",
             is_password=True
         )
-        self.mistral_api_key_input = mistral_key_box.children[1]
         mistral_section.add(mistral_key_box)
 
         mistral_help = toga.Label(
@@ -1056,11 +1047,10 @@ class LokalRAGApp(toga.App):
         )
         mistral_section.add(mistral_help)
 
-        mistral_model_box = self._create_input_row(
+        mistral_model_box, self.mistral_model_input = self._create_input_row(
             "Model:",
             "mistral-small-latest"
         )
-        self.mistral_model_input = mistral_model_box.children[1]
         mistral_section.add(mistral_model_box)
 
         # ---- Vision Settings ----
@@ -1075,25 +1065,22 @@ class LokalRAGApp(toga.App):
         )
         vision_section.add(vision_help)
 
-        vision_provider_box = self._create_input_row(
+        vision_provider_box, self.vision_provider_input = self._create_input_row(
             "Vision Provider:",
             "ollama"
         )
-        self.vision_provider_input = vision_provider_box.children[1]
         vision_section.add(vision_provider_box)
 
-        vision_url_box = self._create_input_row(
+        vision_url_box, self.vision_base_url_input = self._create_input_row(
             "Vision Base URL:",
             "http://localhost:11434"
         )
-        self.vision_base_url_input = vision_url_box.children[1]
         vision_section.add(vision_url_box)
 
-        vision_model_box = self._create_input_row(
+        vision_model_box, self.vision_model_input = self._create_input_row(
             "Vision Model:",
             "granite-docling:258m"
         )
-        self.vision_model_input = vision_model_box.children[1]
         vision_section.add(vision_model_box)
 
         vision_model_help = toga.Label(
@@ -1108,19 +1095,17 @@ class LokalRAGApp(toga.App):
             container
         )
 
-        timeout_box = self._create_input_row(
+        timeout_box, self.timeout_input = self._create_input_row(
             "LLM Request Timeout (seconds):",
             "300"
         )
-        self.timeout_input = timeout_box.children[1]
         general_section.add(timeout_box)
 
         # V2: Translation chunk size (ADDED)
-        chunk_box = self._create_input_row(
+        chunk_box, self.translation_chunk_input = self._create_input_row(
             "Translation Chunk Size (characters):",
             "2000"
         )
-        self.translation_chunk_input = chunk_box.children[1]
         general_section.add(chunk_box)
 
         chunk_help = toga.Label(
@@ -1142,43 +1127,38 @@ class LokalRAGApp(toga.App):
         paths_section.add(paths_help)
 
         # English Vector DB path
-        vector_db_en_box = self._create_input_row(
+        vector_db_en_box, self.vector_db_path_en_input = self._create_input_row(
             "English Vector DB Path:",
             "./chroma_db_en"
         )
-        self.vector_db_path_en_input = vector_db_en_box.children[1]
         paths_section.add(vector_db_en_box)
 
         # Russian Vector DB path
-        vector_db_ru_box = self._create_input_row(
+        vector_db_ru_box, self.vector_db_path_ru_input = self._create_input_row(
             "Russian Vector DB Path:",
             "./chroma_db_ru"
         )
-        self.vector_db_path_ru_input = vector_db_ru_box.children[1]
         paths_section.add(vector_db_ru_box)
 
         # Markdown output path
-        markdown_output_box = self._create_input_row(
+        markdown_output_box, self.markdown_output_path_input = self._create_input_row(
             "Markdown Output Path:",
             "./output_markdown"
         )
-        self.markdown_output_path_input = markdown_output_box.children[1]
         paths_section.add(markdown_output_box)
 
         # Changelog path
-        changelog_box = self._create_input_row(
+        changelog_box, self.changelog_path_input = self._create_input_row(
             "Changelog Path:",
             "./changelog"
         )
-        self.changelog_path_input = changelog_box.children[1]
         paths_section.add(changelog_box)
 
         # Notes path
-        notes_box = self._create_input_row(
+        notes_box, self.notes_path_input = self._create_input_row(
             "Notes Path:",
             "./notes"
         )
-        self.notes_path_input = notes_box.children[1]
         paths_section.add(notes_box)
 
         # ---- Chat Settings ----
@@ -1194,11 +1174,10 @@ class LokalRAGApp(toga.App):
         chat_section.add(chat_help)
 
         # Chat context messages limit
-        context_box = self._create_input_row(
+        context_box, self.chat_context_input = self._create_input_row(
             "Context Messages:",
             "10"
         )
-        self.chat_context_input = context_box.children[1]
         chat_section.add(context_box)
 
         context_desc = toga.Label(
@@ -1208,11 +1187,10 @@ class LokalRAGApp(toga.App):
         chat_section.add(context_desc)
 
         # RAG Top K setting
-        rag_topk_box = self._create_input_row(
+        rag_topk_box, self.rag_topk_input = self._create_input_row(
             "RAG Top K:",
             "20"
         )
-        self.rag_topk_input = rag_topk_box.children[1]
         chat_section.add(rag_topk_box)
 
         rag_topk_desc = toga.Label(
@@ -1271,11 +1249,10 @@ class LokalRAGApp(toga.App):
         templates_section.add(template_select_box)
 
         # Template name input
-        template_name_box = self._create_input_row(
+        template_name_box, self.template_name_input = self._create_input_row(
             "Template Name:",
             "Meeting Notes"
         )
-        self.template_name_input = template_name_box.children[1]
         templates_section.add(template_name_box)
 
         # Template content input
@@ -1389,7 +1366,7 @@ class LokalRAGApp(toga.App):
         label_text: str,
         placeholder: str,
         is_password: bool = False
-    ) -> toga.Box:
+    ) -> tuple[toga.Box, toga.Widget]:
         """
         Create an input row with label and text field.
 
@@ -1399,7 +1376,7 @@ class LokalRAGApp(toga.App):
             is_password: Whether to use password input
 
         Returns:
-            toga.Box: The input row
+            tuple: (row_box, input_field) for easy access to both
         """
         row = toga.Box(style=Pack(direction=ROW, margin=5))
 
@@ -1411,24 +1388,18 @@ class LokalRAGApp(toga.App):
         if is_password:
             input_field = toga.PasswordInput(
                 placeholder=placeholder,
-                readonly=False,  # Explicitly set to False for macOS compatibility
-                style=Pack(
-                    flex=1
-                )
+                style=Pack(flex=1)
             )
         else:
             input_field = toga.TextInput(
                 placeholder=placeholder,
-                readonly=False,  # Explicitly set to False for macOS compatibility
-                style=Pack(
-                    flex=1
-                )
+                style=Pack(flex=1)
             )
 
         row.add(label)
         row.add(input_field)
 
-        return row
+        return row, input_field
 
     # ========================================================================
     # Changelog Helper Methods
