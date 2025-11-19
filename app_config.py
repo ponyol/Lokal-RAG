@@ -292,6 +292,9 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
     if "changelog_path" in settings:
         overrides["CHANGELOG_PATH"] = Path(settings["changelog_path"])
 
+    if "notes_path" in settings:
+        overrides["NOTES_DIR"] = Path(settings["notes_path"])
+
     if "database_language" in settings:
         overrides["DATABASE_LANGUAGE"] = settings["database_language"]
 

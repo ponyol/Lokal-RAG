@@ -1134,6 +1134,14 @@ class LokalRAGApp(toga.App):
         self.changelog_path_input = changelog_box.children[1]
         paths_section.add(changelog_box)
 
+        # Notes path
+        notes_box = self._create_input_row(
+            "Notes Path:",
+            "./notes"
+        )
+        self.notes_path_input = notes_box.children[1]
+        paths_section.add(notes_box)
+
         # ---- Action Buttons ----
         button_box = toga.Box(
             style=Pack(
@@ -1553,6 +1561,7 @@ class LokalRAGApp(toga.App):
         - Added: vector_db_path
         - Added: markdown_output_path
         - Added: changelog_path
+        - Added: notes_path
 
         Returns:
             dict: LLM settings with all provider configurations
@@ -1601,6 +1610,7 @@ class LokalRAGApp(toga.App):
             "vector_db_path": self.vector_db_path_input.value or "./lokal_rag_db",  # ← NEW
             "markdown_output_path": self.markdown_output_path_input.value or "./output_markdown",  # ← NEW
             "changelog_path": self.changelog_path_input.value or "./changelog",  # ← NEW
+            "notes_path": self.notes_path_input.value or "./notes",  # ← NEW (notes directory)
             # Database
             "database_language": db_language,
             # Appearance
@@ -1623,7 +1633,7 @@ class LokalRAGApp(toga.App):
         """
         Set LLM settings in the UI.
 
-        V2: Updated to handle new fields (translation_chunk_size, storage paths, vision_mode)
+        V2: Updated to handle new fields (translation_chunk_size, storage paths including notes_path, vision_mode)
 
         Args:
             settings: Dictionary of settings to populate
@@ -1707,6 +1717,10 @@ class LokalRAGApp(toga.App):
         if "changelog_path" in settings:
             self.changelog_path_input.value = settings["changelog_path"]
             logger.info(f"Setting changelog path to: {settings['changelog_path']}")
+
+        if "notes_path" in settings:
+            self.notes_path_input.value = settings["notes_path"]
+            logger.info(f"Setting notes path to: {settings['notes_path']}")
 
         # Database language
         if "database_language" in settings:
