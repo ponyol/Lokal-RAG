@@ -1207,6 +1207,20 @@ class LokalRAGApp(toga.App):
         )
         chat_section.add(context_desc)
 
+        # RAG Top K setting
+        rag_topk_box = self._create_input_row(
+            "RAG Top K:",
+            "20"
+        )
+        self.rag_topk_input = rag_topk_box.children[1]
+        chat_section.add(rag_topk_box)
+
+        rag_topk_desc = toga.Label(
+            "Number of document chunks to retrieve (higher = more context for full documents)",
+            style=Pack(margin_left=5, margin_bottom=10, font_size=9)
+        )
+        chat_section.add(rag_topk_desc)
+
         # Send key preference
         send_key_box = toga.Box(style=Pack(direction=ROW, margin=5))
         send_key_label = toga.Label(
@@ -1911,6 +1925,7 @@ class LokalRAGApp(toga.App):
             "note_templates": self.note_templates,  # ← NEW: list of template dicts
             # Chat Settings (NEW)
             "chat_context_messages": int(self.chat_context_input.value or "10"),  # ← NEW: chat context limit
+            "rag_top_k": int(self.rag_topk_input.value or "20"),  # ← NEW: RAG retrieval count
             "chat_send_key": "shift_enter" if self.chat_send_key_selection.value == "Shift+Enter" else "enter",  # ← NEW: send key preference
             # Database
             "database_language": db_language,
@@ -2039,6 +2054,11 @@ class LokalRAGApp(toga.App):
             context_val = str(settings["chat_context_messages"])
             self.chat_context_input.value = context_val
             logger.info(f"Setting chat context messages to: {context_val}")
+
+        if "rag_top_k" in settings:
+            rag_top_k_val = str(settings["rag_top_k"])
+            self.rag_topk_input.value = rag_top_k_val
+            logger.info(f"Setting RAG top K to: {rag_top_k_val}")
 
         if "chat_send_key" in settings:
             send_key = settings["chat_send_key"]

@@ -339,6 +339,9 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
     if "chat_context_messages" in settings:
         overrides["CHAT_CONTEXT_MESSAGES"] = settings["chat_context_messages"]
 
+    if "rag_top_k" in settings:
+        overrides["RAG_TOP_K"] = settings["rag_top_k"]
+
     if "chat_send_key" in settings:
         overrides["CHAT_SEND_KEY"] = settings["chat_send_key"]
 
