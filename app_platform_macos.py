@@ -40,7 +40,7 @@ def _get_helper_class():
             """Helper class to get IMP for our keyDown method."""
 
             @objc_method
-            def lokal_rag_keyDown_(self, event):
+            def lokalragKeyDown_(self, event):
                 """Our custom keyDown implementation."""
                 try:
                     global _keyboard_handler_callback, _keyboard_handler_mode
@@ -68,12 +68,12 @@ def _get_helper_class():
                             return  # Don't call super (consume event)
 
                     # Not our event - call original implementation via super
-                    send_super(__class__, self, 'lokal_rag_keyDown:', event, restype=None, argtypes=[objc_id])
+                    send_super(__class__, self, 'lokalragKeyDown:', event, restype=None, argtypes=[objc_id])
 
                 except Exception as e:
                     logger.error(f"Error in keyDown handler: {e}", exc_info=True)
                     # Fall back to super
-                    send_super(__class__, self, 'lokal_rag_keyDown:', event, restype=None, argtypes=[objc_id])
+                    send_super(__class__, self, 'lokalragKeyDown:', event, restype=None, argtypes=[objc_id])
 
         _KeyDownHelper = KeyDownHelper
         logger.info("Created KeyDownHelper class")
@@ -164,10 +164,10 @@ def setup_chat_input_keyboard_handler(
                 sel_name = libobjc.sel_getName(sel)
                 logger.info(f"  Method {i}: {sel_name}")
 
-        # Get our method from helper class
+        # Get our method from helper class (lokalragKeyDown_ → lokalragKeyDown:)
         our_method = libobjc.class_getInstanceMethod(
             helper_class_ptr,
-            SEL(b'lokal_rag_keyDown:')
+            SEL(b'lokalragKeyDown:')
         )
 
         # Get original keyDown from target class
@@ -187,22 +187,21 @@ def setup_chat_input_keyboard_handler(
         # Get IMP from our method
         our_imp = libobjc.method_getImplementation(our_method)
 
-        # Try to add our method to target class with original name
-        # This won't work if method exists, but we need to try
+        # Try to add our method to target class
         added = libobjc.class_addMethod(
             target_class_ptr,
-            SEL(b'lokal_rag_keyDown:'),
+            SEL(b'lokalragKeyDown:'),
             our_imp,
             b'v@:@'  # void return, id self, SEL cmd, id event
         )
 
         if added:
-            logger.info("Added lokal_rag_keyDown: to class")
+            logger.info("Added lokalragKeyDown: to class")
 
             # Now swap implementations
             swizzled_method = libobjc.class_getInstanceMethod(
                 target_class_ptr,
-                SEL(b'lokal_rag_keyDown:')
+                SEL(b'lokalragKeyDown:')
             )
 
             if swizzled_method:
