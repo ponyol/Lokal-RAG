@@ -16,6 +16,7 @@ _keyboard_handler_callback = None
 _keyboard_handler_mode = None
 _swizzled_classes = set()
 _KeyDownHelper = None  # Cached helper class
+_chat_input_widget = None  # Reference to the specific chat input widget
 
 
 def _get_helper_class():
@@ -43,7 +44,14 @@ def _get_helper_class():
             def lokalragKeyDown_(self, event):
                 """Our custom keyDown implementation."""
                 try:
-                    global _keyboard_handler_callback, _keyboard_handler_mode
+                    global _keyboard_handler_callback, _keyboard_handler_mode, _chat_input_widget
+
+                    # CRITICAL: Only handle events from the specific chat input widget
+                    # This prevents the handler from affecting other text fields (Settings, etc.)
+                    if _chat_input_widget is not None and self.ptr != _chat_input_widget:
+                        # This is NOT the chat input - pass through to original implementation
+                        send_message(self, 'lokalragKeyDown:', event, restype=None, argtypes=[objc_id])
+                        return
 
                     # Get key code
                     key_code = event.keyCode
@@ -111,7 +119,7 @@ def setup_chat_input_keyboard_handler(
         from rubicon.objc.runtime import objc_id, SEL, libobjc, send_super, send_message
         import ctypes
 
-        global _keyboard_handler_callback, _keyboard_handler_mode, _swizzled_classes
+        global _keyboard_handler_callback, _keyboard_handler_mode, _swizzled_classes, _chat_input_widget
 
         # Store callback globally
         _keyboard_handler_callback = send_callback
@@ -133,6 +141,10 @@ def setup_chat_input_keyboard_handler(
         else:
             logger.warning("Could not find documentView")
             return
+
+        # Store reference to this specific widget (ptr) so we can identify it later
+        _chat_input_widget = native_text_view.ptr
+        logger.info(f"Stored chat input widget reference: {_chat_input_widget}")
 
         # Get the class name for swizzle check
         toga_class_name = str(native_text_view.className)
