@@ -645,6 +645,7 @@ def fn_ensure_directories_exist(config: AppConfig) -> None:
         >>> config = AppConfig()
         >>> fn_ensure_directories_exist(config)
     """
-    config.VECTOR_DB_PATH.mkdir(parents=True, exist_ok=True)
+    config.VECTOR_DB_PATH_EN.mkdir(parents=True, exist_ok=True)
+    config.VECTOR_DB_PATH_RU.mkdir(parents=True, exist_ok=True)
     config.MARKDOWN_OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
     logger.info("All required directories created")
