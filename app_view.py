@@ -1673,11 +1673,12 @@ class LokalRAGApp(toga.App):
                 self.on_send_message_callback()
 
         # Set up macOS handler (no-op on other platforms)
-        setup_chat_input_keyboard_handler(
-            self.chat_input,
-            send_callback,
-            send_key
-        )
+        # TEMPORARY: Disabled to test if this causes Settings readonly issue
+        # setup_chat_input_keyboard_handler(
+        #     self.chat_input,
+        #     send_callback,
+        #     send_key
+        # )
 
     def _on_save_note(self, widget):
         """Handle save note button press."""
