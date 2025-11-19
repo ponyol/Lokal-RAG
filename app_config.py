@@ -13,9 +13,9 @@ Settings can be persisted to and loaded from ~/.lokal-rag/settings.json
 """
 
 import json
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict
 
 
 @dataclass(frozen=True)
@@ -58,6 +58,7 @@ class AppConfig:
         VISION_BASE_URL: URL of the vision provider instance
         VISION_MODEL: Name of the vision model for local extraction
         VISION_MAX_IMAGES: Maximum number of images to process per document
+        NOTE_TEMPLATES: List of note templates with name and content
     """
 
     # LLM Configuration
@@ -112,6 +113,18 @@ class AppConfig:
     VISION_BASE_URL: str = "http://localhost:11434"  # URL of the vision provider instance
     VISION_MODEL: str = "granite-docling:258m"  # Vision model name for local extraction
     VISION_MAX_IMAGES: int = 20  # Maximum images to process per document (to avoid excessive API calls)
+
+    # Notes Templates Configuration
+    NOTE_TEMPLATES: List[Dict[str, str]] = field(default_factory=lambda: [
+        {
+            "name": "Meeting Notes",
+            "content": "📋 Meeting Notes\n\nAttendees:\n- \n\nAgenda:\n- \n\nAction Items:\n- "
+        },
+        {
+            "name": "Daily Log",
+            "content": "📅 Daily Log\n\nCompleted:\n- \n\nIn Progress:\n- \n\nBlocked:\n- "
+        }
+    ])
 
 
 def create_default_config() -> AppConfig:
@@ -315,6 +328,10 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
 
     if "vision_model" in settings:
         overrides["VISION_MODEL"] = settings["vision_model"]
+
+    # Note templates
+    if "note_templates" in settings:
+        overrides["NOTE_TEMPLATES"] = settings["note_templates"]
 
     # Create new config with overrides
     if overrides:

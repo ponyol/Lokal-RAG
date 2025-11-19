@@ -378,8 +378,9 @@ class TogaAppOrchestrator:
 
         This method:
         1. Gets the note text from the view
-        2. Saves it to a markdown file
-        3. Adds it to the vector database
+        2. Gets the selected template (if any)
+        3. Saves it to a markdown file with template
+        4. Adds it to the vector database
         """
         # Get note text from view
         note_text = self.view.get_note_text()
@@ -390,8 +391,11 @@ class TogaAppOrchestrator:
             return
 
         try:
-            # Save note to markdown file
-            note_path = fn_save_note(note_text, self.config)
+            # Get selected template content (if any)
+            template_content = self.view.get_selected_note_template()
+
+            # Save note to markdown file with template
+            note_path = fn_save_note(note_text, self.config, template_content=template_content)
             logger.info(f"Note saved to: {note_path}")
 
             # Read the saved file content (includes the header with date/time)

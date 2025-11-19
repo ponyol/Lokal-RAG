@@ -121,6 +121,9 @@ class LokalRAGApp(toga.App):
         # Changelog file mapping (for file selection)
         self.changelog_files_map = {}
 
+        # Note templates management
+        self.note_templates = []  # Will be loaded from settings
+
         # Theme management
         self.current_theme = LightTheme  # Default to light theme
         self.theme_widgets = {
@@ -631,9 +634,25 @@ class LokalRAGApp(toga.App):
 
         desc = toga.Label(
             "Создавайте заметки, которые будут доступны для поиска в чате",
-            style=Pack(margin_bottom=20, font_size=12)
+            style=Pack(margin_bottom=10, font_size=12)
         )
         container.add(desc)
+
+        # Template selection
+        template_box = toga.Box(style=Pack(direction=ROW, margin_bottom=15))
+        template_label = toga.Label(
+            "Template:",
+            style=Pack(width=100)
+        )
+        self.note_template_selection = toga.Selection(
+            items=["None"],
+            on_change=self._on_note_template_selected,
+            style=Pack(flex=1)
+        )
+        self.note_template_selection.value = "None"
+        template_box.add(template_label)
+        template_box.add(self.note_template_selection)
+        container.add(template_box)
 
         # Note text area
         self.note_text = toga.MultilineTextInput(
@@ -1150,6 +1169,74 @@ class LokalRAGApp(toga.App):
         self.notes_path_input = notes_box.children[1]
         paths_section.add(notes_box)
 
+        # ---- Note Templates (NEW) ----
+        templates_section = self._create_settings_section(
+            "📝 Note Templates:",
+            container
+        )
+
+        templates_help = toga.Label(
+            "Create reusable templates for notes. Templates are inserted after the date stamp.",
+            style=Pack(margin=5, font_size=10)
+        )
+        templates_section.add(templates_help)
+
+        # Template selection (for editing/deleting)
+        template_select_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        template_select_label = toga.Label(
+            "Select Template:",
+            style=Pack(width=150)
+        )
+        self.template_selection = toga.Selection(
+            items=["None"],
+            on_change=self._on_template_selected,
+            style=Pack(flex=1)
+        )
+        self.template_selection.value = "None"
+        template_select_box.add(template_select_label)
+        template_select_box.add(self.template_selection)
+        templates_section.add(template_select_box)
+
+        # Template name input
+        template_name_box = self._create_input_row(
+            "Template Name:",
+            "Meeting Notes"
+        )
+        self.template_name_input = template_name_box.children[1]
+        templates_section.add(template_name_box)
+
+        # Template content input
+        content_label = toga.Label(
+            "Template Content:",
+            style=Pack(margin=5, margin_bottom=2, font_weight="bold")
+        )
+        templates_section.add(content_label)
+
+        self.template_content_input = toga.MultilineTextInput(
+            placeholder="Template content...\n\nUse \\n for new lines.",
+            style=Pack(height=120, margin=5)
+        )
+        templates_section.add(self.template_content_input)
+
+        # Template action buttons
+        template_buttons_box = toga.Box(
+            style=Pack(direction=ROW, margin_top=10)
+        )
+        self.add_template_button = toga.Button(
+            "➕ Add Template",
+            on_press=self._on_add_template,
+            style=Pack(flex=1, margin_right=5, background_color=Theme.ACCENT_GREEN)
+        )
+        self.delete_template_button = toga.Button(
+            "🗑️ Delete Template",
+            on_press=self._on_delete_template,
+            style=Pack(flex=1, background_color=Theme.ACCENT_RED)
+        )
+        self.delete_template_button.enabled = False  # Disabled until template selected
+        template_buttons_box.add(self.add_template_button)
+        template_buttons_box.add(self.delete_template_button)
+        templates_section.add(template_buttons_box)
+
         # ---- Action Buttons ----
         button_box = toga.Box(
             style=Pack(
@@ -1457,6 +1544,95 @@ class LokalRAGApp(toga.App):
             "Connection testing will be implemented in the next phase."
         )
 
+    def _on_template_selected(self, widget):
+        """Handle template selection change."""
+        selected = self.template_selection.value
+        if selected and selected != "None":
+            # Find template by name
+            template = next((t for t in self.note_templates if t["name"] == selected), None)
+            if template:
+                self.template_name_input.value = template["name"]
+                self.template_content_input.value = template["content"]
+                self.delete_template_button.enabled = True
+                logger.info(f"Template selected: {selected}")
+        else:
+            # Clear fields
+            self.template_name_input.value = ""
+            self.template_content_input.value = ""
+            self.delete_template_button.enabled = False
+
+    def _on_add_template(self, widget):
+        """Handle add template button press."""
+        name = self.template_name_input.value or ""
+        content = self.template_content_input.value or ""
+
+        if not name.strip():
+            self.show_error_dialog("Error", "Template name cannot be empty")
+            return
+
+        if not content.strip():
+            self.show_error_dialog("Error", "Template content cannot be empty")
+            return
+
+        # Check if template with this name already exists
+        existing = next((t for t in self.note_templates if t["name"] == name), None)
+        if existing:
+            # Update existing template
+            existing["content"] = content
+            logger.info(f"Updated template: {name}")
+        else:
+            # Add new template
+            self.note_templates.append({"name": name, "content": content})
+            logger.info(f"Added new template: {name}")
+
+        # Update template selection dropdown
+        self._update_template_selection()
+
+        # Clear fields
+        self.template_name_input.value = ""
+        self.template_content_input.value = ""
+        self.template_selection.value = "None"
+
+        self.show_info_dialog("Success", f"Template '{name}' saved successfully")
+
+    def _on_delete_template(self, widget):
+        """Handle delete template button press."""
+        selected = self.template_selection.value
+        if selected and selected != "None":
+            # Remove template
+            self.note_templates = [t for t in self.note_templates if t["name"] != selected]
+            logger.info(f"Deleted template: {selected}")
+
+            # Update template selection dropdown
+            self._update_template_selection()
+
+            # Clear fields
+            self.template_name_input.value = ""
+            self.template_content_input.value = ""
+            self.template_selection.value = "None"
+            self.delete_template_button.enabled = False
+
+            self.show_info_dialog("Success", f"Template '{selected}' deleted successfully")
+
+    def _update_template_selection(self):
+        """Update template selection dropdown with current templates."""
+        template_names = ["None"] + [t["name"] for t in self.note_templates]
+        self.template_selection.items = template_names
+        # Also update Notes tab template selection
+        if hasattr(self, 'note_template_selection'):
+            self.note_template_selection.items = template_names
+        logger.info(f"Updated template selection: {len(self.note_templates)} templates")
+
+    def _on_note_template_selected(self, widget):
+        """Handle note template selection change."""
+        # This handler is called when user selects a template in Notes tab
+        # The template will be applied when saving the note
+        selected = self.note_template_selection.value
+        if selected and selected != "None":
+            logger.info(f"Note template selected: {selected}")
+        else:
+            logger.info("No note template selected")
+
     # ========================================================================
     # Public API (for app_controller.py) - V2: 100% Compatible with CustomTkinter
     # ========================================================================
@@ -1544,6 +1720,20 @@ class LokalRAGApp(toga.App):
         """Get the current note text."""
         return self.note_text.value or ""
 
+    def get_selected_note_template(self) -> Optional[str]:
+        """
+        Get the content of the selected note template.
+
+        Returns:
+            Optional[str]: Template content if selected, None otherwise
+        """
+        selected = self.note_template_selection.value
+        if selected and selected != "None":
+            template = next((t for t in self.note_templates if t["name"] == selected), None)
+            if template:
+                return template["content"]
+        return None
+
     def clear_note_text(self) -> None:
         """Clear the note text area."""
         self.note_text.value = ""
@@ -1571,6 +1761,7 @@ class LokalRAGApp(toga.App):
         - Added: markdown_output_path
         - Added: changelog_path
         - Added: notes_path
+        - Added: note_templates (list of template dicts)
 
         Returns:
             dict: LLM settings with all provider configurations
@@ -1621,6 +1812,8 @@ class LokalRAGApp(toga.App):
             "markdown_output_path": self.markdown_output_path_input.value or "./output_markdown",  # ← NEW
             "changelog_path": self.changelog_path_input.value or "./changelog",  # ← NEW
             "notes_path": self.notes_path_input.value or "./notes",  # ← NEW (notes directory)
+            # Note Templates (NEW)
+            "note_templates": self.note_templates,  # ← NEW: list of template dicts
             # Database
             "database_language": db_language,
             # Appearance
@@ -1735,6 +1928,12 @@ class LokalRAGApp(toga.App):
         if "notes_path" in settings:
             self.notes_path_input.value = settings["notes_path"]
             logger.info(f"Setting notes path to: {settings['notes_path']}")
+
+        # Note templates (NEW)
+        if "note_templates" in settings:
+            self.note_templates = settings["note_templates"]
+            self._update_template_selection()  # Update both dropdowns
+            logger.info(f"Loaded {len(self.note_templates)} note templates")
 
         # Database language
         if "database_language" in settings:

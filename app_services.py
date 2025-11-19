@@ -2122,16 +2122,17 @@ def fn_create_changelog_file(
         raise
 
 
-def fn_save_note(note_text: str, config: AppConfig) -> Path:
+def fn_save_note(note_text: str, config: AppConfig, template_content: Optional[str] = None) -> Path:
     """
     Save a user note to a timestamped markdown file.
 
     Creates a markdown file with the current date/time as a header,
-    followed by the user's note text.
+    optionally followed by a template, and then the user's note text.
 
     Args:
         note_text: The text content of the note
         config: Application configuration
+        template_content: Optional template content to insert after date
 
     Returns:
         Path: Path to the created note file
@@ -2142,6 +2143,9 @@ def fn_save_note(note_text: str, config: AppConfig) -> Path:
     Example:
         >>> note = "Нужно добавить поддержку экспорта в PDF"
         >>> note_path = fn_save_note(note, config)
+
+        >>> template = "📋 Meeting Notes\n\nAttendees:\n-"
+        >>> note_path = fn_save_note(note, config, template_content=template)
     """
     from datetime import datetime
 
@@ -2170,7 +2174,14 @@ def fn_save_note(note_text: str, config: AppConfig) -> Path:
             display_timestamp = display_timestamp.replace(eng, rus)
 
         # Build markdown content
-        content = f"# Заметка от {display_timestamp}\n\n{note_text.strip()}\n"
+        content = f"# Заметка от {display_timestamp}\n\n"
+
+        # Add template content if provided
+        if template_content:
+            content += f"{template_content.strip()}\n\n"
+
+        # Add user's note text
+        content += f"{note_text.strip()}\n"
 
         # Write to file
         with open(filepath, 'w', encoding='utf-8') as f:
