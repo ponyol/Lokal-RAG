@@ -342,6 +342,135 @@ def lokal_rag_list_documents(
         }
 
 
+@mcp.tool()
+def lokal_rag_get_full_document(
+    query: str,
+    filter_type: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Retrieve the COMPLETE document (all chunks) by finding it first, then expanding to full content.
+
+    This tool is perfect for when users want to read an entire article, paper, or document
+    from the knowledge base. It performs these steps:
+    1. Search for the most relevant document using the query
+    2. Extract the document_id from the top result
+    3. Retrieve ALL chunks of that document (not just top-K)
+    4. Return them in correct order (sorted by chunk_index)
+
+    Use this when users say:
+    - "show me the full document about X"
+    - "I want to read the complete article about Y"
+    - "get the entire content of Z"
+    - Russian: "покажи весь документ", "выведи полностью", "дай полное содержание"
+
+    Args:
+        query: Search query to find the document (required)
+        filter_type: Document type filter - "document", "note", or None for all (default: None)
+
+    Returns:
+        Dict with:
+            - document_id: The unique identifier of the retrieved document
+            - source: Source file/URL of the document
+            - chunks: List of all chunks in order, each with:
+                - chunk_index: Sequential number (0, 1, 2, ...)
+                - content: The chunk text
+                - metadata: Additional chunk metadata
+            - total_chunks: Total number of chunks in the document
+            - total_length: Total characters across all chunks
+            - search_info: Metadata about the initial search
+
+    Example:
+        Get full article about Claude Code:
+        >>> lokal_rag_get_full_document(
+        ...     query="9-месячная техническая эволюция Claude Code"
+        ... )
+
+        Get full note:
+        >>> lokal_rag_get_full_document(
+        ...     query="project planning notes",
+        ...     filter_type="note"
+        ... )
+    """
+    if _storage_service is None:
+        logger.error("MCP_FULL_DOC_ERROR: Storage service not initialized")
+        return {
+            "error": "Storage service not initialized",
+            "document_id": None,
+            "chunks": [],
+            "total_chunks": 0,
+        }
+
+    logger.info(f"Full document request: '{query}', filter_type={filter_type}")
+
+    try:
+        # Step 1: Search for the document with full_doc expansion
+        retrieved_docs = _storage_service.search_with_full_document(
+            query=query,
+            k=5,  # Initial search to find the right document
+            search_type=filter_type,
+            include_full_doc=True  # This is the key - expand to full document
+        )
+
+        if not retrieved_docs:
+            logger.warning(f"No documents found for query: '{query}'")
+            return {
+                "error": "No matching documents found",
+                "query": query,
+                "document_id": None,
+                "chunks": [],
+                "total_chunks": 0,
+            }
+
+        # Step 2: Extract document_id and source from first chunk
+        first_chunk_meta = retrieved_docs[0].metadata
+        document_id = first_chunk_meta.get('document_id', 'unknown')
+        source = first_chunk_meta.get('source', 'unknown')
+
+        # Step 3: Format all chunks with their content
+        chunks = []
+        total_length = 0
+
+        for doc in retrieved_docs:
+            chunk_data = {
+                "chunk_index": doc.metadata.get('chunk_index', 0),
+                "content": doc.page_content,
+                "metadata": {
+                    k: v for k, v in doc.metadata.items()
+                    if k not in ['document_id', 'chunk_index']  # Don't duplicate
+                }
+            }
+            chunks.append(chunk_data)
+            total_length += len(doc.page_content)
+
+        logger.info(
+            f"Retrieved full document: document_id={document_id}, "
+            f"source={source}, chunks={len(chunks)}, total_length={total_length}"
+        )
+
+        return {
+            "document_id": document_id,
+            "source": source,
+            "chunks": chunks,
+            "total_chunks": len(chunks),
+            "total_length": total_length,
+            "search_info": {
+                "query": query,
+                "filter_type": filter_type,
+                "expansion_used": True,
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to retrieve full document: {e}", exc_info=True)
+        return {
+            "error": str(e),
+            "query": query,
+            "document_id": None,
+            "chunks": [],
+            "total_chunks": 0,
+        }
+
+
 # ============================================================================
 # Notes Tools
 # ============================================================================
