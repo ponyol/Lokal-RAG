@@ -1546,6 +1546,10 @@ class LokalRAGApp(toga.App):
 
     def _on_template_selected(self, widget):
         """Handle template selection change."""
+        # Check if UI is fully initialized (may be called during settings load)
+        if not hasattr(self, 'template_name_input'):
+            return
+
         selected = self.template_selection.value
         if selected and selected != "None":
             # Find template by name
