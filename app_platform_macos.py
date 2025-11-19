@@ -35,18 +35,20 @@ def setup_chat_input_keyboard_handler(
 
     try:
         # Import macOS-specific modules
-        from rubicon.objc import ObjCClass, objc_method
-        from rubicon.objc.runtime import objc_id
+        from rubicon.objc import ObjCClass, objc_method, py_from_ns
+        from rubicon.objc.runtime import SEL
 
         # Get NSTextView class
         NSTextView = ObjCClass("NSTextView")
+        NSEvent = ObjCClass("NSEvent")
 
         # Create custom delegate class
+        # Using simple Python class - rubicon will bridge it automatically
         class ChatTextViewDelegate:
             """
             Custom NSTextView delegate that intercepts keyboard events.
 
-            Implements doCommandBySelector: to catch Return key presses
+            Implements textView:doCommandBySelector: to catch Return key presses
             and determine if message should be sent based on modifier keys.
             """
 
@@ -69,56 +71,96 @@ def setup_chat_input_keyboard_handler(
                 Returns:
                     True if we handled the command, False to use default behavior
                 """
-                # Convert selector to string
-                selector_name = str(selector)
+                try:
+                    # Get selector name
+                    # selector is a SEL object, need to check it carefully
+                    selector_str = "insertNewline:"
 
-                # We only care about Enter/Return key
-                if selector_name != "insertNewline:":
+                    # Try to get the selector name
+                    try:
+                        if hasattr(selector, 'name'):
+                            selector_name = selector.name
+                        else:
+                            # Convert SEL to string using str()
+                            selector_name = str(selector)
+                    except:
+                        selector_name = selector_str
+
+                    logger.debug(f"Selector received: {selector_name}")
+
+                    # We only care about Enter/Return key
+                    if "insertNewline" not in selector_name:
+                        return False
+
+                    # Get current event to check modifier flags
+                    current_event = NSEvent.currentEvent()
+
+                    if current_event is None:
+                        logger.debug("No current event")
+                        return False
+
+                    # Check modifier flags
+                    # NSEventModifierFlagShift = 1 << 17 (131072)
+                    modifier_flags = int(current_event.modifierFlags)
+                    shift_pressed = (modifier_flags & (1 << 17)) != 0
+
+                    logger.debug(f"Shift pressed: {shift_pressed}, mode: {self.send_mode}")
+
+                    # Determine if we should send based on mode
+                    should_send = False
+
+                    if self.send_mode == "shift_enter":
+                        # Send on Shift+Enter, regular Enter adds newline
+                        should_send = shift_pressed
+                    else:  # "enter"
+                        # Send on Enter, Shift+Enter adds newline
+                        should_send = not shift_pressed
+
+                    if should_send:
+                        # Trigger send callback
+                        logger.info(f"🚀 Sending message via {self.send_mode} shortcut")
+                        self.send_func()
+                        return True  # Consume the event
+                    else:
+                        # Let default behavior happen (insert newline)
+                        logger.debug("Allowing newline insertion")
+                        return False
+
+                except Exception as e:
+                    logger.error(f"Error in keyboard handler: {e}", exc_info=True)
                     return False
 
-                # Get current event to check modifier flags
-                NSEvent = ObjCClass("NSEvent")
-                current_event = NSEvent.currentEvent()
+        # Get the native widget from Toga - might be NSScrollView or NSTextView
+        native_widget = chat_input._impl.native
 
-                if current_event is None:
-                    return False
+        logger.info(f"Native widget type: {type(native_widget)}, class: {native_widget.__class__.__name__ if hasattr(native_widget, '__class__') else 'unknown'}")
 
-                # Check modifier flags
-                # NSEventModifierFlagShift = 1 << 17 (131072)
-                modifier_flags = int(current_event.modifierFlags)
-                shift_pressed = (modifier_flags & (1 << 17)) != 0
+        # MultilineTextInput uses NSScrollView containing NSTextView
+        # Try to get the documentView which is the actual NSTextView
+        native_text_view = None
 
-                # Determine if we should send based on mode
-                should_send = False
+        if hasattr(native_widget, 'documentView'):
+            # This is an NSScrollView, get the text view inside
+            native_text_view = native_widget.documentView
+            logger.info(f"Found documentView: {type(native_text_view)}")
+        elif hasattr(native_widget, 'delegate'):
+            # This is already an NSTextView
+            native_text_view = native_widget
+            logger.info("Native widget is already NSTextView")
+        else:
+            logger.warning(f"Could not find NSTextView in widget hierarchy")
+            return
 
-                if self.send_mode == "shift_enter":
-                    # Send on Shift+Enter, regular Enter adds newline
-                    should_send = shift_pressed
-                else:  # "enter"
-                    # Send on Enter, Shift+Enter adds newline
-                    should_send = not shift_pressed
-
-                if should_send:
-                    # Trigger send callback
-                    logger.debug(f"Send key pressed (mode: {self.send_mode})")
-                    self.send_func()
-                    return True  # Consume the event
-                else:
-                    # Let default behavior happen (insert newline)
-                    return False
-
-        # Get the native NSTextView from Toga widget
-        native_text_view = chat_input._impl.native
-
-        if not isinstance(native_text_view, NSTextView):
-            logger.warning(f"Expected NSTextView, got {type(native_text_view)}")
+        # Verify we have a text view with delegate support
+        if not hasattr(native_text_view, 'delegate'):
+            logger.warning(f"Text view doesn't have delegate property: {type(native_text_view)}")
             return
 
         # Create and set delegate
         delegate = ChatTextViewDelegate(send_callback, send_key)
         native_text_view.delegate = delegate
 
-        logger.info(f"✓ macOS keyboard handler installed (mode: {send_key})")
+        logger.info(f"✓ macOS keyboard handler installed (mode: {send_key}, text_view: {native_text_view})")
 
     except ImportError as e:
         logger.warning(f"Could not import rubicon.objc: {e}")
