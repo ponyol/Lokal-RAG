@@ -97,7 +97,7 @@ class AppConfig:
     MAX_TAGS: int = 3
 
     # RAG Configuration
-    RAG_TOP_K: int = 10  # Number of documents to retrieve for context (increased for better date recall)
+    RAG_TOP_K: int = 20  # Number of documents to retrieve for context (increased for full document retrieval)
 
     # Chat Configuration
     CHAT_CONTEXT_MESSAGES: int = 10  # Number of messages to keep in chat history context
@@ -406,7 +406,14 @@ TASK:
 Answer the user's question based on the provided context from the document database.
 - If the context contains the answer, provide it clearly
 - If the context doesn't contain enough information, say so (in the same language as the question)
-- Be concise, accurate, and helpful
+- Be accurate and helpful
+
+RESPONSE LENGTH:
+- For general questions: Provide concise, focused answers
+- If the user explicitly requests full content (e.g., "выведи полностью", "show full document", "give me all details"):
+  * Provide complete information from the available context
+  * Include all relevant details from the retrieved documents
+  * Do not summarize - output everything available
 
 IMPORTANT: Always match your response language to the user's question language!"""
 
