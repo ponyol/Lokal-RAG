@@ -45,6 +45,36 @@ pip install -e ".[all]"
 
 ### Configuration
 
+#### Configuration File Location
+
+**By default, the MCP server loads configuration from:**
+
+```
+~/.lokal-rag/settings.json  (Home directory)
+```
+
+This is **different from the main Lokal-RAG application**, which can use either:
+- `~/.lokal-rag/settings.json` (Home) - **Used by MCP server by default**
+- `.lokal-rag/settings.json` (Project directory) - Not used by MCP unless specified
+
+**To use a custom settings file:**
+
+```bash
+# Use project-local settings
+python -m lokal_rag_mcp.server --settings ./.lokal-rag/settings.json
+
+# Use absolute path
+python -m lokal_rag_mcp.server --settings /path/to/custom/settings.json
+```
+
+**If `~/.lokal-rag/settings.json` does not exist:**
+- MCP server uses **default values** from `AppConfig`
+- Database paths: `./chroma_db_en` and `./chroma_db_ru`
+- Re-ranking: **enabled** with jina-reranker-v2-base-multilingual
+- No errors - server starts with defaults
+
+#### Settings File Format
+
 Create or update `~/.lokal-rag/settings.json`:
 
 ```json
@@ -52,8 +82,11 @@ Create or update `~/.lokal-rag/settings.json`:
   "llm_provider": "gemini",
   "gemini_api_key": "your-api-key",
   "gemini_model": "gemini-2.5-pro-preview-03-25",
-  "vector_db_path": "./lokal_rag_db",
+
+  "vector_db_path_en": "./chroma_db_en",
+  "vector_db_path_ru": "./chroma_db_ru",
   "markdown_output_path": "./output_markdown",
+  "notes_path": "./notes",
 
   "rerank": {
     "enabled": true,
