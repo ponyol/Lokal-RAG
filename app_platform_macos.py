@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 # Global storage for keyboard handler callback
 _keyboard_handler_callback = None
 _keyboard_handler_mode = None
+_swizzled_classes = set()
 
 
 def setup_chat_input_keyboard_handler(
@@ -38,17 +39,17 @@ def setup_chat_input_keyboard_handler(
         return
 
     try:
-        from rubicon.objc import ObjCClass, objc_method, ObjCInstance, Block
-        from rubicon.objc.runtime import objc_id, SEL, libobjc
-        from ctypes import c_void_p, c_bool
+        from rubicon.objc import ObjCClass, objc_method, ObjCInstance
+        from rubicon.objc.runtime import objc_id, SEL, libobjc, send_super, send_message
 
-        global _keyboard_handler_callback, _keyboard_handler_mode
+        global _keyboard_handler_callback, _keyboard_handler_mode, _swizzled_classes
 
         # Store callback globally
         _keyboard_handler_callback = send_callback
         _keyboard_handler_mode = send_key
 
         NSEvent = ObjCClass("NSEvent")
+        NSObject = ObjCClass("NSObject")
 
         # Get the native widget
         native_widget = chat_input._impl.native
@@ -58,85 +59,115 @@ def setup_chat_input_keyboard_handler(
         native_text_view = None
         if hasattr(native_widget, 'documentView'):
             native_text_view = native_widget.documentView
-            logger.info(f"DocumentView: {native_text_view.className if hasattr(native_text_view, 'className') else type(native_text_view)}")
+            class_name = native_text_view.className if hasattr(native_text_view, 'className') else 'unknown'
+            logger.info(f"DocumentView: {class_name}")
         else:
             logger.warning("Could not find documentView")
             return
 
-        # Get TogaTextView class
-        TogaTextView = ObjCClass(native_text_view.className)
+        # Get the class name for swizzle check
+        toga_class_name = str(native_text_view.className)
 
-        # Check if we already swizzled
-        if hasattr(TogaTextView, '_lokal_rag_keydown_swizzled'):
-            logger.info("TogaTextView already swizzled, updating callback")
+        # Check if already swizzled
+        if toga_class_name in _swizzled_classes:
+            logger.info(f"{toga_class_name} already swizzled, updating callback only")
             return
 
-        # Store original keyDown implementation
-        original_keydown = TogaTextView.instancemethod('keyDown:')
+        # Create helper class with our keyDown implementation
+        class KeyDownHelper(NSObject):
+            """Helper class to get IMP for our keyDown method."""
 
-        @objc_method
-        def lokal_rag_keyDown_(self, event):
-            """
-            Replacement keyDown: method that intercepts Enter key.
-            """
-            try:
-                global _keyboard_handler_callback, _keyboard_handler_mode
+            @objc_method
+            def lokal_rag_keyDown_(self, event):
+                """Our custom keyDown implementation."""
+                try:
+                    global _keyboard_handler_callback, _keyboard_handler_mode
 
-                # Get key code
-                key_code = event.keyCode
-                # Enter key = 36, Return key = 76
-                if key_code in (36, 76):
-                    # Check modifier flags
-                    modifier_flags = int(event.modifierFlags)
-                    shift_pressed = (modifier_flags & (1 << 17)) != 0
+                    # Get key code
+                    key_code = event.keyCode
+                    # Enter key = 36, Return key = 76
+                    if key_code in (36, 76):
+                        # Check modifier flags
+                        modifier_flags = int(event.modifierFlags)
+                        shift_pressed = (modifier_flags & (1 << 17)) != 0
 
-                    logger.info(f"🔑 Enter key pressed! keyCode={key_code}, shift={shift_pressed}, mode={_keyboard_handler_mode}")
+                        logger.info(f"🔑 Enter key! keyCode={key_code}, shift={shift_pressed}, mode={_keyboard_handler_mode}")
 
-                    # Determine if we should send
-                    should_send = False
-                    if _keyboard_handler_mode == "shift_enter":
-                        should_send = shift_pressed
-                    else:  # "enter"
-                        should_send = not shift_pressed
+                        # Determine if we should send
+                        should_send = False
+                        if _keyboard_handler_mode == "shift_enter":
+                            should_send = shift_pressed
+                        else:  # "enter"
+                            should_send = not shift_pressed
 
-                    if should_send and _keyboard_handler_callback:
-                        logger.info(f"🚀 Sending message via keyboard shortcut")
-                        _keyboard_handler_callback()
-                        return  # Don't call original (consume event)
+                        if should_send and _keyboard_handler_callback:
+                            logger.info(f"🚀 Sending message via keyboard shortcut")
+                            _keyboard_handler_callback()
+                            return  # Don't call super (consume event)
 
-                # Not our event or not sending - call original implementation
-                original_keydown(self, event)
+                    # Not our event - call original implementation via super
+                    send_super(__class__, self, 'lokal_rag_keyDown:', event, restype=None, argtypes=[objc_id])
 
-            except Exception as e:
-                logger.error(f"Error in keyDown handler: {e}", exc_info=True)
-                # Fall back to original
-                original_keydown(self, event)
+                except Exception as e:
+                    logger.error(f"Error in keyDown handler: {e}", exc_info=True)
+                    # Fall back to super
+                    send_super(__class__, self, 'lokal_rag_keyDown:', event, restype=None, argtypes=[objc_id])
 
-        # Swizzle the method
-        try:
-            # Add our method to the class
-            TogaTextView.lokal_rag_keyDown_ = lokal_rag_keyDown_
+        # Get class pointers
+        helper_class_ptr = libobjc.object_getClass(KeyDownHelper.alloc().ptr)
+        target_class_ptr = libobjc.object_getClass(native_text_view.ptr)
 
-            # Get method implementation pointers
-            original_method = libobjc.class_getInstanceMethod(
-                TogaTextView.ptr,
-                SEL(b'keyDown:')
-            )
+        logger.info(f"Helper class: {helper_class_ptr}, Target class: {target_class_ptr}")
+
+        # Get our method from helper class
+        our_method = libobjc.class_getInstanceMethod(
+            helper_class_ptr,
+            SEL(b'lokal_rag_keyDown:')
+        )
+
+        # Get original keyDown from target class
+        original_method = libobjc.class_getInstanceMethod(
+            target_class_ptr,
+            SEL(b'keyDown:')
+        )
+
+        if not our_method:
+            logger.warning("Could not find lokal_rag_keyDown: in helper class")
+            return
+
+        if not original_method:
+            logger.warning("Could not find keyDown: in TogaTextView")
+            return
+
+        # Get IMP from our method
+        our_imp = libobjc.method_getImplementation(our_method)
+
+        # Try to add our method to target class with original name
+        # This won't work if method exists, but we need to try
+        added = libobjc.class_addMethod(
+            target_class_ptr,
+            SEL(b'lokal_rag_keyDown:'),
+            our_imp,
+            b'v@:@'  # void return, id self, SEL cmd, id event
+        )
+
+        if added:
+            logger.info("Added lokal_rag_keyDown: to class")
+
+            # Now swap implementations
             swizzled_method = libobjc.class_getInstanceMethod(
-                TogaTextView.ptr,
+                target_class_ptr,
                 SEL(b'lokal_rag_keyDown:')
             )
 
-            if original_method and swizzled_method:
-                # Swap implementations
+            if swizzled_method:
                 libobjc.method_exchangeImplementations(original_method, swizzled_method)
-                TogaTextView._lokal_rag_keydown_swizzled = True
-                logger.info(f"✓ Successfully swizzled TogaTextView.keyDown: (mode: {send_key})")
+                _swizzled_classes.add(toga_class_name)
+                logger.info(f"✓ Successfully swizzled {toga_class_name}.keyDown: (mode: {send_key})")
             else:
-                logger.warning(f"Could not get method pointers for swizzling")
-
-        except Exception as e:
-            logger.error(f"Failed to swizzle keyDown: {e}", exc_info=True)
+                logger.warning("Could not get swizzled method back")
+        else:
+            logger.warning("Could not add method to class (may already exist)")
 
     except ImportError as e:
         logger.warning(f"Could not import rubicon.objc: {e}")
