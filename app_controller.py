@@ -939,9 +939,10 @@ def rag_chat_worker(
         if chat_history is not None:
             chat_history.append({"role": "user", "content": query})
             chat_history.append({"role": "assistant", "content": response})
-            # Keep only last 10 messages (5 exchanges) to avoid context overflow
-            if len(chat_history) > 10:
-                chat_history[:] = chat_history[-10:]
+            # Keep only last N messages based on config to avoid context overflow
+            max_messages = config.CHAT_CONTEXT_MESSAGES
+            if len(chat_history) > max_messages:
+                chat_history[:] = chat_history[-max_messages:]
 
         # Send response to view
         view_queue.put(f"CHAT: assistant: {response}")

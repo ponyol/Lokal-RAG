@@ -47,6 +47,8 @@ class AppConfig:
         TRANSLATION_CHUNK_SIZE: Size of text chunks for translation (in characters)
         MAX_TAGS: Maximum number of tags to generate per document
         RAG_TOP_K: Number of documents to retrieve for RAG context
+        CHAT_CONTEXT_MESSAGES: Number of messages to keep in chat history context
+        CHAT_SEND_KEY: Send message key ("enter" or "shift_enter")
         CLEANUP_MEMORY_AFTER_PDF: Whether to free memory after batch processing
         WEB_USE_BROWSER_COOKIES: Whether to use browser cookies for authenticated requests
         WEB_BROWSER_CHOICE: Which browser to extract cookies from
@@ -96,6 +98,10 @@ class AppConfig:
 
     # RAG Configuration
     RAG_TOP_K: int = 10  # Number of documents to retrieve for context (increased for better date recall)
+
+    # Chat Configuration
+    CHAT_CONTEXT_MESSAGES: int = 10  # Number of messages to keep in chat history context
+    CHAT_SEND_KEY: str = "shift_enter"  # Send message key: "enter" or "shift_enter"
 
     # Performance Configuration
     CLEANUP_MEMORY_AFTER_PDF: bool = True  # Free memory after batch completes (not between PDFs)
@@ -328,6 +334,13 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
 
     if "vision_model" in settings:
         overrides["VISION_MODEL"] = settings["vision_model"]
+
+    # Chat settings
+    if "chat_context_messages" in settings:
+        overrides["CHAT_CONTEXT_MESSAGES"] = settings["chat_context_messages"]
+
+    if "chat_send_key" in settings:
+        overrides["CHAT_SEND_KEY"] = settings["chat_send_key"]
 
     # Note templates
     if "note_templates" in settings:

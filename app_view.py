@@ -584,11 +584,12 @@ class LokalRAGApp(toga.App):
 
         # Message input
         input_box = toga.Box(style=Pack(direction=ROW, margin_top=10))
-        self.chat_input = toga.TextInput(
-            placeholder="Type your message here...",
+        self.chat_input = toga.MultilineTextInput(
+            placeholder="Type your message here...\n(Press Send button or use keyboard shortcut)",
             style=Pack(
                 flex=1,
-                margin_right=10
+                margin_right=10,
+                height=80
             )
         )
         self.send_button = toga.Button(
@@ -1168,6 +1169,53 @@ class LokalRAGApp(toga.App):
         )
         self.notes_path_input = notes_box.children[1]
         paths_section.add(notes_box)
+
+        # ---- Chat Settings ----
+        chat_section = self._create_settings_section(
+            "💬 Chat Settings:",
+            container
+        )
+
+        chat_help = toga.Label(
+            "Configure chat behavior and context management.",
+            style=Pack(margin=5, font_size=10)
+        )
+        chat_section.add(chat_help)
+
+        # Chat context messages limit
+        context_box = self._create_input_row(
+            "Context Messages:",
+            "10"
+        )
+        self.chat_context_input = context_box.children[1]
+        chat_section.add(context_box)
+
+        context_desc = toga.Label(
+            "Number of messages to keep in chat history (higher = more context, more tokens)",
+            style=Pack(margin_left=5, margin_bottom=10, font_size=9)
+        )
+        chat_section.add(context_desc)
+
+        # Send key preference
+        send_key_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        send_key_label = toga.Label(
+            "Send Message With:",
+            style=Pack(width=200)
+        )
+        self.chat_send_key_selection = toga.Selection(
+            items=["Shift+Enter", "Enter"],
+            style=Pack(flex=1)
+        )
+        self.chat_send_key_selection.value = "Shift+Enter"
+        send_key_box.add(send_key_label)
+        send_key_box.add(self.chat_send_key_selection)
+        chat_section.add(send_key_box)
+
+        send_key_desc = toga.Label(
+            "Choose how to send chat messages (Enter alone will add new line if Shift+Enter is selected)",
+            style=Pack(margin_left=5, margin_bottom=10, font_size=9)
+        )
+        chat_section.add(send_key_desc)
 
         # ---- Note Templates (NEW) ----
         templates_section = self._create_settings_section(
@@ -1767,6 +1815,10 @@ class LokalRAGApp(toga.App):
         - Added: notes_path
         - Added: note_templates (list of template dicts)
 
+        V3: Added chat settings
+        - Added: chat_context_messages (int)
+        - Added: chat_send_key ("enter" or "shift_enter")
+
         Returns:
             dict: LLM settings with all provider configurations
         """
@@ -1818,6 +1870,9 @@ class LokalRAGApp(toga.App):
             "notes_path": self.notes_path_input.value or "./notes",  # ← NEW (notes directory)
             # Note Templates (NEW)
             "note_templates": self.note_templates,  # ← NEW: list of template dicts
+            # Chat Settings (NEW)
+            "chat_context_messages": int(self.chat_context_input.value or "10"),  # ← NEW: chat context limit
+            "chat_send_key": "shift_enter" if self.chat_send_key_selection.value == "Shift+Enter" else "enter",  # ← NEW: send key preference
             # Database
             "database_language": db_language,
             # Appearance
@@ -1841,6 +1896,7 @@ class LokalRAGApp(toga.App):
         Set LLM settings in the UI.
 
         V2: Updated to handle new fields (translation_chunk_size, storage paths including notes_path, vision_mode)
+        V3: Added chat settings (chat_context_messages, chat_send_key)
 
         Args:
             settings: Dictionary of settings to populate
@@ -1938,6 +1994,18 @@ class LokalRAGApp(toga.App):
             self.note_templates = settings["note_templates"]
             self._update_template_selection()  # Update both dropdowns
             logger.info(f"Loaded {len(self.note_templates)} note templates")
+
+        # Chat settings (NEW)
+        if "chat_context_messages" in settings:
+            context_val = str(settings["chat_context_messages"])
+            self.chat_context_input.value = context_val
+            logger.info(f"Setting chat context messages to: {context_val}")
+
+        if "chat_send_key" in settings:
+            send_key = settings["chat_send_key"]
+            display_value = "Shift+Enter" if send_key == "shift_enter" else "Enter"
+            self.chat_send_key_selection.value = display_value
+            logger.info(f"Setting chat send key to: {display_value}")
 
         # Database language
         if "database_language" in settings:
