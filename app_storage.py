@@ -326,27 +326,41 @@ class StorageService:
         try:
             logger.info(f"Adding note to BOTH databases: {note_path.name}")
 
-            # Create Document with type="note" metadata
-            doc = Document(
-                page_content=note_content,
-                metadata={
-                    "source": str(note_path),
-                    "type": "note",
-                    "filename": note_path.name,
-                }
+            # Import chunking function and metadata extraction
+            from app_services import fn_create_text_chunks, fn_extract_title_from_markdown
+
+            # Extract title from note
+            title = fn_extract_title_from_markdown(note_content, fallback=note_path.stem)
+
+            # Create chunks with rich metadata (notes can be long too)
+            # Notes are language-agnostic, use "en" as default
+            chunks = fn_create_text_chunks(
+                text=note_content,
+                source_file=str(note_path),
+                config=self.config,
+                language="en",  # Notes are typically English
+                title=title,
+                file_path=str(note_path),
             )
 
-            # Add note to BOTH vector stores
+            # Add type="note" and filename to all chunks
+            for chunk in chunks:
+                chunk.metadata["type"] = "note"
+                chunk.metadata["filename"] = note_path.name
+
+            logger.info(f"  Created {len(chunks)} chunks for note")
+
+            # Add note chunks to BOTH vector stores
             logger.info("  → Adding to English database...")
-            self._vectorstore_en.add_documents([doc])
+            self._vectorstore_en.add_documents(chunks)
             logger.info("  ✓ Added to English database")
 
             logger.info("  → Adding to Russian database...")
-            self._vectorstore_ru.add_documents([doc])
+            self._vectorstore_ru.add_documents(chunks)
             logger.info("  ✓ Added to Russian database")
 
-            # Add note to BM25 index
-            self._all_documents.append(doc)
+            # Add note chunks to BM25 index
+            self._all_documents.extend(chunks)
             logger.info(f"Total documents in BM25 index: {len(self._all_documents)}")
 
             # Rebuild BM25 retriever with updated document list

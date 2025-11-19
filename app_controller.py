@@ -700,8 +700,33 @@ def processing_pipeline_worker(
                     # Continue without translation
                     russian_text = None
 
-            # Step 3: Tagging (optional)
-            # Use English text for tagging (tags are in English)
+            # Step 3: Extract metadata (title, tags, summary)
+            # Import metadata extraction functions
+            from app_services import fn_extract_title_from_markdown, fn_generate_summary
+
+            # Extract title from markdown
+            if source_type == "pdf":
+                title = fn_extract_title_from_markdown(markdown_text, fallback=item.stem)
+                filename = item.stem
+                source_name = item.name
+                url = None  # PDF doesn't have URL
+            else:
+                # Web document
+                title = fn_extract_title_from_markdown(markdown_text, fallback="Web Article")
+                url = item  # Store original URL
+                source_name = item
+
+                # Generate filename from title
+                import re
+                filename = re.sub(r'[^\w\s-]', '', title)[:50]
+                filename = re.sub(r'[-\s]+', '-', filename)
+                if not filename:
+                    # Fallback to domain+path
+                    from urllib.parse import urlparse
+                    parsed = urlparse(item)
+                    filename = f"{parsed.netloc}{parsed.path}".replace("/", "-")[:50]
+
+            # Tagging (optional)
             tags = ["general"]
             if do_tagging:
                 view_queue.put(f"LOG:   → Generating tags...")
@@ -713,32 +738,25 @@ def processing_pipeline_worker(
                     view_queue.put(f"LOG:   ⚠️  Tag generation failed, using 'general'")
                     tags = ["general"]
 
+            # Generate summary (will be used in metadata)
+            view_queue.put(f"LOG:   → Generating summary...")
+            summary = None
+            try:
+                # Use Russian text if available, otherwise English
+                text_for_summary = russian_text if (do_translation and russian_text is not None) else markdown_text
+                summary = fn_generate_summary(text_for_summary, config)
+                view_queue.put(f"LOG:   ✓ Summary generated")
+            except Exception as summary_error:
+                logger.warning(f"Failed to generate summary (non-fatal): {summary_error}")
+                view_queue.put(f"LOG:   ⚠️  Summary generation skipped")
+                summary = None
+
             # Step 4: Save to disk
             primary_tag = tags[0] if tags else "general"
 
             # Debug: Log markdown size before saving (if vision is enabled)
             if vision_mode != "disabled":
                 view_queue.put(f"LOG:   [DEBUG] Markdown size before save: {len(markdown_text)} chars")
-
-            # Generate filename based on source type
-            if source_type == "pdf":
-                filename = item.stem
-                source_name = item.name
-            else:
-                # Extract title from markdown (first # heading) or use URL
-                import re
-                title_match = re.search(r'^#\s+(.+)$', markdown_text, re.MULTILINE)
-                if title_match:
-                    filename = title_match.group(1)[:50]  # Limit to 50 chars
-                    # Sanitize filename
-                    filename = re.sub(r'[^\w\s-]', '', filename)
-                    filename = re.sub(r'[-\s]+', '-', filename)
-                else:
-                    # Use domain + path as filename
-                    from urllib.parse import urlparse
-                    parsed = urlparse(item)
-                    filename = f"{parsed.netloc}{parsed.path}".replace("/", "-")[:50]
-                source_name = item
 
             # Save English version
             if do_translation and russian_text is not None:
@@ -774,21 +792,31 @@ def processing_pipeline_worker(
             # Step 5: Create chunks and add to vector database
             if do_translation and russian_text is not None:
                 # Bilingual storage: create chunks for both languages
-                view_queue.put(f"LOG:   → Creating English chunks...")
+                view_queue.put(f"LOG:   → Creating English chunks with rich metadata...")
                 chunks_en = fn_create_text_chunks(
                     text=markdown_text,
                     source_file=source_name,
                     config=config,
                     language="en",
+                    title=title,
+                    tags=tags,
+                    url=url,
+                    file_path=str(saved_path_en),
+                    summary=summary,
                 )
                 view_queue.put(f"LOG:   ✓ Created {len(chunks_en)} English chunks")
 
-                view_queue.put(f"LOG:   → Creating Russian chunks...")
+                view_queue.put(f"LOG:   → Creating Russian chunks with rich metadata...")
                 chunks_ru = fn_create_text_chunks(
                     text=russian_text,
                     source_file=source_name,
                     config=config,
                     language="ru",
+                    title=title,  # Same title for both languages
+                    tags=tags,
+                    url=url,
+                    file_path=str(saved_path_ru),
+                    summary=summary,
                 )
                 view_queue.put(f"LOG:   ✓ Created {len(chunks_ru)} Russian chunks")
 
@@ -798,12 +826,17 @@ def processing_pipeline_worker(
                 view_queue.put(f"LOG:   ✓ Added {len(chunks_en)} + {len(chunks_ru)} chunks to database")
             else:
                 # Monolingual storage: create chunks only for English (or when translation failed)
-                view_queue.put(f"LOG:   → Creating chunks...")
+                view_queue.put(f"LOG:   → Creating chunks with rich metadata...")
                 chunks = fn_create_text_chunks(
                     text=markdown_text,
                     source_file=source_name,
                     config=config,
                     language="en",
+                    title=title,
+                    tags=tags,
+                    url=url,
+                    file_path=str(saved_path),
+                    summary=summary,
                 )
                 view_queue.put(f"LOG:   ✓ Created {len(chunks)} chunks")
 
@@ -817,28 +850,11 @@ def processing_pipeline_worker(
             else:
                 view_queue.put(f"LOG: ✅ SUCCESS: {item_name}")
 
-            # Generate summary for changelog
-            view_queue.put(f"LOG:   → Generating summary for changelog...")
-            try:
-                from app_services import fn_generate_summary
-                # Use Russian text if available, otherwise English
-                text_for_summary = russian_text if (do_translation and russian_text is not None) else markdown_text
-                summary = fn_generate_summary(text_for_summary, config)
-                view_queue.put(f"LOG:   ✓ Summary generated")
-
-                # Add to processed items for changelog
-                processed_items.append({
-                    'name': str(item) if source_type == "web" else item_name,
-                    'summary': summary,
-                })
-            except Exception as summary_error:
-                logger.warning(f"Failed to generate summary (non-fatal): {summary_error}")
-                view_queue.put(f"LOG:   ⚠️  Summary generation skipped")
-                # Add with fallback summary
-                processed_items.append({
-                    'name': str(item) if source_type == "web" else item_name,
-                    'summary': "Не удалось сгенерировать описание документа.",
-                })
+            # Add to processed items for changelog (summary already generated above)
+            processed_items.append({
+                'name': str(item) if source_type == "web" else item_name,
+                'summary': summary if summary else "Не удалось сгенерировать описание документа.",
+            })
 
             view_queue.put("LOG: " + "-" * 50)
 

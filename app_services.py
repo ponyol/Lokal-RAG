@@ -1763,17 +1763,57 @@ def fn_generate_tags(text: str, config: AppConfig) -> list[str]:
 # ============================================================================
 
 
+def fn_extract_title_from_markdown(text: str, fallback: str = "Untitled") -> str:
+    """
+    Extract title from markdown text (first # heading).
+
+    This is a pure function that searches for the first H1 heading in markdown.
+
+    Args:
+        text: Markdown text content
+        fallback: Default title if no heading found
+
+    Returns:
+        str: Extracted title or fallback
+
+    Example:
+        >>> text = "# Machine Learning\\n\\nContent here..."
+        >>> fn_extract_title_from_markdown(text)
+        'Machine Learning'
+        >>> fn_extract_title_from_markdown("No heading", "Doc")
+        'Doc'
+    """
+    # Try to find first # heading
+    match = re.search(r'^#\s+(.+)$', text, re.MULTILINE)
+    if match:
+        title = match.group(1).strip()
+        # Remove markdown formatting from title (**, *, etc.)
+        title = re.sub(r'\*+', '', title)
+        # Limit to reasonable length
+        return title[:200]
+    return fallback
+
+
 def fn_create_text_chunks(
     text: str,
     source_file: str,
     config: AppConfig,
     language: str = "en",
-    document_id: Optional[str] = None
+    document_id: Optional[str] = None,
+    # Rich metadata (optional)
+    title: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+    author: Optional[str] = None,
+    url: Optional[str] = None,
+    file_path: Optional[str] = None,
+    summary: Optional[str] = None,
+    publication_date: Optional[str] = None,
 ) -> list[Document]:
     """
-    Split text into chunks suitable for embedding and vector storage.
+    Split text into chunks suitable for embedding and vector storage with rich metadata.
 
-    This is a pure function that uses LangChain's text splitter.
+    This is a pure function that uses LangChain's text splitter and enriches each
+    chunk with comprehensive metadata for better search, filtering, and display.
 
     Args:
         text: The text to split into chunks
@@ -1781,23 +1821,44 @@ def fn_create_text_chunks(
         config: Application configuration containing chunk size parameters
         language: Language code for the text ("en" or "ru")
         document_id: Unique document identifier (auto-generated if not provided)
+        title: Document title (extracted from first # heading or filename)
+        tags: List of tags from LLM (e.g., ["python", "ai", "tutorial"])
+        author: Document author (from PDF metadata or web article)
+        url: Original URL (for web documents)
+        file_path: Path to saved markdown file
+        summary: Brief summary of document content
+        publication_date: ISO timestamp of when document was added to database
 
     Returns:
         list[Document]: A list of LangChain Document objects with:
             - page_content: The chunk text
-            - metadata: {"source": source_file, "language": language, "document_id": str, "chunk_index": int}
+            - metadata: Comprehensive metadata including all provided fields
 
     Example:
         >>> config = AppConfig()
-        >>> chunks = fn_create_text_chunks("Long text...", "doc.pdf", config, language="en")
-        >>> print(len(chunks))
+        >>> chunks = fn_create_text_chunks(
+        ...     text="Long text...",
+        ...     source_file="doc.pdf",
+        ...     config=config,
+        ...     language="en",
+        ...     title="Machine Learning Basics",
+        ...     tags=["ml", "python"],
+        ...     summary="Introduction to ML concepts"
+        ... )
+        >>> print(chunks[0].metadata['title'])
+        'Machine Learning Basics'
+        >>> print(chunks[0].metadata['total_chunks'])
         5
-        >>> print(chunks[0].metadata['chunk_index'])
-        0
     """
+    from datetime import datetime
+
     # Generate document_id if not provided
     if document_id is None:
         document_id = str(uuid.uuid4())
+
+    # Generate publication_date if not provided
+    if publication_date is None:
+        publication_date = datetime.utcnow().isoformat()
 
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=config.CHUNK_SIZE,
@@ -1807,15 +1868,37 @@ def fn_create_text_chunks(
     )
 
     chunks = text_splitter.split_text(text)
+    total_chunks = len(chunks)
+
+    # Build base metadata (always present)
+    base_metadata = {
+        "source": source_file,
+        "language": language,
+        "document_id": document_id,
+        "total_chunks": total_chunks,
+        "publication_date": publication_date,
+    }
+
+    # Add optional metadata if provided
+    if title is not None:
+        base_metadata["title"] = title
+    if tags is not None and tags:
+        base_metadata["tags"] = tags
+    if author is not None:
+        base_metadata["author"] = author
+    if url is not None:
+        base_metadata["url"] = url
+    if file_path is not None:
+        base_metadata["file_path"] = file_path
+    if summary is not None:
+        base_metadata["summary"] = summary
 
     # Create Document objects with metadata including chunk_index
     documents = [
         Document(
             page_content=chunk,
             metadata={
-                "source": source_file,
-                "language": language,
-                "document_id": document_id,
+                **base_metadata,
                 "chunk_index": i,
             },
         )
