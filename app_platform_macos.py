@@ -16,38 +16,26 @@ logger = logging.getLogger(__name__)
 _delegate_callbacks = {}
 _delegate_counter = 0
 
+# Import and define delegate class at module level (once)
+_ChatTextViewDelegate = None
 
-def setup_chat_input_keyboard_handler(
-    chat_input,
-    send_callback: Callable[[], None],
-    send_key: str = "shift_enter"
-) -> None:
-    """
-    Set up keyboard handler for chat input on macOS.
+def _get_delegate_class():
+    """Get or create the ChatTextViewDelegate class (singleton)."""
+    global _ChatTextViewDelegate
 
-    This function uses native macOS NSTextView delegate to intercept
-    keyboard events and trigger message sending based on user preference.
+    if _ChatTextViewDelegate is not None:
+        return _ChatTextViewDelegate
 
-    Args:
-        chat_input: Toga MultilineTextInput widget
-        send_callback: Function to call when send key is pressed
-        send_key: "shift_enter" or "enter" - determines send behavior
-    """
-    # Only run on macOS
+    # Only create on macOS
     if sys.platform != "darwin":
-        logger.info("Keyboard handler only available on macOS, skipping")
-        return
+        return None
 
     try:
-        # Import macOS-specific modules
         from rubicon.objc import ObjCClass, objc_method, ObjCInstance
         from rubicon.objc.runtime import objc_id, send_super
 
-        # Get required classes
         NSObject = ObjCClass("NSObject")
         NSEvent = ObjCClass("NSEvent")
-
-        global _delegate_counter, _delegate_callbacks
 
         # Create custom delegate class as NSObject subclass
         class ChatTextViewDelegate(NSObject):
@@ -125,6 +113,45 @@ def setup_chat_input_keyboard_handler(
                 except Exception as e:
                     logger.error(f"Error in keyboard handler: {e}", exc_info=True)
                     return False
+
+        _ChatTextViewDelegate = ChatTextViewDelegate
+        logger.info("Created ChatTextViewDelegate class")
+        return ChatTextViewDelegate
+
+    except Exception as e:
+        logger.error(f"Failed to create delegate class: {e}", exc_info=True)
+        return None
+
+
+def setup_chat_input_keyboard_handler(
+    chat_input,
+    send_callback: Callable[[], None],
+    send_key: str = "shift_enter"
+) -> None:
+    """
+    Set up keyboard handler for chat input on macOS.
+
+    This function uses native macOS NSTextView delegate to intercept
+    keyboard events and trigger message sending based on user preference.
+
+    Args:
+        chat_input: Toga MultilineTextInput widget
+        send_callback: Function to call when send key is pressed
+        send_key: "shift_enter" or "enter" - determines send behavior
+    """
+    # Only run on macOS
+    if sys.platform != "darwin":
+        logger.info("Keyboard handler only available on macOS, skipping")
+        return
+
+    try:
+        global _delegate_callbacks
+
+        # Get the delegate class (created once at module level)
+        ChatTextViewDelegate = _get_delegate_class()
+        if ChatTextViewDelegate is None:
+            logger.warning("Failed to get delegate class")
+            return
 
         # Get the native widget from Toga - might be NSScrollView or NSTextView
         native_widget = chat_input._impl.native
