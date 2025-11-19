@@ -108,6 +108,7 @@ def setup_chat_input_keyboard_handler(
     try:
         from rubicon.objc import ObjCClass, objc_method, ObjCInstance
         from rubicon.objc.runtime import objc_id, SEL, libobjc, send_super, send_message
+        import ctypes
 
         global _keyboard_handler_callback, _keyboard_handler_mode, _swizzled_classes
 
@@ -146,11 +147,22 @@ def setup_chat_input_keyboard_handler(
             logger.warning("Failed to get KeyDownHelper class")
             return
 
-        # Get class pointers
-        helper_class_ptr = libobjc.object_getClass(KeyDownHelper.alloc().ptr)
+        # Get class pointers - use .ptr directly from ObjC class
+        helper_class_ptr = KeyDownHelper.ptr if hasattr(KeyDownHelper, 'ptr') else libobjc.object_getClass(KeyDownHelper.alloc().ptr)
         target_class_ptr = libobjc.object_getClass(native_text_view.ptr)
 
-        logger.info(f"Helper class: {helper_class_ptr}, Target class: {target_class_ptr}")
+        logger.info(f"Helper class ptr: {helper_class_ptr}, Target class ptr: {target_class_ptr}")
+
+        # List all methods in helper class for debugging
+        method_count = ctypes.c_uint(0)
+        method_list = libobjc.class_copyMethodList(helper_class_ptr, ctypes.byref(method_count))
+        logger.info(f"Helper class has {method_count.value} methods")
+        if method_count.value > 0:
+            for i in range(method_count.value):
+                method = method_list[i]
+                sel = libobjc.method_getName(method)
+                sel_name = libobjc.sel_getName(sel)
+                logger.info(f"  Method {i}: {sel_name}")
 
         # Get our method from helper class
         our_method = libobjc.class_getInstanceMethod(
