@@ -30,6 +30,9 @@ from toga.style import Pack
 from toga.style.pack import COLUMN, ROW, CENTER
 from toga.colors import rgb, TRANSPARENT
 
+# Import macOS-specific platform code
+from app_platform_macos import setup_chat_input_keyboard_handler, update_chat_input_send_mode
+
 logger = logging.getLogger(__name__)
 
 # ===== Light Theme Colors (Default) =====
@@ -603,6 +606,10 @@ class LokalRAGApp(toga.App):
         input_box.add(self.chat_input)
         input_box.add(self.send_button)
         container.add(input_box)
+
+        # Set up macOS keyboard handler for chat input (default: Shift+Enter)
+        # This will be updated when settings are loaded
+        self._setup_chat_keyboard_handler("shift_enter")
 
         return toga.ScrollContainer(
             content=container,
@@ -1509,6 +1516,29 @@ class LokalRAGApp(toga.App):
         else:
             logger.warning("No clear chat callback set")
 
+    def _setup_chat_keyboard_handler(self, send_key: str = "shift_enter") -> None:
+        """
+        Set up macOS keyboard handler for chat input.
+
+        This method configures platform-specific keyboard shortcuts for sending
+        messages in the chat. On macOS, it intercepts Enter/Shift+Enter keypresses.
+        On other platforms, this is a no-op.
+
+        Args:
+            send_key: "shift_enter" or "enter" - determines send behavior
+        """
+        # Create wrapper callback that triggers send
+        def send_callback():
+            if self.on_send_message_callback:
+                self.on_send_message_callback()
+
+        # Set up macOS handler (no-op on other platforms)
+        setup_chat_input_keyboard_handler(
+            self.chat_input,
+            send_callback,
+            send_key
+        )
+
     def _on_save_note(self, widget):
         """Handle save note button press."""
         if self.on_save_note_callback:
@@ -1578,6 +1608,11 @@ class LokalRAGApp(toga.App):
 
     def _on_save_settings(self, widget):
         """Handle save settings button press."""
+        # Update chat keyboard handler with current setting before saving
+        send_key_display = self.chat_send_key_selection.value
+        send_key = "shift_enter" if send_key_display == "Shift+Enter" else "enter"
+        self._setup_chat_keyboard_handler(send_key)
+
         if self.on_save_settings_callback:
             self.on_save_settings_callback()
         else:
@@ -2006,6 +2041,8 @@ class LokalRAGApp(toga.App):
             display_value = "Shift+Enter" if send_key == "shift_enter" else "Enter"
             self.chat_send_key_selection.value = display_value
             logger.info(f"Setting chat send key to: {display_value}")
+            # Update macOS keyboard handler with new setting
+            self._setup_chat_keyboard_handler(send_key)
 
         # Database language
         if "database_language" in settings:
