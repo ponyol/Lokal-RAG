@@ -117,9 +117,9 @@ class StorageService:
         so no special cleanup is required (unlike 0.4.x versions).
         """
         try:
-            # Paths for both databases
-            db_path_en = self.config.VECTOR_DB_PATH.parent / "chroma_db_en"
-            db_path_ru = self.config.VECTOR_DB_PATH.parent / "chroma_db_ru"
+            # Paths for both databases (from config)
+            db_path_en = self.config.VECTOR_DB_PATH_EN
+            db_path_ru = self.config.VECTOR_DB_PATH_RU
 
             # Ensure directories exist
             db_path_en.mkdir(parents=True, exist_ok=True)

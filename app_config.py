@@ -37,7 +37,8 @@ class AppConfig:
         MISTRAL_MODEL: Mistral model to use (mistral-large-2411, mistral-small-2506, mistral-small-latest)
         LLM_REQUEST_TIMEOUT: Timeout for LLM API requests (in seconds)
         EMBEDDING_MODEL: Name of the HuggingFace embedding model
-        VECTOR_DB_PATH: Path to the ChromaDB persistent storage
+        VECTOR_DB_PATH_EN: Path to the English ChromaDB persistent storage
+        VECTOR_DB_PATH_RU: Path to the Russian ChromaDB persistent storage
         MARKDOWN_OUTPUT_PATH: Path where processed Markdown files will be saved
         CHANGELOG_PATH: Path where changelog files will be saved
         NOTES_DIR: Path where user notes will be saved
@@ -77,7 +78,8 @@ class AppConfig:
     EMBEDDING_MODEL: str = "paraphrase-multilingual-MiniLM-L12-v2"
 
     # Storage Configuration
-    VECTOR_DB_PATH: Path = Path("./lokal_rag_db")
+    VECTOR_DB_PATH_EN: Path = Path("./chroma_db_en")  # English vector database
+    VECTOR_DB_PATH_RU: Path = Path("./chroma_db_ru")  # Russian vector database
     MARKDOWN_OUTPUT_PATH: Path = Path("./output_markdown")
     CHANGELOG_PATH: Path = Path("./changelog")  # Path for changelog files
     NOTES_DIR: Path = Path("./notes")  # Path for user notes
@@ -283,8 +285,11 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
     if "translation_chunk_size" in settings:
         overrides["TRANSLATION_CHUNK_SIZE"] = settings["translation_chunk_size"]
 
-    if "vector_db_path" in settings:
-        overrides["VECTOR_DB_PATH"] = Path(settings["vector_db_path"])
+    if "vector_db_path_en" in settings:
+        overrides["VECTOR_DB_PATH_EN"] = Path(settings["vector_db_path_en"])
+
+    if "vector_db_path_ru" in settings:
+        overrides["VECTOR_DB_PATH_RU"] = Path(settings["vector_db_path_ru"])
 
     if "markdown_output_path" in settings:
         overrides["MARKDOWN_OUTPUT_PATH"] = Path(settings["markdown_output_path"])

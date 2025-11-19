@@ -1105,18 +1105,26 @@ class LokalRAGApp(toga.App):
         )
 
         paths_help = toga.Label(
-            "Paths for storing vector database and markdown files (relative to app directory).",
+            "Paths for storing vector databases and markdown files (relative to app directory).",
             style=Pack(margin=5, font_size=10)
         )
         paths_section.add(paths_help)
 
-        # Vector DB path
-        vector_db_box = self._create_input_row(
-            "Vector Database Path:",
-            "./lokal_rag_db"
+        # English Vector DB path
+        vector_db_en_box = self._create_input_row(
+            "English Vector DB Path:",
+            "./chroma_db_en"
         )
-        self.vector_db_path_input = vector_db_box.children[1]
-        paths_section.add(vector_db_box)
+        self.vector_db_path_en_input = vector_db_en_box.children[1]
+        paths_section.add(vector_db_en_box)
+
+        # Russian Vector DB path
+        vector_db_ru_box = self._create_input_row(
+            "Russian Vector DB Path:",
+            "./chroma_db_ru"
+        )
+        self.vector_db_path_ru_input = vector_db_ru_box.children[1]
+        paths_section.add(vector_db_ru_box)
 
         # Markdown output path
         markdown_output_box = self._create_input_row(
@@ -1558,7 +1566,8 @@ class LokalRAGApp(toga.App):
         V2: FIXED API - Added missing fields
         - Added: translation_chunk_size
         - Added: vision_mode (from ingestion tab)
-        - Added: vector_db_path
+        - Added: vector_db_path_en (English vector database)
+        - Added: vector_db_path_ru (Russian vector database)
         - Added: markdown_output_path
         - Added: changelog_path
         - Added: notes_path
@@ -1607,7 +1616,8 @@ class LokalRAGApp(toga.App):
             "timeout": int(self.timeout_input.value or "300"),
             "translation_chunk_size": int(self.translation_chunk_input.value or "2000"),  # ← NEW
             # Storage Paths (NEW)
-            "vector_db_path": self.vector_db_path_input.value or "./lokal_rag_db",  # ← NEW
+            "vector_db_path_en": self.vector_db_path_en_input.value or "./chroma_db_en",  # ← NEW (English DB)
+            "vector_db_path_ru": self.vector_db_path_ru_input.value or "./chroma_db_ru",  # ← NEW (Russian DB)
             "markdown_output_path": self.markdown_output_path_input.value or "./output_markdown",  # ← NEW
             "changelog_path": self.changelog_path_input.value or "./changelog",  # ← NEW
             "notes_path": self.notes_path_input.value or "./notes",  # ← NEW (notes directory)
@@ -1706,9 +1716,13 @@ class LokalRAGApp(toga.App):
             self.translation_chunk_input.value = chunk_val
 
         # V2: Storage paths (NEW)
-        if "vector_db_path" in settings:
-            self.vector_db_path_input.value = settings["vector_db_path"]
-            logger.info(f"Setting vector DB path to: {settings['vector_db_path']}")
+        if "vector_db_path_en" in settings:
+            self.vector_db_path_en_input.value = settings["vector_db_path_en"]
+            logger.info(f"Setting English vector DB path to: {settings['vector_db_path_en']}")
+
+        if "vector_db_path_ru" in settings:
+            self.vector_db_path_ru_input.value = settings["vector_db_path_ru"]
+            logger.info(f"Setting Russian vector DB path to: {settings['vector_db_path_ru']}")
 
         if "markdown_output_path" in settings:
             self.markdown_output_path_input.value = settings["markdown_output_path"]
