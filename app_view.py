@@ -770,15 +770,15 @@ class LokalRAGApp(toga.App):
         )
         container.add(content_label)
 
-        # Content viewer
-        self.changelog_content = toga.MultilineTextInput(
-            readonly=True,
-            placeholder="Select a changelog file to view...",
+        # Content viewer (WebView for markdown rendering)
+        self.changelog_content = toga.WebView(
             style=Pack(
                 flex=1,
                 height=500
             )
         )
+        # Initialize with empty placeholder
+        self._render_changelog_html("")
         container.add(self.changelog_content)
 
         # Load files on startup
@@ -1285,30 +1285,36 @@ class LokalRAGApp(toga.App):
         )
         templates_section.add(content_label)
 
+        # Content + Buttons in a horizontal row
+        content_and_buttons_box = toga.Box(style=Pack(direction=ROW, margin=5))
+
+        # Text input on the left (takes most space)
         self.template_content_input = toga.MultilineTextInput(
             placeholder="Template content...\n\nUse \\n for new lines.",
-            style=Pack(height=120, margin=5)
+            style=Pack(flex=1, height=120, margin_right=10)
         )
-        templates_section.add(self.template_content_input)
+        content_and_buttons_box.add(self.template_content_input)
 
-        # Template action buttons
-        template_buttons_box = toga.Box(
-            style=Pack(direction=ROW, margin_top=10)
-        )
+        # Buttons on the right (vertical stack)
+        template_buttons_column = toga.Box(style=Pack(direction=COLUMN))
+
         self.add_template_button = toga.Button(
-            "➕ Add Template",
+            "➕ Add",
             on_press=self._on_add_template,
-            style=Pack(flex=1, margin_right=5, background_color=Theme.ACCENT_GREEN)
+            style=Pack(width=100, margin_bottom=5, background_color=Theme.ACCENT_GREEN)
         )
         self.delete_template_button = toga.Button(
-            "🗑️ Delete Template",
+            "🗑️ Delete",
             on_press=self._on_delete_template,
-            style=Pack(flex=1, background_color=Theme.ACCENT_RED)
+            style=Pack(width=100, background_color=Theme.ACCENT_RED)
         )
         self.delete_template_button.enabled = False  # Disabled until template selected
-        template_buttons_box.add(self.add_template_button)
-        template_buttons_box.add(self.delete_template_button)
-        templates_section.add(template_buttons_box)
+
+        template_buttons_column.add(self.add_template_button)
+        template_buttons_column.add(self.delete_template_button)
+
+        content_and_buttons_box.add(template_buttons_column)
+        templates_section.add(content_and_buttons_box)
 
         # ---- Action Buttons ----
         button_box = toga.Box(
@@ -1405,6 +1411,7 @@ class LokalRAGApp(toga.App):
         if is_password:
             input_field = toga.PasswordInput(
                 placeholder=placeholder,
+                readonly=False,  # Explicitly set to False for macOS compatibility
                 style=Pack(
                     flex=1
                 )
@@ -1412,6 +1419,7 @@ class LokalRAGApp(toga.App):
         else:
             input_field = toga.TextInput(
                 placeholder=placeholder,
+                readonly=False,  # Explicitly set to False for macOS compatibility
                 style=Pack(
                     flex=1
                 )
@@ -1426,18 +1434,161 @@ class LokalRAGApp(toga.App):
     # Changelog Helper Methods
     # ========================================================================
 
+    def _render_changelog_html(self, markdown_text: str) -> None:
+        """
+        Render changelog markdown as HTML.
+
+        This method converts markdown to beautifullyformatted HTML with theme-aware styling.
+
+        Args:
+            markdown_text: Markdown content to render (empty string for placeholder)
+        """
+        # Helper function to convert Toga color to hex string
+        def color_to_hex(color):
+            """Convert Toga color object to hex string."""
+            if hasattr(color, 'hex'):
+                return color.hex
+            elif hasattr(color, 'rgba'):
+                rgba = color.rgba
+                if hasattr(rgba, 'r'):
+                    r = int(rgba.r * 255) if rgba.r <= 1 else int(rgba.r)
+                    g = int(rgba.g * 255) if rgba.g <= 1 else int(rgba.g)
+                    b = int(rgba.b * 255) if rgba.b <= 1 else int(rgba.b)
+                    return f"#{r:02x}{g:02x}{b:02x}"
+            return "#000000"
+
+        # Get current theme colors
+        theme = self.current_theme
+
+        # Base HTML structure
+        html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+            color: {color_to_hex(theme.TEXT_PRIMARY)};
+            background-color: {color_to_hex(theme.BG_PRIMARY)};
+            margin: 0;
+            padding: 20px;
+        }}
+
+        h1 {{
+            color: {color_to_hex(theme.ACCENT_BLUE)};
+            border-bottom: 2px solid {color_to_hex(theme.ACCENT_BLUE)};
+            padding-bottom: 10px;
+        }}
+
+        h2 {{
+            color: {color_to_hex(theme.ACCENT_GREEN)};
+            margin-top: 30px;
+        }}
+
+        h3 {{
+            color: {color_to_hex(theme.TEXT_PRIMARY)};
+        }}
+
+        ul, ol {{
+            margin: 10px 0;
+            padding-left: 30px;
+        }}
+
+        li {{
+            margin: 5px 0;
+        }}
+
+        code {{
+            background-color: rgba(0, 0, 0, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: "SF Mono", Monaco, Menlo, Consolas, monospace;
+            font-size: 13px;
+        }}
+
+        pre {{
+            background-color: rgba(0, 0, 0, 0.1);
+            padding: 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }}
+
+        pre code {{
+            background-color: transparent;
+            padding: 0;
+        }}
+
+        blockquote {{
+            border-left: 4px solid {color_to_hex(theme.ACCENT_BLUE)};
+            margin: 10px 0;
+            padding-left: 20px;
+            color: {color_to_hex(theme.TEXT_SECONDARY)};
+        }}
+
+        a {{
+            color: {color_to_hex(theme.ACCENT_BLUE)};
+            text-decoration: none;
+        }}
+
+        a:hover {{
+            text-decoration: underline;
+        }}
+
+        .placeholder {{
+            text-align: center;
+            color: {color_to_hex(theme.TEXT_SECONDARY)};
+            padding: 60px 20px;
+            font-style: italic;
+            font-size: 16px;
+        }}
+    </style>
+</head>
+<body>
+"""
+
+        if not markdown_text or not markdown_text.strip():
+            # Show placeholder
+            html += """
+    <div class="placeholder">
+        Select a changelog file to view...<br><br>
+        📋 История обработки документов
+    </div>
+"""
+        else:
+            # Convert markdown to HTML
+            import markdown as md
+            html_content = md.markdown(
+                markdown_text,
+                extensions=['fenced_code', 'codehilite', 'tables', 'nl2br']
+            )
+            html += html_content
+
+        # Close HTML
+        html += """
+</body>
+</html>
+"""
+
+        # Set WebView content
+        self.changelog_content.set_content("", html)
+
     def _load_changelog_files(self):
         """Load changelog files and populate selection."""
         changelog_path = Path("./changelog")
         if not changelog_path.exists():
             self.changelog_file_selection.items = []
-            self.changelog_content.value = "No changelog directory found.\n\nFiles will be created after processing documents."
+            self._render_changelog_html("# No changelog directory found\n\nFiles will be created after processing documents.")
             return
 
         files = sorted(changelog_path.glob("*.md"), reverse=True)
         if not files:
             self.changelog_file_selection.items = []
-            self.changelog_content.value = "No changelog files found.\n\nFiles will be created after processing documents."
+            self._render_changelog_html("# No changelog files found\n\nFiles will be created after processing documents.")
             return
 
         # Create display names
@@ -1466,17 +1617,17 @@ class LokalRAGApp(toga.App):
         """Handle changelog file selection change."""
         selected = self.changelog_file_selection.value
         if not selected or selected not in self.changelog_files_map:
-            self.changelog_content.value = ""
+            self._render_changelog_html("")
             return
 
         file_path = self.changelog_files_map[selected]
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            self.changelog_content.value = content
+            self._render_changelog_html(content)
             logger.info(f"Loaded changelog file: {file_path.name}")
         except Exception as e:
-            self.changelog_content.value = f"Error reading file:\n{str(e)}"
+            self._render_changelog_html(f"# Error reading file\n\n{str(e)}")
             logger.error(f"Error loading changelog file: {e}")
 
     def _on_refresh_changelog(self, widget):
