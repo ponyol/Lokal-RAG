@@ -10,6 +10,13 @@ Give AI assistants like Claude Desktop direct access to your local knowledge bas
   - Stage 1: Hybrid search (BM25 + Vector) for high recall
   - Stage 2: Cross-Encoder re-ranking for high precision
 - 🎯 **Intelligent Re-Ranking** with jina-reranker-v2-base-multilingual
+- 🗣️ **Language Validation** with majority language check
+  - Prevents poor results from language mismatches
+  - Supports pure and mixed queries (e.g., "документы machine learning")
+  - Helpful error messages in Russian and English
+- 📅 **Date Query Expansion** for accurate date-based search
+  - Automatic expansion: "октябрь" → "октябрь октября 1 октября 2 октября"
+  - Works for Russian and English months
 - 📝 **Notes Management** with vector search
 - 💬 **Contextual Chat** with RAG and re-ranked context
 - 🌐 **Multilingual** Russian/English support
@@ -190,6 +197,53 @@ Use lokal_rag_create_note to create a note titled "Meeting Notes" with
 content about our AI strategy discussion.
 ```
 
+#### Language Validation
+
+The server automatically validates query language to prevent poor search results:
+
+**Valid queries (Russian knowledge base):**
+```
+"документы за октябрь месяц"  ✅ Pure Russian
+"документы про machine learning"  ✅ Mixed (majority Russian)
+```
+
+**Blocked queries:**
+```
+"documents from october"  ❌ Pure English (expects Russian)
+→ Error: "Please translate your query to Russian. The knowledge base contains only Russian documents."
+```
+
+**Parameters:**
+- `language="ru"` (default) - for Russian knowledge base
+- `language="en"` - for English knowledge base
+- `validate_language=True` (default) - enable validation
+- `validate_language=False` - disable validation (if needed)
+
+**Example with explicit language:**
+```python
+lokal_rag_search(
+    query="какие документы есть за октябрь?",
+    language="ru",  # Expects Russian knowledge base
+    validate_language=True  # Validate query language
+)
+```
+
+#### Date-Based Search
+
+Queries with dates are automatically expanded for better results:
+
+```
+"документы за октябрь"
+→ Expanded to: "документы за октябрь октября 1 октября 2 октября дат октября"
+→ Finds: "8 октября 2025", "14 октября 2025", etc. ✅
+```
+
+This works because:
+- Documents contain dates in genitive case: "8 октября"
+- Queries use nominative case: "октябрь"
+- BM25 requires exact token matches
+- Query expansion bridges the gap!
+
 ### Available Tools
 
 | Tool | Description |
@@ -333,15 +387,29 @@ print(metrics)
 # Install dev dependencies
 pip install -e ".[dev]"
 
-# Run tests
+# Run all tests
 pytest
 
 # With coverage
 pytest --cov=lokal_rag_mcp --cov-report=html
 
+# Run specific test modules
+pytest tests/test_reranker.py          # Re-ranker tests
+pytest tests/test_query_utils.py       # Language validation & date expansion tests
+
 # Run specific test
-pytest tests/test_reranker.py::test_reranker_basic
+pytest tests/test_query_utils.py::TestDetectQueryLanguage::test_pure_russian
+
+# Skip slow tests (model loading)
+pytest -m "not slow"
 ```
+
+**Test Coverage:**
+- ✅ Language detection (Russian, English, mixed)
+- ✅ Language validation with majority check
+- ✅ Date query expansion (Russian & English months)
+- ✅ Re-ranker functionality
+- ✅ Search pipeline integration
 
 ### Code Quality
 
