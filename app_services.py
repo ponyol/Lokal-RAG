@@ -1822,12 +1822,17 @@ def fn_create_text_chunks(
         language: Language code for the text ("en" or "ru")
         document_id: Unique document identifier (auto-generated if not provided)
         title: Document title (extracted from first # heading or filename)
-        tags: List of tags from LLM (e.g., ["python", "ai", "tutorial"])
+        tags: List of tags from LLM (e.g., ["python", "ai", "tutorial"]) - stored as comma-separated string
         author: Document author (from PDF metadata or web article)
         url: Original URL (for web documents)
         file_path: Path to saved markdown file
         summary: Brief summary of document content
         publication_date: ISO timestamp of when document was added to database
+
+    NOTE:
+        ChromaDB metadata only supports: str, int, float, bool, None
+        Lists (like tags) are converted to comma-separated strings
+        To retrieve tags as list: metadata["tags"].split(", ")
 
     Returns:
         list[Document]: A list of LangChain Document objects with:
@@ -1880,10 +1885,12 @@ def fn_create_text_chunks(
     }
 
     # Add optional metadata if provided
+    # NOTE: ChromaDB only accepts str, int, float, bool, None - no lists!
     if title is not None:
         base_metadata["title"] = title
     if tags is not None and tags:
-        base_metadata["tags"] = tags
+        # Convert tags list to comma-separated string for ChromaDB
+        base_metadata["tags"] = ", ".join(tags)
     if author is not None:
         base_metadata["author"] = author
     if url is not None:
