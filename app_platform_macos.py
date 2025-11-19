@@ -47,7 +47,13 @@ def _get_delegate_class():
             def init(self):
                 """Initialize the delegate."""
                 self = ObjCInstance(send_super(__class__, self, 'init', restype=objc_id, argtypes=[]))
+                logger.info(f"ChatTextViewDelegate.init() called, id={id(self)}")
                 return self
+
+            @objc_method
+            def textViewDidChangeSelection_(self, notification) -> None:
+                """Called when text selection changes (for testing delegate works)."""
+                logger.debug("✓ Delegate is working - selection changed")
 
             @objc_method
             def textView_doCommandBySelector_(self, text_view, selector) -> bool:
@@ -58,6 +64,8 @@ def _get_delegate_class():
                     True if we handled the command, False to use default behavior
                 """
                 try:
+                    logger.info(f"🔑 textView_doCommandBySelector_ called! selector={selector}")
+
                     # Get callback data from global storage using self's address
                     delegate_id = id(self)
                     if delegate_id not in _delegate_callbacks:
@@ -67,13 +75,18 @@ def _get_delegate_class():
                     callback_data = _delegate_callbacks[delegate_id]
                     send_func = callback_data['send_func']
                     send_mode = callback_data['send_mode']
+                    original_delegate = callback_data.get('original_delegate')
 
                     # Get selector name
                     selector_name = str(selector)
-                    logger.debug(f"Selector received: {selector_name}")
+                    logger.info(f"Selector received: {selector_name}")
 
                     # We only care about Enter/Return key
                     if "insertNewline" not in selector_name:
+                        # Not our selector, delegate to original if exists
+                        if original_delegate and hasattr(original_delegate, 'textView_doCommandBySelector_'):
+                            logger.debug(f"Delegating {selector_name} to original delegate")
+                            return original_delegate.textView_doCommandBySelector_(text_view, selector)
                         return False
 
                     # Get current event to check modifier flags
@@ -88,7 +101,7 @@ def _get_delegate_class():
                     modifier_flags = int(current_event.modifierFlags)
                     shift_pressed = (modifier_flags & (1 << 17)) != 0
 
-                    logger.debug(f"Shift pressed: {shift_pressed}, mode: {send_mode}")
+                    logger.info(f"Shift pressed: {shift_pressed}, mode: {send_mode}")
 
                     # Determine if we should send based on mode
                     should_send = False
@@ -107,7 +120,10 @@ def _get_delegate_class():
                         return True  # Consume the event
                     else:
                         # Let default behavior happen (insert newline)
-                        logger.debug("Allowing newline insertion")
+                        logger.info("Allowing newline insertion")
+                        # Delegate to original if exists
+                        if original_delegate and hasattr(original_delegate, 'textView_doCommandBySelector_'):
+                            return original_delegate.textView_doCommandBySelector_(text_view, selector)
                         return False
 
                 except Exception as e:
@@ -158,6 +174,14 @@ def setup_chat_input_keyboard_handler(
 
         logger.info(f"Native widget type: {type(native_widget)}, class: {native_widget.__class__.__name__ if hasattr(native_widget, '__class__') else 'unknown'}")
 
+        # Check what ObjC class this actually is
+        from rubicon.objc import ObjCClass
+        try:
+            widget_class_name = native_widget.className if hasattr(native_widget, 'className') else str(type(native_widget))
+            logger.info(f"Native widget ObjC class: {widget_class_name}")
+        except:
+            pass
+
         # MultilineTextInput uses NSScrollView containing NSTextView
         # Try to get the documentView which is the actual NSTextView
         native_text_view = None
@@ -166,6 +190,13 @@ def setup_chat_input_keyboard_handler(
             # This is an NSScrollView, get the text view inside
             native_text_view = native_widget.documentView
             logger.info(f"Found documentView: {type(native_text_view)}")
+
+            # Check documentView's class
+            try:
+                doc_class_name = native_text_view.className if hasattr(native_text_view, 'className') else str(type(native_text_view))
+                logger.info(f"DocumentView ObjC class: {doc_class_name}")
+            except:
+                pass
         elif hasattr(native_widget, 'delegate'):
             # This is already an NSTextView
             native_text_view = native_widget
@@ -179,6 +210,10 @@ def setup_chat_input_keyboard_handler(
             logger.warning(f"Text view doesn't have delegate property: {type(native_text_view)}")
             return
 
+        # Check if there's already a delegate
+        existing_delegate = native_text_view.delegate
+        logger.info(f"Existing delegate: {existing_delegate}")
+
         # Create delegate instance
         delegate = ChatTextViewDelegate.alloc().init()
 
@@ -186,13 +221,16 @@ def setup_chat_input_keyboard_handler(
         delegate_id = id(delegate)
         _delegate_callbacks[delegate_id] = {
             'send_func': send_callback,
-            'send_mode': send_key
+            'send_mode': send_key,
+            'original_delegate': existing_delegate  # Save original delegate
         }
 
         # Set the delegate
         native_text_view.delegate = delegate
 
         logger.info(f"✓ macOS keyboard handler installed (mode: {send_key}, delegate_id: {delegate_id})")
+        logger.info(f"  Text view: {native_text_view}")
+        logger.info(f"  Delegate set to: {native_text_view.delegate}")
 
     except ImportError as e:
         logger.warning(f"Could not import rubicon.objc: {e}")
