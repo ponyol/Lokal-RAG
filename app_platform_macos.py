@@ -31,7 +31,7 @@ def _get_helper_class():
 
     try:
         from rubicon.objc import ObjCClass, objc_method
-        from rubicon.objc.runtime import objc_id, send_super
+        from rubicon.objc.runtime import objc_id, send_message
 
         NSObject = ObjCClass("NSObject")
 
@@ -67,13 +67,14 @@ def _get_helper_class():
                             _keyboard_handler_callback()
                             return  # Don't call super (consume event)
 
-                    # Not our event - call original implementation via super
-                    send_super(__class__, self, 'lokalragKeyDown:', event, restype=None, argtypes=[objc_id])
+                    # Not our event - call original implementation
+                    # After swizzling, lokalragKeyDown: contains the original keyDown: implementation
+                    send_message(self, 'lokalragKeyDown:', event, restype=None, argtypes=[objc_id])
 
                 except Exception as e:
                     logger.error(f"Error in keyDown handler: {e}", exc_info=True)
-                    # Fall back to super
-                    send_super(__class__, self, 'lokalragKeyDown:', event, restype=None, argtypes=[objc_id])
+                    # Fall back to original
+                    send_message(self, 'lokalragKeyDown:', event, restype=None, argtypes=[objc_id])
 
         _KeyDownHelper = KeyDownHelper
         logger.info("Created KeyDownHelper class")
