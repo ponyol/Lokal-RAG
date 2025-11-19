@@ -15,6 +15,73 @@ logger = logging.getLogger(__name__)
 _keyboard_handler_callback = None
 _keyboard_handler_mode = None
 _swizzled_classes = set()
+_KeyDownHelper = None  # Cached helper class
+
+
+def _get_helper_class():
+    """Get or create the KeyDownHelper class (singleton)."""
+    global _KeyDownHelper
+
+    if _KeyDownHelper is not None:
+        return _KeyDownHelper
+
+    # Only create on macOS
+    if sys.platform != "darwin":
+        return None
+
+    try:
+        from rubicon.objc import ObjCClass, objc_method
+        from rubicon.objc.runtime import objc_id, send_super
+
+        NSObject = ObjCClass("NSObject")
+
+        # Create helper class with our keyDown implementation
+        class KeyDownHelper(NSObject):
+            """Helper class to get IMP for our keyDown method."""
+
+            @objc_method
+            def lokal_rag_keyDown_(self, event):
+                """Our custom keyDown implementation."""
+                try:
+                    global _keyboard_handler_callback, _keyboard_handler_mode
+
+                    # Get key code
+                    key_code = event.keyCode
+                    # Enter key = 36, Return key = 76
+                    if key_code in (36, 76):
+                        # Check modifier flags
+                        modifier_flags = int(event.modifierFlags)
+                        shift_pressed = (modifier_flags & (1 << 17)) != 0
+
+                        logger.info(f"🔑 Enter key! keyCode={key_code}, shift={shift_pressed}, mode={_keyboard_handler_mode}")
+
+                        # Determine if we should send
+                        should_send = False
+                        if _keyboard_handler_mode == "shift_enter":
+                            should_send = shift_pressed
+                        else:  # "enter"
+                            should_send = not shift_pressed
+
+                        if should_send and _keyboard_handler_callback:
+                            logger.info(f"🚀 Sending message via keyboard shortcut")
+                            _keyboard_handler_callback()
+                            return  # Don't call super (consume event)
+
+                    # Not our event - call original implementation via super
+                    send_super(__class__, self, 'lokal_rag_keyDown:', event, restype=None, argtypes=[objc_id])
+
+                except Exception as e:
+                    logger.error(f"Error in keyDown handler: {e}", exc_info=True)
+                    # Fall back to super
+                    send_super(__class__, self, 'lokal_rag_keyDown:', event, restype=None, argtypes=[objc_id])
+
+        _KeyDownHelper = KeyDownHelper
+        logger.info("Created KeyDownHelper class")
+        return KeyDownHelper
+
+    except Exception as e:
+        logger.error(f"Failed to create KeyDownHelper class: {e}", exc_info=True)
+        return None
 
 
 def setup_chat_input_keyboard_handler(
@@ -73,45 +140,11 @@ def setup_chat_input_keyboard_handler(
             logger.info(f"{toga_class_name} already swizzled, updating callback only")
             return
 
-        # Create helper class with our keyDown implementation
-        class KeyDownHelper(NSObject):
-            """Helper class to get IMP for our keyDown method."""
-
-            @objc_method
-            def lokal_rag_keyDown_(self, event):
-                """Our custom keyDown implementation."""
-                try:
-                    global _keyboard_handler_callback, _keyboard_handler_mode
-
-                    # Get key code
-                    key_code = event.keyCode
-                    # Enter key = 36, Return key = 76
-                    if key_code in (36, 76):
-                        # Check modifier flags
-                        modifier_flags = int(event.modifierFlags)
-                        shift_pressed = (modifier_flags & (1 << 17)) != 0
-
-                        logger.info(f"🔑 Enter key! keyCode={key_code}, shift={shift_pressed}, mode={_keyboard_handler_mode}")
-
-                        # Determine if we should send
-                        should_send = False
-                        if _keyboard_handler_mode == "shift_enter":
-                            should_send = shift_pressed
-                        else:  # "enter"
-                            should_send = not shift_pressed
-
-                        if should_send and _keyboard_handler_callback:
-                            logger.info(f"🚀 Sending message via keyboard shortcut")
-                            _keyboard_handler_callback()
-                            return  # Don't call super (consume event)
-
-                    # Not our event - call original implementation via super
-                    send_super(__class__, self, 'lokal_rag_keyDown:', event, restype=None, argtypes=[objc_id])
-
-                except Exception as e:
-                    logger.error(f"Error in keyDown handler: {e}", exc_info=True)
-                    # Fall back to super
-                    send_super(__class__, self, 'lokal_rag_keyDown:', event, restype=None, argtypes=[objc_id])
+        # Get helper class (created once at module level)
+        KeyDownHelper = _get_helper_class()
+        if KeyDownHelper is None:
+            logger.warning("Failed to get KeyDownHelper class")
+            return
 
         # Get class pointers
         helper_class_ptr = libobjc.object_getClass(KeyDownHelper.alloc().ptr)
