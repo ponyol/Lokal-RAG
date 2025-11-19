@@ -928,11 +928,15 @@ def rag_chat_worker(
         else:
             # Log retrieved document sources for debugging
             logger.info(f"Generating response with {len(retrieved_docs)} context documents")
+            total_chars = 0
             for i, doc in enumerate(retrieved_docs, 1):
                 source = doc.metadata.get('source', 'unknown')
                 doc_type = doc.metadata.get('type', 'unknown')
+                content_length = len(doc.page_content)
+                total_chars += content_length
                 preview = doc.page_content[:100].replace('\n', ' ')
-                logger.info(f"  Doc {i} [{doc_type}]: {source} | Preview: {preview}...")
+                logger.info(f"  Doc {i} [{doc_type}]: {source} | Length: {content_length} chars | Preview: {preview}...")
+            logger.info(f"Total context size: {total_chars} characters ({total_chars // 1000}K)")
 
             # Step 3: Generate response with context and history
             response = fn_get_rag_response(query, retrieved_docs, config, chat_history or [])
