@@ -11,6 +11,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Global storage for delegate callbacks
+# Using dict to map delegate instance ID to callback data
+_delegate_callbacks = {}
+_delegate_counter = 0
+
 
 def setup_chat_input_keyboard_handler(
     chat_input,
@@ -35,57 +40,48 @@ def setup_chat_input_keyboard_handler(
 
     try:
         # Import macOS-specific modules
-        from rubicon.objc import ObjCClass, objc_method, py_from_ns
-        from rubicon.objc.runtime import SEL
+        from rubicon.objc import ObjCClass, objc_method, ObjCInstance
+        from rubicon.objc.runtime import objc_id, send_super
 
-        # Get NSTextView class
-        NSTextView = ObjCClass("NSTextView")
+        # Get required classes
+        NSObject = ObjCClass("NSObject")
         NSEvent = ObjCClass("NSEvent")
 
-        # Create custom delegate class
-        # Using simple Python class - rubicon will bridge it automatically
-        class ChatTextViewDelegate:
+        global _delegate_counter, _delegate_callbacks
+
+        # Create custom delegate class as NSObject subclass
+        class ChatTextViewDelegate(NSObject):
             """
             Custom NSTextView delegate that intercepts keyboard events.
-
-            Implements textView:doCommandBySelector: to catch Return key presses
-            and determine if message should be sent based on modifier keys.
             """
 
-            def __init__(self, send_func: Callable[[], None], send_mode: str):
-                self.send_func = send_func
-                self.send_mode = send_mode  # "shift_enter" or "enter"
+            @objc_method
+            def init(self):
+                """Initialize the delegate."""
+                self = ObjCInstance(send_super(__class__, self, 'init', restype=objc_id, argtypes=[]))
+                return self
 
             @objc_method
             def textView_doCommandBySelector_(self, text_view, selector) -> bool:
                 """
                 Handle keyboard commands in NSTextView.
 
-                This method is called for special key combinations.
-                We intercept insertNewline: (Enter key) and check modifiers.
-
-                Args:
-                    text_view: The NSTextView instance
-                    selector: The command selector (e.g., insertNewline:)
-
                 Returns:
                     True if we handled the command, False to use default behavior
                 """
                 try:
+                    # Get callback data from global storage using self's address
+                    delegate_id = id(self)
+                    if delegate_id not in _delegate_callbacks:
+                        logger.warning(f"Delegate {delegate_id} not found in callbacks")
+                        return False
+
+                    callback_data = _delegate_callbacks[delegate_id]
+                    send_func = callback_data['send_func']
+                    send_mode = callback_data['send_mode']
+
                     # Get selector name
-                    # selector is a SEL object, need to check it carefully
-                    selector_str = "insertNewline:"
-
-                    # Try to get the selector name
-                    try:
-                        if hasattr(selector, 'name'):
-                            selector_name = selector.name
-                        else:
-                            # Convert SEL to string using str()
-                            selector_name = str(selector)
-                    except:
-                        selector_name = selector_str
-
+                    selector_name = str(selector)
                     logger.debug(f"Selector received: {selector_name}")
 
                     # We only care about Enter/Return key
@@ -104,12 +100,12 @@ def setup_chat_input_keyboard_handler(
                     modifier_flags = int(current_event.modifierFlags)
                     shift_pressed = (modifier_flags & (1 << 17)) != 0
 
-                    logger.debug(f"Shift pressed: {shift_pressed}, mode: {self.send_mode}")
+                    logger.debug(f"Shift pressed: {shift_pressed}, mode: {send_mode}")
 
                     # Determine if we should send based on mode
                     should_send = False
 
-                    if self.send_mode == "shift_enter":
+                    if send_mode == "shift_enter":
                         # Send on Shift+Enter, regular Enter adds newline
                         should_send = shift_pressed
                     else:  # "enter"
@@ -118,8 +114,8 @@ def setup_chat_input_keyboard_handler(
 
                     if should_send:
                         # Trigger send callback
-                        logger.info(f"🚀 Sending message via {self.send_mode} shortcut")
-                        self.send_func()
+                        logger.info(f"🚀 Sending message via {send_mode} shortcut")
+                        send_func()
                         return True  # Consume the event
                     else:
                         # Let default behavior happen (insert newline)
@@ -156,11 +152,20 @@ def setup_chat_input_keyboard_handler(
             logger.warning(f"Text view doesn't have delegate property: {type(native_text_view)}")
             return
 
-        # Create and set delegate
-        delegate = ChatTextViewDelegate(send_callback, send_key)
+        # Create delegate instance
+        delegate = ChatTextViewDelegate.alloc().init()
+
+        # Store callback data in global dict
+        delegate_id = id(delegate)
+        _delegate_callbacks[delegate_id] = {
+            'send_func': send_callback,
+            'send_mode': send_key
+        }
+
+        # Set the delegate
         native_text_view.delegate = delegate
 
-        logger.info(f"✓ macOS keyboard handler installed (mode: {send_key}, text_view: {native_text_view})")
+        logger.info(f"✓ macOS keyboard handler installed (mode: {send_key}, delegate_id: {delegate_id})")
 
     except ImportError as e:
         logger.warning(f"Could not import rubicon.objc: {e}")
