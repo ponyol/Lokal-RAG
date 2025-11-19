@@ -424,6 +424,8 @@ class TogaAppOrchestrator:
         """
         self.chat_history.clear()
         logger.info("Chat history cleared")
+        # Clear the visual chat display
+        self.view.clear_chat_history()
         # Optionally show a visual confirmation
         self.view.append_chat_message("system", "Chat history cleared")
 

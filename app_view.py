@@ -24,6 +24,7 @@ Version 2 Changes:
 import logging
 from typing import Optional, Callable
 from pathlib import Path
+import markdown
 
 import toga
 from toga.style import Pack
@@ -126,6 +127,9 @@ class LokalRAGApp(toga.App):
 
         # Note templates management
         self.note_templates = []  # Will be loaded from settings
+
+        # Chat messages storage (for markdown rendering)
+        self._chat_messages = []  # List of tuples: (role, message)
 
         # Theme management
         self.current_theme = LightTheme  # Default to light theme
@@ -574,15 +578,15 @@ class LokalRAGApp(toga.App):
         search_box.add(self.clear_chat_button)
         container.add(search_box)
 
-        # Chat history display
-        self.chat_history = toga.MultilineTextInput(
-            readonly=True,
-            placeholder="Chat history will appear here...\n\nAsk questions about your documents!",
+        # Chat history display (WebView for markdown rendering)
+        self.chat_history = toga.WebView(
             style=Pack(
                 flex=1,
                 height=400
             )
         )
+        # Set initial empty state with placeholder message
+        self._render_chat_html()
         container.add(self.chat_history)
 
         # Message input
@@ -2152,25 +2156,221 @@ class LokalRAGApp(toga.App):
         # Auto-scroll to bottom by setting cursor to end
         # NOTE: Toga may handle this automatically
 
+    def _render_chat_html(self) -> None:
+        """
+        Render chat messages as HTML with markdown formatting.
+
+        This method converts the stored chat messages into beautifully
+        formatted HTML with proper markdown rendering, syntax highlighting,
+        and theme-aware styling.
+        """
+        # Helper function to convert Toga color to hex string
+        def color_to_hex(color):
+            """Convert Toga color object to hex string."""
+            if hasattr(color, 'hex'):
+                return color.hex
+            # Fallback: try to get rgba values and convert
+            elif hasattr(color, 'rgba'):
+                r, g, b, a = color.rgba
+                return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
+            else:
+                # Default fallback
+                return "#000000"
+
+        # Get current theme colors
+        theme = self.current_theme
+
+        # Base HTML structure with embedded CSS
+        html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+            color: {color_to_hex(theme.TEXT_PRIMARY)};
+            background-color: {color_to_hex(theme.BG_PRIMARY)};
+            margin: 0;
+            padding: 16px;
+        }}
+
+        .message {{
+            margin-bottom: 20px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            background-color: {color_to_hex(theme.BG_SECONDARY)};
+        }}
+
+        .message-header {{
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }}
+
+        .user-message .message-header {{
+            color: {color_to_hex(theme.ACCENT_BLUE)};
+        }}
+
+        .assistant-message .message-header {{
+            color: {color_to_hex(theme.ACCENT_GREEN)};
+        }}
+
+        .system-message .message-header {{
+            color: {color_to_hex(theme.TEXT_SECONDARY)};
+            font-style: italic;
+        }}
+
+        .message-content {{
+            color: {color_to_hex(theme.TEXT_PRIMARY)};
+        }}
+
+        .message-content p {{
+            margin: 0 0 8px 0;
+        }}
+
+        .message-content p:last-child {{
+            margin-bottom: 0;
+        }}
+
+        .message-content ul, .message-content ol {{
+            margin: 8px 0;
+            padding-left: 24px;
+        }}
+
+        .message-content li {{
+            margin: 4px 0;
+        }}
+
+        .message-content code {{
+            background-color: rgba(0, 0, 0, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: "SF Mono", Monaco, Menlo, Consolas, monospace;
+            font-size: 13px;
+        }}
+
+        .message-content pre {{
+            background-color: rgba(0, 0, 0, 0.1);
+            padding: 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 8px 0;
+        }}
+
+        .message-content pre code {{
+            background-color: transparent;
+            padding: 0;
+        }}
+
+        .message-content blockquote {{
+            border-left: 4px solid {color_to_hex(theme.ACCENT_BLUE)};
+            margin: 8px 0;
+            padding-left: 16px;
+            color: {color_to_hex(theme.TEXT_SECONDARY)};
+        }}
+
+        .message-content strong {{
+            font-weight: 600;
+        }}
+
+        .message-content em {{
+            font-style: italic;
+        }}
+
+        .message-content a {{
+            color: {color_to_hex(theme.ACCENT_BLUE)};
+            text-decoration: none;
+        }}
+
+        .message-content a:hover {{
+            text-decoration: underline;
+        }}
+
+        .placeholder {{
+            text-align: center;
+            color: {color_to_hex(theme.TEXT_SECONDARY)};
+            padding: 40px 20px;
+            font-style: italic;
+        }}
+    </style>
+</head>
+<body>
+"""
+
+        # If no messages, show placeholder
+        if not self._chat_messages:
+            html += """
+    <div class="placeholder">
+        Chat history will appear here...<br><br>
+        Ask questions about your documents!
+    </div>
+"""
+        else:
+            # Render each message
+            for role, message in self._chat_messages:
+                # Convert markdown to HTML
+                message_html = markdown.markdown(
+                    message,
+                    extensions=['fenced_code', 'codehilite', 'tables', 'nl2br']
+                )
+
+                # Determine message class and header
+                if role == "user":
+                    message_class = "user-message"
+                    header = "👤 You"
+                elif role == "assistant":
+                    message_class = "assistant-message"
+                    header = "🤖 Assistant"
+                else:
+                    message_class = "system-message"
+                    header = role
+
+                # Add message div
+                html += f"""
+    <div class="message {message_class}">
+        <div class="message-header">{header}</div>
+        <div class="message-content">
+            {message_html}
+        </div>
+    </div>
+"""
+
+        # Close HTML
+        html += """
+</body>
+</html>
+"""
+
+        # Set WebView content
+        self.chat_history.set_content("", html)
+
     def append_chat_message(self, role: str, message: str) -> None:
         """
-        Append a message to the chat history.
+        Append a message to the chat history with markdown rendering.
 
         Args:
-            role: The role (user/assistant)
-            message: The message content
+            role: The role (user/assistant/system)
+            message: The message content (supports markdown formatting)
         """
-        current = self.chat_history.value or ""
+        # Add message to internal storage
+        self._chat_messages.append((role, message))
 
-        # Format the message
-        if role == "user":
-            formatted = f"👤 You: {message}\n"
-        elif role == "assistant":
-            formatted = f"🤖 Assistant: {message}\n"
-        else:
-            formatted = f"{role}: {message}\n"
+        # Re-render the chat HTML
+        self._render_chat_html()
 
-        self.chat_history.value = current + formatted + "\n"
+    def clear_chat_history(self) -> None:
+        """
+        Clear the chat history display.
+
+        This method clears all messages from the chat display.
+        """
+        self._chat_messages.clear()
+        self._render_chat_html()
 
     def clear_log(self) -> None:
         """Clear the processing log."""
