@@ -916,11 +916,24 @@ def rag_chat_worker(
         if expanded_query != query:
             logger.info(f"Expanded query: '{query}' → '{expanded_query}'")
 
-        # Step 2: Search for relevant documents (with type filter)
+        # Step 1.5: Detect if user wants full document
+        full_doc_keywords = [
+            'полностью', 'весь документ', 'все содержимое', 'полное содержание', 'целиком',
+            'full document', 'entire document', 'complete content', 'whole document', 'full text'
+        ]
+        include_full_doc = any(keyword in query.lower() for keyword in full_doc_keywords)
+
+        if include_full_doc:
+            logger.info("🔍 Full document request detected! Will retrieve ALL chunks of the document.")
+
+        # Step 2: Search for relevant documents (with type filter and full doc option)
         search_desc = f"{search_type}s" if search_type else "all documents"
         logger.info(f"Searching {search_desc} for: {query[:50]}...")
-        retrieved_docs = storage.search_similar_documents(
-            expanded_query, k=config.RAG_TOP_K, search_type=search_type
+        retrieved_docs = storage.search_with_full_document(
+            expanded_query,
+            k=config.RAG_TOP_K,
+            search_type=search_type,
+            include_full_doc=include_full_doc
         )
 
         if not retrieved_docs:

@@ -17,6 +17,7 @@ import gc
 import json
 import logging
 import re
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -1766,7 +1767,8 @@ def fn_create_text_chunks(
     text: str,
     source_file: str,
     config: AppConfig,
-    language: str = "en"
+    language: str = "en",
+    document_id: Optional[str] = None
 ) -> list[Document]:
     """
     Split text into chunks suitable for embedding and vector storage.
@@ -1778,18 +1780,25 @@ def fn_create_text_chunks(
         source_file: The name of the source file (for metadata)
         config: Application configuration containing chunk size parameters
         language: Language code for the text ("en" or "ru")
+        document_id: Unique document identifier (auto-generated if not provided)
 
     Returns:
         list[Document]: A list of LangChain Document objects with:
             - page_content: The chunk text
-            - metadata: {"source": source_file, "language": language}
+            - metadata: {"source": source_file, "language": language, "document_id": str, "chunk_index": int}
 
     Example:
         >>> config = AppConfig()
         >>> chunks = fn_create_text_chunks("Long text...", "doc.pdf", config, language="en")
         >>> print(len(chunks))
         5
+        >>> print(chunks[0].metadata['chunk_index'])
+        0
     """
+    # Generate document_id if not provided
+    if document_id is None:
+        document_id = str(uuid.uuid4())
+
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=config.CHUNK_SIZE,
         chunk_overlap=config.CHUNK_OVERLAP,
@@ -1799,16 +1808,18 @@ def fn_create_text_chunks(
 
     chunks = text_splitter.split_text(text)
 
-    # Create Document objects with metadata
+    # Create Document objects with metadata including chunk_index
     documents = [
         Document(
             page_content=chunk,
             metadata={
                 "source": source_file,
                 "language": language,
+                "document_id": document_id,
+                "chunk_index": i,
             },
         )
-        for chunk in chunks
+        for i, chunk in enumerate(chunks)
     ]
 
     return documents
