@@ -49,11 +49,9 @@ def _get_helper_class():
                     # CRITICAL: Only handle events from the specific chat input widget
                     # This prevents the handler from affecting other text fields (Settings, etc.)
                     self_ptr = int(self.ptr) if hasattr(self, 'ptr') else 0
-                    logger.info(f"🔍 keyDown in widget: ptr={hex(self_ptr)}, chat_input_ptr={hex(_chat_input_widget) if _chat_input_widget else 'None'}, match={self_ptr == _chat_input_widget}")
 
                     if _chat_input_widget is not None and self_ptr != _chat_input_widget:
                         # This is NOT the chat input - pass through to original implementation
-                        logger.info(f"✋ Not chat input widget - passing through to original keyDown")
                         send_message(self, 'lokalragKeyDown:', event, restype=None, argtypes=[objc_id])
                         return
 
