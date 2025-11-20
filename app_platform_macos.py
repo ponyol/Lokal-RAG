@@ -48,8 +48,12 @@ def _get_helper_class():
 
                     # CRITICAL: Only handle events from the specific chat input widget
                     # This prevents the handler from affecting other text fields (Settings, etc.)
-                    if _chat_input_widget is not None and self.ptr != _chat_input_widget:
+                    self_ptr = int(self.ptr) if hasattr(self, 'ptr') else 0
+                    logger.info(f"🔍 keyDown in widget: ptr={hex(self_ptr)}, chat_input_ptr={hex(_chat_input_widget) if _chat_input_widget else 'None'}, match={self_ptr == _chat_input_widget}")
+
+                    if _chat_input_widget is not None and self_ptr != _chat_input_widget:
                         # This is NOT the chat input - pass through to original implementation
+                        logger.info(f"✋ Not chat input widget - passing through to original keyDown")
                         send_message(self, 'lokalragKeyDown:', event, restype=None, argtypes=[objc_id])
                         return
 
@@ -142,9 +146,10 @@ def setup_chat_input_keyboard_handler(
             logger.warning("Could not find documentView")
             return
 
-        # Store reference to this specific widget (ptr) so we can identify it later
-        _chat_input_widget = native_text_view.ptr
-        logger.info(f"Stored chat input widget reference: {_chat_input_widget}")
+        # Store reference to this specific widget using ptr as integer
+        # ptr is the actual memory address of the Objective-C object
+        _chat_input_widget = int(native_text_view.ptr)
+        logger.info(f"Stored chat input widget ptr: {_chat_input_widget} (hex: {hex(_chat_input_widget)})")
 
         # Get the class name for swizzle check
         toga_class_name = str(native_text_view.className)
