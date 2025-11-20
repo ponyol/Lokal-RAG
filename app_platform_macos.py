@@ -48,7 +48,11 @@ def _get_helper_class():
 
                     # CRITICAL: Only handle events from the specific chat input widget
                     # This prevents the handler from affecting other text fields (Settings, etc.)
-                    self_ptr = int(self.ptr) if hasattr(self, 'ptr') else 0
+                    import struct
+                    if hasattr(self, 'ptr'):
+                        self_ptr = struct.unpack('Q', self.ptr)[0]
+                    else:
+                        self_ptr = 0
 
                     if _chat_input_widget is not None and self_ptr != _chat_input_widget:
                         # This is NOT the chat input - pass through to original implementation
@@ -145,8 +149,11 @@ def setup_chat_input_keyboard_handler(
             return
 
         # Store reference to this specific widget using ptr as integer
-        # ptr is the actual memory address of the Objective-C object
-        _chat_input_widget = int(native_text_view.ptr)
+        # ptr returns bytes, need to convert to int for comparison
+        import struct
+        ptr_bytes = native_text_view.ptr
+        # Convert bytes to pointer-sized integer (8 bytes on 64-bit macOS)
+        _chat_input_widget = struct.unpack('Q', ptr_bytes)[0]  # Q = unsigned long long (8 bytes)
         logger.info(f"Stored chat input widget ptr: {_chat_input_widget} (hex: {hex(_chat_input_widget)})")
 
         # Get the class name for swizzle check
