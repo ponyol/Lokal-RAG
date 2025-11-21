@@ -1855,7 +1855,7 @@ def fn_create_text_chunks(
         >>> print(chunks[0].metadata['total_chunks'])
         5
     """
-    from datetime import datetime
+    from datetime import datetime, UTC
 
     # Generate document_id if not provided
     if document_id is None:
@@ -1863,7 +1863,7 @@ def fn_create_text_chunks(
 
     # Generate publication_date if not provided
     if publication_date is None:
-        publication_date = datetime.utcnow().isoformat()
+        publication_date = datetime.now(UTC).isoformat()
 
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=config.CHUNK_SIZE,

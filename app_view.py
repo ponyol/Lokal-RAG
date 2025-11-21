@@ -700,18 +700,45 @@ class LokalRAGApp(toga.App):
         button_box.add(clear_button)
         container.add(button_box)
 
-        # Bulk import button
-        bulk_button_box = toga.Box(style=Pack(direction=ROW, margin_top=10))
-        add_folder_button = toga.Button(
-            "📁 Add Notes from Folder",
-            on_press=self._on_add_notes_from_folder,
+        # Bulk import section - folder selection
+        bulk_label = toga.Label(
+            "Bulk Import from Folder:",
+            style=Pack(margin_top=15, margin_bottom=5, font_weight="bold")
+        )
+        container.add(bulk_label)
+
+        folder_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        folder_label = toga.Label(
+            "Folder with .md files:",
+            style=Pack(width=150)
+        )
+        self.notes_folder_input = toga.TextInput(
+            readonly=True,
+            placeholder="No folder selected",
+            style=Pack(flex=1, margin_right=5)
+        )
+        folder_button = toga.Button(
+            "Browse...",
+            on_press=self._on_select_notes_folder,
+            style=Pack(width=100)
+        )
+        folder_box.add(folder_label)
+        folder_box.add(self.notes_folder_input)
+        folder_box.add(folder_button)
+        container.add(folder_box)
+
+        # Import button
+        import_button_box = toga.Box(style=Pack(direction=ROW, margin_top=5))
+        import_button = toga.Button(
+            "📁 Import Notes",
+            on_press=self._on_import_notes,
             style=Pack(
                 flex=1,
-                background_color=Theme.ACCENT_BLUE
+                background_color=Theme.ACCENT_GREEN
             )
         )
-        bulk_button_box.add(add_folder_button)
-        container.add(bulk_button_box)
+        import_button_box.add(import_button)
+        container.add(import_button_box)
 
         # Status label (for showing save success/error messages)
         self.note_status_label = toga.Label(
@@ -1711,30 +1738,37 @@ class LokalRAGApp(toga.App):
         """Handle clear note button press."""
         self.clear_note_text()
 
-    def _on_add_notes_from_folder(self, widget):
-        """Handle add notes from folder button press."""
+    def _on_select_notes_folder(self, widget):
+        """Handle notes folder selection button press."""
         import asyncio
-        asyncio.create_task(self._add_notes_from_folder_async())
+        asyncio.create_task(self._select_notes_folder_async())
 
-    async def _add_notes_from_folder_async(self):
-        """Async helper for folder selection and processing."""
+    async def _select_notes_folder_async(self):
+        """Async helper for notes folder selection dialog."""
         try:
-            # Show folder dialog and wait for result
             folder_path = await self.main_window.dialog(
                 toga.SelectFolderDialog(title="Select folder with markdown files")
             )
-
-            if folder_path and self.on_add_notes_from_folder_callback:
-                # Call controller callback with folder path
-                self.on_add_notes_from_folder_callback(str(folder_path))
-            elif not folder_path:
-                logger.info("Folder selection cancelled")
-                self.show_note_status("Folder selection cancelled", is_error=False)
-            else:
-                logger.warning("No add notes from folder callback set")
+            if folder_path:
+                self.notes_folder_input.value = str(folder_path)
+                logger.info(f"Notes folder selected: {folder_path}")
         except Exception as e:
-            logger.error(f"Error in add notes from folder: {e}")
-            self.show_note_status(f"Error: {e}", is_error=True)
+            logger.error(f"Error selecting notes folder: {e}")
+
+    def _on_import_notes(self, widget):
+        """Handle import notes button press."""
+        folder_path = self.notes_folder_input.value
+
+        if not folder_path or folder_path == "No folder selected":
+            self.show_note_status("Please select a folder first", is_error=True)
+            logger.warning("Import attempted without folder selection")
+            return
+
+        if self.on_add_notes_from_folder_callback:
+            # Call controller callback with folder path
+            self.on_add_notes_from_folder_callback(folder_path)
+        else:
+            logger.warning("No add notes from folder callback set")
 
     def _on_theme_changed(self, widget):
         """Handle theme selection change."""
