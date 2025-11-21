@@ -316,6 +316,9 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
     if "translation_chunk_size" in settings:
         overrides["TRANSLATION_CHUNK_SIZE"] = settings["translation_chunk_size"]
 
+    if "embedding_cache_dir" in settings:
+        overrides["EMBEDDING_CACHE_DIR"] = Path(settings["embedding_cache_dir"])
+
     if "vector_db_path_en" in settings:
         overrides["VECTOR_DB_PATH_EN"] = Path(settings["vector_db_path_en"])
 
