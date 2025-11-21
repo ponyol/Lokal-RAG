@@ -81,21 +81,48 @@ class StorageService:
 
     def _initialize_embeddings(self) -> None:
         """
-        Initialize the HuggingFace embedding model.
+        Initialize the HuggingFace embedding model with local caching.
 
         This loads the model into memory. The first call will download the model
-        from HuggingFace Hub if not already cached.
+        from HuggingFace Hub and cache it locally. Subsequent calls will use the
+        cached model without network requests.
+
+        The cache directory is configurable via config.EMBEDDING_CACHE_DIR.
 
         NOTE: This operation is slow (~1-2 seconds) and memory-intensive (~500MB).
         """
         try:
+            # Ensure cache directory exists
+            cache_dir = self.config.EMBEDDING_CACHE_DIR
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Using HuggingFace cache directory: {cache_dir}")
+
             logger.info(f"Loading embedding model: {self.config.EMBEDDING_MODEL}")
 
-            self._embeddings = HuggingFaceEmbeddings(
-                model_name=self.config.EMBEDDING_MODEL,
-                model_kwargs={"device": "cpu"},  # Use CPU for compatibility
-                encode_kwargs={"normalize_embeddings": True},
-            )
+            # Try to load from local cache first (offline mode)
+            try:
+                logger.info("Attempting to load model from local cache (offline mode)...")
+                self._embeddings = HuggingFaceEmbeddings(
+                    model_name=self.config.EMBEDDING_MODEL,
+                    cache_folder=str(cache_dir),
+                    model_kwargs={"device": "cpu", "local_files_only": True},
+                    encode_kwargs={"normalize_embeddings": True},
+                )
+                logger.info("✓ Model loaded from local cache (no network request)")
+
+            except (OSError, ValueError) as cache_error:
+                # Model not in cache, download it once
+                logger.info(f"Model not in cache: {cache_error}")
+                logger.info("Downloading model from HuggingFace Hub (one-time operation)...")
+
+                self._embeddings = HuggingFaceEmbeddings(
+                    model_name=self.config.EMBEDDING_MODEL,
+                    cache_folder=str(cache_dir),
+                    model_kwargs={"device": "cpu"},  # Will download and cache
+                    encode_kwargs={"normalize_embeddings": True},
+                )
+                logger.info("✓ Model downloaded and cached successfully")
+                logger.info("→ Next startup will use local cache (no network needed)")
 
             logger.info("Embedding model loaded successfully")
 

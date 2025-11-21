@@ -37,6 +37,7 @@ class AppConfig:
         MISTRAL_MODEL: Mistral model to use (mistral-large-2411, mistral-small-2506, mistral-small-latest)
         LLM_REQUEST_TIMEOUT: Timeout for LLM API requests (in seconds)
         EMBEDDING_MODEL: Name of the HuggingFace embedding model
+        EMBEDDING_CACHE_DIR: Directory for caching HuggingFace models (to avoid re-downloading)
         VECTOR_DB_PATH_EN: Path to the English ChromaDB persistent storage
         VECTOR_DB_PATH_RU: Path to the Russian ChromaDB persistent storage
         MARKDOWN_OUTPUT_PATH: Path where processed Markdown files will be saved
@@ -83,6 +84,7 @@ class AppConfig:
 
     # Embedding Configuration
     EMBEDDING_MODEL: str = "paraphrase-multilingual-MiniLM-L12-v2"
+    EMBEDDING_CACHE_DIR: Path = Path.home() / ".cache" / "huggingface" / "hub"  # HuggingFace models cache
 
     # Storage Configuration
     VECTOR_DB_PATH_EN: Path = Path("./chroma_db_en")  # English vector database
