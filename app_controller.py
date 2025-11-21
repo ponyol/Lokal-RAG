@@ -704,10 +704,9 @@ def processing_pipeline_worker(
             # Import metadata extraction functions
             from app_services import fn_extract_title_from_markdown, fn_generate_summary
 
-            # Extract title from markdown
+            # Extract title and prepare metadata
             if source_type == "pdf":
                 title = fn_extract_title_from_markdown(markdown_text, fallback=item.stem)
-                filename = item.stem
                 source_name = item.name
                 url = None  # PDF doesn't have URL
             else:
@@ -715,16 +714,6 @@ def processing_pipeline_worker(
                 title = fn_extract_title_from_markdown(markdown_text, fallback="Web Article")
                 url = item  # Store original URL
                 source_name = item
-
-                # Generate filename from title
-                import re
-                filename = re.sub(r'[^\w\s-]', '', title)[:50]
-                filename = re.sub(r'[-\s]+', '-', filename)
-                if not filename:
-                    # Fallback to domain+path
-                    from urllib.parse import urlparse
-                    parsed = urlparse(item)
-                    filename = f"{parsed.netloc}{parsed.path}".replace("/", "-")[:50]
 
             # Tagging (optional)
             tags = ["general"]
@@ -753,6 +742,16 @@ def processing_pipeline_worker(
 
             # Step 4: Save to disk
             primary_tag = tags[0] if tags else "general"
+
+            # Generate filename with timestamp and primary tag
+            # Format: YYYY-MM-DDTHH-MM-SS-{primary_tag}.md (example: 2025-11-19T19-58-09-ai-tool.md)
+            from datetime import datetime
+            timestamp = datetime.now()
+            # Sanitize primary_tag for filename (remove special chars, replace spaces with hyphens)
+            import re
+            safe_tag = re.sub(r'[^\w\s-]', '', primary_tag)
+            safe_tag = re.sub(r'[-\s]+', '-', safe_tag).lower()
+            filename = timestamp.strftime(f"%Y-%m-%dT%H-%M-%S-{safe_tag}")
 
             # Debug: Log markdown size before saving (if vision is enabled)
             if vision_mode != "disabled":

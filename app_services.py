@@ -2256,9 +2256,10 @@ def fn_save_note(note_text: str, config: AppConfig, template_content: Optional[s
         # Ensure notes directory exists
         config.NOTES_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Create filename with current timestamp
+        # Create filename with current timestamp (ISO 8601 format)
+        # Format: YYYY-MM-DDTHH-MM-SS.md (example: 2025-11-19T19-58-09.md)
         timestamp = datetime.now()
-        filename = timestamp.strftime("note_%Y-%m-%d_%H-%M-%S.md")
+        filename = timestamp.strftime("%Y-%m-%dT%H-%M-%S.md")
         filepath = config.NOTES_DIR / filename
 
         # Format timestamp for display in Russian format
