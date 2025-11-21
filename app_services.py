@@ -1004,32 +1004,51 @@ def fn_read_markdown_file(md_path: Path) -> str:
 
 def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
     """
-    Convert a PDF file to Markdown using marker-pdf.
+    Convert a PDF file to Markdown using configured conversion method.
 
-    This function performs I/O (reading the PDF file) but is otherwise pure.
+    Supports two methods (config.PDF_CONVERSION_METHOD):
+    1. "marker-pdf" (default): Uses marker-pdf for document OCR
+       - Optimized for document processing
+       - Handles corrupted/wrong OCR text (strips and re-OCRs)
+       - Extracts images and processes with vision model if enabled
+       - Handles tables and complex layouts
 
-    IMPORTANT: This function uses aggressive OCR settings to handle PDFs with
-    corrupted or missing text layers (common with Medium articles saved as PDF).
-
-    If config.VISION_MODE is not "disabled", extracts images and describes them using
-    a vision model (local or API), appending descriptions to the markdown.
+    2. "llm-studio-ocr": Uses vision model via LLM Studio API
+       - Converts PDF pages to images
+       - Sends each page to vision model (e.g., ocrflux-3b, deepseek-ocr)
+       - Good for testing alternative OCR models
 
     Args:
         pdf_path: Path to the PDF file to convert
-        config: Application configuration (for vision settings)
+        config: Application configuration (for PDF conversion and vision settings)
 
     Returns:
         str: The Markdown content extracted from the PDF (with optional image descriptions)
 
     Raises:
         FileNotFoundError: If the PDF file doesn't exist
-        Exception: If marker-pdf fails to process the file
+        Exception: If conversion fails
 
     Example:
         >>> pdf_path = Path("document.pdf")
-        >>> config = AppConfig(VISION_MODE="local", VISION_MODEL="granite-docling:258m")
+        >>> config = AppConfig(
+        ...     PDF_CONVERSION_METHOD="marker-pdf",
+        ...     VISION_MODE="local",
+        ...     VISION_MODEL="granite-docling:258m"
+        ... )
         >>> markdown = fn_extract_markdown(pdf_path, config)
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # Route to appropriate conversion method
+    if config.PDF_CONVERSION_METHOD == "llm-studio-ocr":
+        logger.info(f"Using LLM Studio OCR for PDF conversion: {config.LLM_OCR_MODEL}")
+        return fn_extract_markdown_llm_ocr(pdf_path, config)
+    else:
+        logger.info(f"Using marker-pdf for PDF conversion")
+        # Fall through to original marker-pdf implementation
+
     try:
         # NOTE: marker-pdf is imported here to avoid loading heavy ML models
         # at module import time. This keeps startup fast.
@@ -1135,6 +1154,156 @@ def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
         raise
     except Exception as e:
         raise Exception(f"Failed to extract Markdown from {pdf_path}: {e}") from e
+
+
+def fn_extract_markdown_llm_ocr(pdf_path: Path, config: AppConfig) -> str:
+    """
+    Convert a PDF file to Markdown using LLM Studio OCR (vision model).
+
+    This function converts each PDF page to an image and uses a vision model
+    (e.g., ocrflux-3b, deepseek-ocr) via LLM Studio API to extract text.
+
+    Args:
+        pdf_path: Path to the PDF file to convert
+        config: Application configuration (for LLM OCR settings)
+
+    Returns:
+        str: The Markdown content extracted from the PDF
+
+    Raises:
+        FileNotFoundError: If the PDF file doesn't exist
+        Exception: If PDF conversion or OCR fails
+
+    Example:
+        >>> pdf_path = Path("document.pdf")
+        >>> config = AppConfig(
+        ...     PDF_CONVERSION_METHOD="llm-studio-ocr",
+        ...     LLM_OCR_URL="http://localhost:1234/v1",
+        ...     LLM_OCR_MODEL="ocrflux-3b"
+        ... )
+        >>> markdown = fn_extract_markdown_llm_ocr(pdf_path, config)
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        if not pdf_path.exists():
+            raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+
+        # Import dependencies for PDF to image conversion
+        try:
+            import pdf2image
+            from pdf2image import convert_from_path
+        except ImportError:
+            raise ImportError(
+                "pdf2image is not installed. Run: pip install pdf2image\n"
+                "Note: pdf2image also requires poppler. Install it with:\n"
+                "  macOS: brew install poppler\n"
+                "  Ubuntu: sudo apt-get install poppler-utils\n"
+                "  Windows: Download from https://github.com/oschwartz10612/poppler-windows/releases/"
+            )
+
+        # Convert PDF to images (one per page)
+        logger.info(f"Converting PDF to images: {pdf_path}")
+        images = convert_from_path(str(pdf_path), dpi=200)  # 200 DPI for good quality
+        logger.info(f"Converted {len(images)} pages to images")
+
+        # Process each page with LLM OCR
+        page_texts = []
+        for idx, image in enumerate(images, 1):
+            logger.info(f"Processing page {idx}/{len(images)} with LLM OCR model: {config.LLM_OCR_MODEL}")
+
+            # Convert PIL Image to bytes (PNG format)
+            from io import BytesIO
+            img_bytes = BytesIO()
+            image.save(img_bytes, format='PNG')
+            img_bytes_data = img_bytes.getvalue()
+
+            # Convert bytes to base64 for API
+            import base64
+            base64_image = base64.b64encode(img_bytes_data).decode('utf-8')
+
+            # Call LLM Studio OCR API
+            import requests
+            headers = {
+                "Content-Type": "application/json"
+            }
+            if config.LLM_OCR_API_KEY:
+                headers["Authorization"] = f"Bearer {config.LLM_OCR_API_KEY}"
+
+            # Prepare API request (OpenAI-compatible vision format)
+            payload = {
+                "model": config.LLM_OCR_MODEL,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Extract all text from this image. Preserve the structure and formatting. Output the text in markdown format."
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "max_tokens": 4096,  # Allow long responses
+                "temperature": 0.0  # Deterministic for OCR
+            }
+
+            try:
+                response = requests.post(
+                    f"{config.LLM_OCR_URL}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=120  # 2 minutes per page
+                )
+                response.raise_for_status()
+
+                result = response.json()
+                page_text = result["choices"][0]["message"]["content"]
+
+                # IMPORTANT: ocrflux-3b returns JSON with "natural_text" field
+                # Try to parse as JSON and extract natural_text if available
+                try:
+                    import json
+                    parsed = json.loads(page_text)
+                    if isinstance(parsed, dict) and "natural_text" in parsed:
+                        page_text = parsed["natural_text"]
+                        logger.info(f"Extracted natural_text from ocrflux JSON response")
+                except (json.JSONDecodeError, TypeError):
+                    # Not JSON or different format - use raw text
+                    pass
+
+                page_texts.append(f"# Page {idx}\n\n{page_text}\n\n---\n")
+
+                logger.info(f"✓ Page {idx} processed successfully ({len(page_text)} chars)")
+
+            except Exception as e:
+                logger.error(f"Failed to process page {idx}: {e}")
+                page_texts.append(f"# Page {idx}\n\n[Error: Could not extract text - {str(e)}]\n\n---\n")
+
+        # Combine all pages
+        full_text = "\n".join(page_texts)
+
+        # Validate extracted text
+        if not full_text or len(full_text.strip()) < 100:
+            raise ValueError(
+                f"Extracted text is too short ({len(full_text)} chars). "
+                "PDF may be corrupted or OCR model failed."
+            )
+
+        logger.info(f"PDF OCR complete: extracted {len(full_text)} chars from {len(images)} pages")
+        return full_text
+
+    except FileNotFoundError as e:
+        raise
+    except Exception as e:
+        raise Exception(f"Failed to extract Markdown from {pdf_path} using LLM OCR: {e}") from e
 
 
 def fn_cleanup_pdf_memory() -> None:
@@ -1855,7 +2024,7 @@ def fn_create_text_chunks(
         >>> print(chunks[0].metadata['total_chunks'])
         5
     """
-    from datetime import datetime
+    from datetime import datetime, UTC
 
     # Generate document_id if not provided
     if document_id is None:
@@ -1863,7 +2032,7 @@ def fn_create_text_chunks(
 
     # Generate publication_date if not provided
     if publication_date is None:
-        publication_date = datetime.utcnow().isoformat()
+        publication_date = datetime.now(UTC).isoformat()
 
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=config.CHUNK_SIZE,

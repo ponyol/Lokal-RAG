@@ -417,41 +417,42 @@ class TogaAppOrchestrator:
             self.view.show_note_status(f"✗ {error_msg}", is_error=True)
             logger.error(error_msg, exc_info=True)
 
-    def on_add_notes_from_folder(self) -> None:
+    def on_add_notes_from_folder(self, folder_path: str) -> None:
         """
         Handle the "Add Notes from Folder" button click.
 
+        Args:
+            folder_path: Path to folder containing .md files (passed from async dialog)
+
         This method:
-        1. Prompts user to select a folder
+        1. Gets selected template
         2. Finds all .md files in the folder
         3. For each file: saves as note and adds to vector DB
         4. Applies template if one is selected
         """
-        # Spawn worker thread
+        # Get selected template (if any) - must be in main thread
+        template_content = self.view.get_selected_note_template()
+
+        # Spawn worker thread with folder_path and template
         worker_thread = threading.Thread(
             target=self._add_notes_from_folder_worker,
+            args=(folder_path, template_content),
             daemon=True
         )
         worker_thread.start()
-        logger.info("Add notes from folder worker started")
+        logger.info(f"Add notes from folder worker started for: {folder_path}")
 
-    def _add_notes_from_folder_worker(self) -> None:
+    def _add_notes_from_folder_worker(self, folder_path: str, template_content: Optional[str]) -> None:
         """
         Worker thread for adding notes from a folder.
+
+        Args:
+            folder_path: Path to folder containing .md files
+            template_content: Optional template to apply to each note
 
         Runs in background thread to avoid blocking the UI.
         """
         try:
-            # Get selected template (if any)
-            template_content = self.view.get_selected_note_template()
-
-            # Show folder selection dialog
-            folder_path = self.view.select_folder_dialog("Select folder with markdown files")
-
-            if not folder_path:
-                logger.info("Folder selection cancelled")
-                self.view.show_note_status("Folder selection cancelled", is_error=False)
-                return
 
             # Find all .md files in folder
             from pathlib import Path
@@ -491,6 +492,12 @@ class TogaAppOrchestrator:
 
                     success_count += 1
                     logger.info(f"Added note from: {md_file.name}")
+
+                    # IMPORTANT: Sleep to ensure unique timestamps for each file
+                    # fn_save_note uses timestamp format without milliseconds
+                    # We need at least 1 second between files to avoid name collisions
+                    import time
+                    time.sleep(1.1)
 
                 except Exception as e:
                     error_count += 1

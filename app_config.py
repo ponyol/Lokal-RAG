@@ -60,6 +60,10 @@ class AppConfig:
         VISION_BASE_URL: URL of the vision provider instance
         VISION_MODEL: Name of the vision model for local extraction
         VISION_MAX_IMAGES: Maximum number of images to process per document
+        PDF_CONVERSION_METHOD: PDF extraction method ("marker-pdf" or "llm-studio-ocr")
+        LLM_OCR_URL: LLM Studio URL for OCR (when using llm-studio-ocr)
+        LLM_OCR_MODEL: OCR model name (e.g., ocrflux-3b, deepseek-ocr)
+        LLM_OCR_API_KEY: Optional API key for LLM Studio OCR
         NOTE_TEMPLATES: List of note templates with name and content
     """
 
@@ -119,6 +123,12 @@ class AppConfig:
     VISION_BASE_URL: str = "http://localhost:11434"  # URL of the vision provider instance
     VISION_MODEL: str = "granite-docling:258m"  # Vision model name for local extraction
     VISION_MAX_IMAGES: int = 20  # Maximum images to process per document (to avoid excessive API calls)
+
+    # PDF Conversion Configuration
+    PDF_CONVERSION_METHOD: str = "marker-pdf"  # "marker-pdf" or "llm-studio-ocr"
+    LLM_OCR_URL: str = "http://localhost:1234/v1"  # LLM Studio URL for OCR (when using llm-studio-ocr)
+    LLM_OCR_MODEL: str = "ocrflux-3b"  # OCR model name (ocrflux-3b, deepseek-ocr, or any vision model)
+    LLM_OCR_API_KEY: str = ""  # Optional API key for LLM Studio OCR
 
     # Notes Templates Configuration
     NOTE_TEMPLATES: List[Dict[str, str]] = field(default_factory=lambda: [
@@ -334,6 +344,19 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
 
     if "vision_model" in settings:
         overrides["VISION_MODEL"] = settings["vision_model"]
+
+    # PDF Conversion settings
+    if "pdf_conversion_method" in settings:
+        overrides["PDF_CONVERSION_METHOD"] = settings["pdf_conversion_method"]
+
+    if "llm_ocr_url" in settings:
+        overrides["LLM_OCR_URL"] = settings["llm_ocr_url"]
+
+    if "llm_ocr_model" in settings:
+        overrides["LLM_OCR_MODEL"] = settings["llm_ocr_model"]
+
+    if "llm_ocr_api_key" in settings:
+        overrides["LLM_OCR_API_KEY"] = settings["llm_ocr_api_key"]
 
     # Chat settings
     if "chat_context_messages" in settings:

@@ -700,18 +700,45 @@ class LokalRAGApp(toga.App):
         button_box.add(clear_button)
         container.add(button_box)
 
-        # Bulk import button
-        bulk_button_box = toga.Box(style=Pack(direction=ROW, margin_top=10))
-        add_folder_button = toga.Button(
-            "📁 Add Notes from Folder",
-            on_press=self._on_add_notes_from_folder,
+        # Bulk import section - folder selection
+        bulk_label = toga.Label(
+            "Bulk Import from Folder:",
+            style=Pack(margin_top=15, margin_bottom=5, font_weight="bold")
+        )
+        container.add(bulk_label)
+
+        folder_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        folder_label = toga.Label(
+            "Folder with .md files:",
+            style=Pack(width=150)
+        )
+        self.notes_folder_input = toga.TextInput(
+            readonly=True,
+            placeholder="No folder selected",
+            style=Pack(flex=1, margin_right=5)
+        )
+        folder_button = toga.Button(
+            "Browse...",
+            on_press=self._on_select_notes_folder,
+            style=Pack(width=100)
+        )
+        folder_box.add(folder_label)
+        folder_box.add(self.notes_folder_input)
+        folder_box.add(folder_button)
+        container.add(folder_box)
+
+        # Import button
+        import_button_box = toga.Box(style=Pack(direction=ROW, margin_top=5))
+        import_button = toga.Button(
+            "📁 Import Notes",
+            on_press=self._on_import_notes,
             style=Pack(
                 flex=1,
-                background_color=Theme.ACCENT_BLUE
+                background_color=Theme.ACCENT_GREEN
             )
         )
-        bulk_button_box.add(add_folder_button)
-        container.add(bulk_button_box)
+        import_button_box.add(import_button)
+        container.add(import_button_box)
 
         # Status label (for showing save success/error messages)
         self.note_status_label = toga.Label(
@@ -1102,6 +1129,68 @@ class LokalRAGApp(toga.App):
             style=Pack(margin_left=155, font_size=10)
         )
         vision_section.add(vision_model_help)
+
+        # ---- PDF Conversion Settings ----
+        pdf_section = self._create_settings_section(
+            "📄 PDF Conversion Settings:",
+            container
+        )
+
+        pdf_help = toga.Label(
+            "Choose method for extracting text from PDF files.",
+            style=Pack(margin=5, font_size=10)
+        )
+        pdf_section.add(pdf_help)
+
+        # PDF conversion method selection
+        pdf_method_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        pdf_method_label = toga.Label(
+            "Conversion Method:",
+            style=Pack(width=150)
+        )
+        self.pdf_conversion_method = toga.Selection(
+            items=["marker-pdf", "llm-studio-ocr"],
+            style=Pack(flex=1)
+        )
+        self.pdf_conversion_method.value = "marker-pdf"
+        pdf_method_box.add(pdf_method_label)
+        pdf_method_box.add(self.pdf_conversion_method)
+        pdf_section.add(pdf_method_box)
+
+        # LLM Studio OCR settings (shown only when llm-studio-ocr is selected)
+        self.llm_ocr_settings_box = toga.Box(style=Pack(direction=COLUMN, margin_left=155))
+
+        llm_ocr_url_box, self.llm_ocr_url_input = self._create_input_row(
+            "OCR Base URL:",
+            "http://localhost:1234/v1"
+        )
+        self.llm_ocr_settings_box.add(llm_ocr_url_box)
+
+        llm_ocr_model_box, self.llm_ocr_model_input = self._create_input_row(
+            "OCR Model:",
+            "ocrflux-3b"
+        )
+        self.llm_ocr_settings_box.add(llm_ocr_model_box)
+
+        llm_ocr_model_help = toga.Label(
+            "Models: ocrflux-3b, deepseek-ocr, or any vision model in LM Studio",
+            style=Pack(margin_left=155, font_size=10)
+        )
+        self.llm_ocr_settings_box.add(llm_ocr_model_help)
+
+        llm_ocr_key_box, self.llm_ocr_api_key_input = self._create_input_row(
+            "API Key (optional):",
+            ""
+        )
+        self.llm_ocr_settings_box.add(llm_ocr_key_box)
+
+        # Hide LLM OCR settings by default
+        self.llm_ocr_settings_box.style.display = "none"
+        pdf_section.add(self.llm_ocr_settings_box)
+
+        # Set on_change handler AFTER creating llm_ocr_settings_box
+        # (to avoid AttributeError when handler is triggered during init)
+        self.pdf_conversion_method.on_change = self._on_pdf_method_changed
 
         # ---- General Settings ----
         general_section = self._create_settings_section(
@@ -1635,9 +1724,14 @@ class LokalRAGApp(toga.App):
 
     def _on_select_folder(self, widget):
         """Handle folder selection button press."""
+        import asyncio
+        asyncio.create_task(self._select_folder_async())
+
+    async def _select_folder_async(self):
+        """Async helper for folder selection dialog."""
         try:
-            folder_path = self.main_window.select_folder_dialog(
-                "Select PDF/Markdown Folder"
+            folder_path = await self.main_window.dialog(
+                toga.SelectFolderDialog(title="Select PDF/Markdown Folder")
             )
             if folder_path:
                 self.folder_input.value = str(folder_path)
@@ -1706,12 +1800,49 @@ class LokalRAGApp(toga.App):
         """Handle clear note button press."""
         self.clear_note_text()
 
-    def _on_add_notes_from_folder(self, widget):
-        """Handle add notes from folder button press."""
+    def _on_select_notes_folder(self, widget):
+        """Handle notes folder selection button press."""
+        import asyncio
+        asyncio.create_task(self._select_notes_folder_async())
+
+    async def _select_notes_folder_async(self):
+        """Async helper for notes folder selection dialog."""
+        try:
+            folder_path = await self.main_window.dialog(
+                toga.SelectFolderDialog(title="Select folder with markdown files")
+            )
+            if folder_path:
+                self.notes_folder_input.value = str(folder_path)
+                logger.info(f"Notes folder selected: {folder_path}")
+        except Exception as e:
+            logger.error(f"Error selecting notes folder: {e}")
+
+    def _on_import_notes(self, widget):
+        """Handle import notes button press."""
+        folder_path = self.notes_folder_input.value
+
+        if not folder_path or folder_path == "No folder selected":
+            self.show_note_status("Please select a folder first", is_error=True)
+            logger.warning("Import attempted without folder selection")
+            return
+
         if self.on_add_notes_from_folder_callback:
-            self.on_add_notes_from_folder_callback()
+            # Call controller callback with folder path
+            self.on_add_notes_from_folder_callback(folder_path)
         else:
             logger.warning("No add notes from folder callback set")
+
+    def _on_pdf_method_changed(self, widget):
+        """Handle PDF conversion method selection change."""
+        method = self.pdf_conversion_method.value
+        logger.info(f"PDF conversion method changed to: {method}")
+
+        # Show/hide LLM OCR settings based on selection
+        # NOTE: Toga display property only accepts "pack" or "none" (not "flex")
+        if method == "llm-studio-ocr":
+            self.llm_ocr_settings_box.style.display = "pack"
+        else:
+            self.llm_ocr_settings_box.style.display = "none"
 
     def _on_theme_changed(self, widget):
         """Handle theme selection change."""
@@ -2057,6 +2188,11 @@ class LokalRAGApp(toga.App):
             "vision_provider": self.vision_provider_input.value or "ollama",
             "vision_base_url": self.vision_base_url_input.value or "http://localhost:11434",
             "vision_model": self.vision_model_input.value or "granite-docling:258m",
+            # PDF Conversion
+            "pdf_conversion_method": self.pdf_conversion_method.value or "marker-pdf",  # ← NEW: marker-pdf or llm-studio-ocr
+            "llm_ocr_url": self.llm_ocr_url_input.value or "http://localhost:1234/v1",  # ← NEW: LLM Studio OCR URL
+            "llm_ocr_model": self.llm_ocr_model_input.value or "ocrflux-3b",  # ← NEW: OCR model name
+            "llm_ocr_api_key": self.llm_ocr_api_key_input.value or "",  # ← NEW: Optional API key
             # General
             "timeout": int(self.timeout_input.value or "300"),
             "translation_chunk_size": int(self.translation_chunk_input.value or "2000"),  # ← NEW
@@ -2154,6 +2290,24 @@ class LokalRAGApp(toga.App):
             self.vision_base_url_input.value = settings["vision_base_url"]
         if "vision_model" in settings:
             self.vision_model_input.value = settings["vision_model"]
+
+        # PDF Conversion (NEW)
+        if "pdf_conversion_method" in settings:
+            self.pdf_conversion_method.value = settings["pdf_conversion_method"]
+            logger.info(f"Setting PDF conversion method to: {settings['pdf_conversion_method']}")
+            # Trigger UI update to show/hide LLM OCR settings
+            # NOTE: Toga display property only accepts "pack" or "none" (not "flex")
+            if settings["pdf_conversion_method"] == "llm-studio-ocr":
+                self.llm_ocr_settings_box.style.display = "pack"
+            else:
+                self.llm_ocr_settings_box.style.display = "none"
+
+        if "llm_ocr_url" in settings:
+            self.llm_ocr_url_input.value = settings["llm_ocr_url"]
+        if "llm_ocr_model" in settings:
+            self.llm_ocr_model_input.value = settings["llm_ocr_model"]
+        if "llm_ocr_api_key" in settings:
+            self.llm_ocr_api_key_input.value = settings["llm_ocr_api_key"]
 
         # General
         if "timeout" in settings:
@@ -2596,26 +2750,6 @@ class LokalRAGApp(toga.App):
     def show_info(self, title: str, message: str) -> None:
         """Alias for show_info_dialog (for CustomTkinter compatibility)."""
         self.show_info_dialog(title, message)
-
-    def select_folder_dialog(self, title: str = "Select Folder") -> Optional[str]:
-        """
-        Show folder selection dialog.
-
-        Args:
-            title: Dialog title
-
-        Returns:
-            Selected folder path or None if cancelled
-        """
-        try:
-            # Toga's select_folder_dialog returns a Path or None
-            folder_path = self.main_window.select_folder_dialog(title=title)
-            if folder_path:
-                return str(folder_path)
-            return None
-        except Exception as e:
-            logger.error(f"Error showing folder dialog: {e}")
-            return None
 
 
 def main():

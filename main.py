@@ -116,6 +116,9 @@ def main() -> None:
     6. Starts the Toga GUI main loop
     """
     # Parse command-line arguments
+    import os
+    import sys
+
     parser = argparse.ArgumentParser(
         description="Lokal-RAG - Local Knowledge Base Application (Toga UI)"
     )
@@ -132,6 +135,19 @@ def main() -> None:
 
     if args.debug:
         logger.debug("DEBUG mode enabled - verbose logging active")
+
+    # CRITICAL: After logging is set up, redirect native stderr to suppress WebKit C++ logs
+    # Python logging uses its own handlers and won't be affected
+    if sys.platform == 'darwin':
+        try:
+            # Redirect stderr file descriptor (2) to /dev/null
+            # This suppresses C++ WebKit logs while keeping Python logging intact
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull, 2)
+            os.close(devnull)
+            logger.info("✓ Suppressed native WebKit logs (fd 2 → /dev/null)")
+        except Exception as e:
+            logger.warning(f"Could not suppress native logs: {e}")
 
     try:
         # Create configuration
