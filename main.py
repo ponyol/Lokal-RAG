@@ -115,52 +115,10 @@ def main() -> None:
     5. Initializes all components
     6. Starts the Toga GUI main loop
     """
-    # Suppress WebKit debug logs (macOS native logs)
+    # Parse command-line arguments
     import os
-    os.environ['WEBKIT_DISABLE_COMPOSITING_MODE'] = '1'
-
-    # Redirect stderr to filter out WebKit logs
     import sys
 
-    class WebKitLogFilter:
-        """Filter to suppress WebKit native debug logs on macOS."""
-        def __init__(self, stream):
-            self.stream = stream
-            self.buffer = ""
-
-        def write(self, text):
-            # Filter out WebKit frame policy logs and stack traces
-            # Patterns to filter:
-            # - Lines containing "WebKit::" (WebKit C++ namespaces)
-            # - Lines containing "WebFramePolicyListenerProxy" (specific class)
-            # - Stack trace lines (start with number + hex address)
-            # - ctypes/PyObject calls related to WebKit
-            if any(pattern in text for pattern in [
-                'WebKit::',
-                'WebFramePolicyListenerProxy',
-                '_ctypes_callproc',
-                'PyCFuncPtr_call',
-                '_PyObject_Call',
-                '_PyEval_EvalFrameDefault'
-            ]):
-                return  # Suppress this line
-
-            # Also filter stack trace lines (e.g., "1   0x1c86a9414 ...")
-            import re
-            if re.match(r'^\s*\d+\s+0x[0-9a-fA-F]+\s+', text):
-                return  # Suppress stack trace line
-
-            # Pass through all other output
-            self.stream.write(text)
-            self.stream.flush()
-
-        def flush(self):
-            self.stream.flush()
-
-    # Only filter stderr (WebKit logs go there)
-    sys.stderr = WebKitLogFilter(sys.stderr)
-
-    # Parse command-line arguments
     parser = argparse.ArgumentParser(
         description="Lokal-RAG - Local Knowledge Base Application (Toga UI)"
     )
@@ -177,6 +135,19 @@ def main() -> None:
 
     if args.debug:
         logger.debug("DEBUG mode enabled - verbose logging active")
+
+    # CRITICAL: After logging is set up, redirect native stderr to suppress WebKit C++ logs
+    # Python logging uses its own handlers and won't be affected
+    if sys.platform == 'darwin':
+        try:
+            # Redirect stderr file descriptor (2) to /dev/null
+            # This suppresses C++ WebKit logs while keeping Python logging intact
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull, 2)
+            os.close(devnull)
+            logger.info("✓ Suppressed native WebKit logs (fd 2 → /dev/null)")
+        except Exception as e:
+            logger.warning(f"Could not suppress native logs: {e}")
 
     try:
         # Create configuration
