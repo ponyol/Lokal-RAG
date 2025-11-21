@@ -1266,6 +1266,19 @@ def fn_extract_markdown_llm_ocr(pdf_path: Path, config: AppConfig) -> str:
 
                 result = response.json()
                 page_text = result["choices"][0]["message"]["content"]
+
+                # IMPORTANT: ocrflux-3b returns JSON with "natural_text" field
+                # Try to parse as JSON and extract natural_text if available
+                try:
+                    import json
+                    parsed = json.loads(page_text)
+                    if isinstance(parsed, dict) and "natural_text" in parsed:
+                        page_text = parsed["natural_text"]
+                        logger.info(f"Extracted natural_text from ocrflux JSON response")
+                except (json.JSONDecodeError, TypeError):
+                    # Not JSON or different format - use raw text
+                    pass
+
                 page_texts.append(f"# Page {idx}\n\n{page_text}\n\n---\n")
 
                 logger.info(f"✓ Page {idx} processed successfully ({len(page_text)} chars)")

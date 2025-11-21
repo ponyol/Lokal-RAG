@@ -129,10 +129,30 @@ def main() -> None:
             self.buffer = ""
 
         def write(self, text):
-            # Filter out WebKit frame policy logs
-            if 'WebKit::' not in text and 'WebFramePolicyListenerProxy' not in text:
-                self.stream.write(text)
-                self.stream.flush()
+            # Filter out WebKit frame policy logs and stack traces
+            # Patterns to filter:
+            # - Lines containing "WebKit::" (WebKit C++ namespaces)
+            # - Lines containing "WebFramePolicyListenerProxy" (specific class)
+            # - Stack trace lines (start with number + hex address)
+            # - ctypes/PyObject calls related to WebKit
+            if any(pattern in text for pattern in [
+                'WebKit::',
+                'WebFramePolicyListenerProxy',
+                '_ctypes_callproc',
+                'PyCFuncPtr_call',
+                '_PyObject_Call',
+                '_PyEval_EvalFrameDefault'
+            ]):
+                return  # Suppress this line
+
+            # Also filter stack trace lines (e.g., "1   0x1c86a9414 ...")
+            import re
+            if re.match(r'^\s*\d+\s+0x[0-9a-fA-F]+\s+', text):
+                return  # Suppress stack trace line
+
+            # Pass through all other output
+            self.stream.write(text)
+            self.stream.flush()
 
         def flush(self):
             self.stream.flush()
