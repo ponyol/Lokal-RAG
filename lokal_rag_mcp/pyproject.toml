@@ -1,0 +1,126 @@
+[project]
+name = "lokal-rag-mcp"
+version = "2.0.0"
+description = "Model Context Protocol (MCP) server for Lokal-RAG with intelligent re-ranking"
+authors = [
+    {name = "Ponyol", email = "ponyol@example.com"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+keywords = ["mcp", "rag", "retrieval", "reranking", "knowledge-base", "vector-search"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.14",
+]
+
+dependencies = [
+    "fastmcp>=2.12.0",
+    "pydantic>=2.11.0",
+    "chromadb>=0.5.0",
+    "langchain-huggingface>=0.1.0",
+    "langchain-chroma>=0.1.0",
+    "langchain-core>=0.3.0",
+    "langchain-community>=0.3.0",
+    "langchain-classic>=1.0.0",
+]
+
+[project.optional-dependencies]
+rerank = [
+    "sentence-transformers>=3.3.0",
+    "transformers>=4.50.0",
+    "torch>=2.5.0",
+    "einops>=0.8.0",
+]
+apple-silicon = [
+    "optimum>=1.23.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",
+    "black>=24.0.0",
+    "ruff>=0.6.0",
+    "mypy>=1.11.0",
+]
+all = [
+    "lokal-rag-mcp[rerank,apple-silicon,dev]",
+]
+
+[project.scripts]
+lokal-rag-mcp = "lokal_rag_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/ponyol/Lokal-RAG"
+Repository = "https://github.com/ponyol/Lokal-RAG"
+Documentation = "https://github.com/ponyol/Lokal-RAG/blob/main/lokal_rag_mcp/README.md"
+Issues = "https://github.com/ponyol/Lokal-RAG/issues"
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lokal_rag_mcp*"]
+exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "--cov=lokal_rag_mcp --cov-report=html --cov-report=term-missing"
+asyncio_mode = "auto"
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312", "py314"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  \.git
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (black handles this)
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true

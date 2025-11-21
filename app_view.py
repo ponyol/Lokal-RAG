@@ -24,11 +24,15 @@ Version 2 Changes:
 import logging
 from typing import Optional, Callable
 from pathlib import Path
+import markdown
 
 import toga
 from toga.style import Pack
 from toga.style.pack import COLUMN, ROW, CENTER
 from toga.colors import rgb, TRANSPARENT
+
+# Import macOS-specific platform code
+from app_platform_macos import setup_chat_input_keyboard_handler, update_chat_input_send_mode
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +116,7 @@ class LokalRAGApp(toga.App):
         self.on_save_settings_callback: Optional[Callable] = None
         self.on_load_settings_callback: Optional[Callable] = None
         self.on_save_note_callback: Optional[Callable] = None
+        self.on_add_notes_from_folder_callback: Optional[Callable] = None
         self.on_clear_chat_callback: Optional[Callable] = None  # NEW
         self.on_ui_ready_callback: Optional[Callable] = None  # NEW: Called when UI is ready
 
@@ -120,6 +125,12 @@ class LokalRAGApp(toga.App):
 
         # Changelog file mapping (for file selection)
         self.changelog_files_map = {}
+
+        # Note templates management
+        self.note_templates = []  # Will be loaded from settings
+
+        # Chat messages storage (for markdown rendering)
+        self._chat_messages = []  # List of tuples: (role, message)
 
         # Theme management
         self.current_theme = LightTheme  # Default to light theme
@@ -568,24 +579,25 @@ class LokalRAGApp(toga.App):
         search_box.add(self.clear_chat_button)
         container.add(search_box)
 
-        # Chat history display
-        self.chat_history = toga.MultilineTextInput(
-            readonly=True,
-            placeholder="Chat history will appear here...\n\nAsk questions about your documents!",
+        # Chat history display (WebView for markdown rendering)
+        self.chat_history = toga.WebView(
             style=Pack(
                 flex=1,
                 height=400
             )
         )
+        # Set initial empty state with placeholder message
+        self._render_chat_html()
         container.add(self.chat_history)
 
         # Message input
         input_box = toga.Box(style=Pack(direction=ROW, margin_top=10))
-        self.chat_input = toga.TextInput(
-            placeholder="Type your message here...",
+        self.chat_input = toga.MultilineTextInput(
+            placeholder="Type your message here...\n(Press Send button or use keyboard shortcut)",
             style=Pack(
                 flex=1,
-                margin_right=10
+                margin_right=10,
+                height=80
             )
         )
         self.send_button = toga.Button(
@@ -599,6 +611,10 @@ class LokalRAGApp(toga.App):
         input_box.add(self.chat_input)
         input_box.add(self.send_button)
         container.add(input_box)
+
+        # Set up macOS keyboard handler for chat input (default: Shift+Enter)
+        # This will be updated when settings are loaded
+        self._setup_chat_keyboard_handler("shift_enter")
 
         return toga.ScrollContainer(
             content=container,
@@ -631,9 +647,25 @@ class LokalRAGApp(toga.App):
 
         desc = toga.Label(
             "Создавайте заметки, которые будут доступны для поиска в чате",
-            style=Pack(margin_bottom=20, font_size=12)
+            style=Pack(margin_bottom=10, font_size=12)
         )
         container.add(desc)
+
+        # Template selection
+        template_box = toga.Box(style=Pack(direction=ROW, margin_bottom=15))
+        template_label = toga.Label(
+            "Template:",
+            style=Pack(width=100)
+        )
+        self.note_template_selection = toga.Selection(
+            items=["None"],
+            on_change=self._on_note_template_selected,
+            style=Pack(flex=1)
+        )
+        self.note_template_selection.value = "None"
+        template_box.add(template_label)
+        template_box.add(self.note_template_selection)
+        container.add(template_box)
 
         # Note text area
         self.note_text = toga.MultilineTextInput(
@@ -667,6 +699,19 @@ class LokalRAGApp(toga.App):
         button_box.add(save_button)
         button_box.add(clear_button)
         container.add(button_box)
+
+        # Bulk import button
+        bulk_button_box = toga.Box(style=Pack(direction=ROW, margin_top=10))
+        add_folder_button = toga.Button(
+            "📁 Add Notes from Folder",
+            on_press=self._on_add_notes_from_folder,
+            style=Pack(
+                flex=1,
+                background_color=Theme.ACCENT_BLUE
+            )
+        )
+        bulk_button_box.add(add_folder_button)
+        container.add(bulk_button_box)
 
         # Status label (for showing save success/error messages)
         self.note_status_label = toga.Label(
@@ -739,15 +784,15 @@ class LokalRAGApp(toga.App):
         )
         container.add(content_label)
 
-        # Content viewer
-        self.changelog_content = toga.MultilineTextInput(
-            readonly=True,
-            placeholder="Select a changelog file to view...",
+        # Content viewer (WebView for markdown rendering)
+        self.changelog_content = toga.WebView(
             style=Pack(
                 flex=1,
                 height=500
             )
         )
+        # Initialize with empty placeholder
+        self._render_changelog_html("")
         container.add(self.changelog_content)
 
         # Load files on startup
@@ -917,18 +962,16 @@ class LokalRAGApp(toga.App):
             container
         )
 
-        ollama_url_box = self._create_input_row(
+        ollama_url_box, self.ollama_url_input = self._create_input_row(
             "Base URL:",
             "http://localhost:11434"
         )
-        self.ollama_url_input = ollama_url_box.children[1]
         ollama_section.add(ollama_url_box)
 
-        ollama_model_box = self._create_input_row(
+        ollama_model_box, self.ollama_model_input = self._create_input_row(
             "Model Name:",
             "qwen2.5:7b-instruct"
         )
-        self.ollama_model_input = ollama_model_box.children[1]
         ollama_section.add(ollama_model_box)
 
         # ---- LM Studio Settings ----
@@ -937,18 +980,16 @@ class LokalRAGApp(toga.App):
             container
         )
 
-        lmstudio_url_box = self._create_input_row(
+        lmstudio_url_box, self.lmstudio_url_input = self._create_input_row(
             "Base URL:",
             "http://localhost:1234/v1"
         )
-        self.lmstudio_url_input = lmstudio_url_box.children[1]
         lmstudio_section.add(lmstudio_url_box)
 
-        lmstudio_model_box = self._create_input_row(
+        lmstudio_model_box, self.lmstudio_model_input = self._create_input_row(
             "Model Name:",
             "meta-llama-3.1-8b-instruct"
         )
-        self.lmstudio_model_input = lmstudio_model_box.children[1]
         lmstudio_section.add(lmstudio_model_box)
 
         # ---- Claude Settings ----
@@ -957,12 +998,11 @@ class LokalRAGApp(toga.App):
             container
         )
 
-        claude_key_box = self._create_input_row(
+        claude_key_box, self.claude_api_key_input = self._create_input_row(
             "API Key:",
             "sk-ant-...",
             is_password=True
         )
-        self.claude_api_key_input = claude_key_box.children[1]
         claude_section.add(claude_key_box)
 
         claude_help = toga.Label(
@@ -971,11 +1011,10 @@ class LokalRAGApp(toga.App):
         )
         claude_section.add(claude_help)
 
-        claude_model_box = self._create_input_row(
+        claude_model_box, self.claude_model_input = self._create_input_row(
             "Model:",
             "claude-3-5-sonnet-20241022"
         )
-        self.claude_model_input = claude_model_box.children[1]
         claude_section.add(claude_model_box)
 
         # ---- Gemini Settings ----
@@ -984,12 +1023,11 @@ class LokalRAGApp(toga.App):
             container
         )
 
-        gemini_key_box = self._create_input_row(
+        gemini_key_box, self.gemini_api_key_input = self._create_input_row(
             "API Key:",
             "AIza...",
             is_password=True
         )
-        self.gemini_api_key_input = gemini_key_box.children[1]
         gemini_section.add(gemini_key_box)
 
         gemini_help = toga.Label(
@@ -998,11 +1036,10 @@ class LokalRAGApp(toga.App):
         )
         gemini_section.add(gemini_help)
 
-        gemini_model_box = self._create_input_row(
+        gemini_model_box, self.gemini_model_input = self._create_input_row(
             "Model:",
             "gemini-2.5-pro-preview-03-25"
         )
-        self.gemini_model_input = gemini_model_box.children[1]
         gemini_section.add(gemini_model_box)
 
         # ---- Mistral Settings ----
@@ -1011,12 +1048,11 @@ class LokalRAGApp(toga.App):
             container
         )
 
-        mistral_key_box = self._create_input_row(
+        mistral_key_box, self.mistral_api_key_input = self._create_input_row(
             "API Key:",
             "...",
             is_password=True
         )
-        self.mistral_api_key_input = mistral_key_box.children[1]
         mistral_section.add(mistral_key_box)
 
         mistral_help = toga.Label(
@@ -1025,11 +1061,10 @@ class LokalRAGApp(toga.App):
         )
         mistral_section.add(mistral_help)
 
-        mistral_model_box = self._create_input_row(
+        mistral_model_box, self.mistral_model_input = self._create_input_row(
             "Model:",
             "mistral-small-latest"
         )
-        self.mistral_model_input = mistral_model_box.children[1]
         mistral_section.add(mistral_model_box)
 
         # ---- Vision Settings ----
@@ -1044,25 +1079,22 @@ class LokalRAGApp(toga.App):
         )
         vision_section.add(vision_help)
 
-        vision_provider_box = self._create_input_row(
+        vision_provider_box, self.vision_provider_input = self._create_input_row(
             "Vision Provider:",
             "ollama"
         )
-        self.vision_provider_input = vision_provider_box.children[1]
         vision_section.add(vision_provider_box)
 
-        vision_url_box = self._create_input_row(
+        vision_url_box, self.vision_base_url_input = self._create_input_row(
             "Vision Base URL:",
             "http://localhost:11434"
         )
-        self.vision_base_url_input = vision_url_box.children[1]
         vision_section.add(vision_url_box)
 
-        vision_model_box = self._create_input_row(
+        vision_model_box, self.vision_model_input = self._create_input_row(
             "Vision Model:",
             "granite-docling:258m"
         )
-        self.vision_model_input = vision_model_box.children[1]
         vision_section.add(vision_model_box)
 
         vision_model_help = toga.Label(
@@ -1077,19 +1109,17 @@ class LokalRAGApp(toga.App):
             container
         )
 
-        timeout_box = self._create_input_row(
+        timeout_box, self.timeout_input = self._create_input_row(
             "LLM Request Timeout (seconds):",
             "300"
         )
-        self.timeout_input = timeout_box.children[1]
         general_section.add(timeout_box)
 
         # V2: Translation chunk size (ADDED)
-        chunk_box = self._create_input_row(
+        chunk_box, self.translation_chunk_input = self._create_input_row(
             "Translation Chunk Size (characters):",
             "2000"
         )
-        self.translation_chunk_input = chunk_box.children[1]
         general_section.add(chunk_box)
 
         chunk_help = toga.Label(
@@ -1105,34 +1135,177 @@ class LokalRAGApp(toga.App):
         )
 
         paths_help = toga.Label(
-            "Paths for storing vector database and markdown files (relative to app directory).",
+            "Paths for storing vector databases and markdown files (relative to app directory).",
             style=Pack(margin=5, font_size=10)
         )
         paths_section.add(paths_help)
 
-        # Vector DB path
-        vector_db_box = self._create_input_row(
-            "Vector Database Path:",
-            "./lokal_rag_db"
+        # English Vector DB path
+        vector_db_en_box, self.vector_db_path_en_input = self._create_input_row(
+            "English Vector DB Path:",
+            "./chroma_db_en"
         )
-        self.vector_db_path_input = vector_db_box.children[1]
-        paths_section.add(vector_db_box)
+        paths_section.add(vector_db_en_box)
+
+        # Russian Vector DB path
+        vector_db_ru_box, self.vector_db_path_ru_input = self._create_input_row(
+            "Russian Vector DB Path:",
+            "./chroma_db_ru"
+        )
+        paths_section.add(vector_db_ru_box)
 
         # Markdown output path
-        markdown_output_box = self._create_input_row(
+        markdown_output_box, self.markdown_output_path_input = self._create_input_row(
             "Markdown Output Path:",
             "./output_markdown"
         )
-        self.markdown_output_path_input = markdown_output_box.children[1]
         paths_section.add(markdown_output_box)
 
         # Changelog path
-        changelog_box = self._create_input_row(
+        changelog_box, self.changelog_path_input = self._create_input_row(
             "Changelog Path:",
             "./changelog"
         )
-        self.changelog_path_input = changelog_box.children[1]
         paths_section.add(changelog_box)
+
+        # Notes path
+        notes_box, self.notes_path_input = self._create_input_row(
+            "Notes Path:",
+            "./notes"
+        )
+        paths_section.add(notes_box)
+
+        # ---- Chat Settings ----
+        chat_section = self._create_settings_section(
+            "💬 Chat Settings:",
+            container
+        )
+
+        chat_help = toga.Label(
+            "Configure chat behavior and context management.",
+            style=Pack(margin=5, font_size=10)
+        )
+        chat_section.add(chat_help)
+
+        # Chat context messages limit
+        context_box, self.chat_context_input = self._create_input_row(
+            "Context Messages:",
+            "10"
+        )
+        chat_section.add(context_box)
+
+        context_desc = toga.Label(
+            "Number of messages to keep in chat history (higher = more context, more tokens)",
+            style=Pack(margin_left=5, margin_bottom=10, font_size=9)
+        )
+        chat_section.add(context_desc)
+
+        # RAG Top K setting
+        rag_topk_box, self.rag_topk_input = self._create_input_row(
+            "RAG Top K:",
+            "20"
+        )
+        chat_section.add(rag_topk_box)
+
+        rag_topk_desc = toga.Label(
+            "Number of document chunks to retrieve (higher = more context for full documents)",
+            style=Pack(margin_left=5, margin_bottom=10, font_size=9)
+        )
+        chat_section.add(rag_topk_desc)
+
+        # Send key preference
+        send_key_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        send_key_label = toga.Label(
+            "Send Message With:",
+            style=Pack(width=200)
+        )
+        self.chat_send_key_selection = toga.Selection(
+            items=["Shift+Enter", "Enter"],
+            style=Pack(flex=1)
+        )
+        self.chat_send_key_selection.value = "Shift+Enter"
+        send_key_box.add(send_key_label)
+        send_key_box.add(self.chat_send_key_selection)
+        chat_section.add(send_key_box)
+
+        send_key_desc = toga.Label(
+            "Choose how to send chat messages (Enter alone will add new line if Shift+Enter is selected)",
+            style=Pack(margin_left=5, margin_bottom=10, font_size=9)
+        )
+        chat_section.add(send_key_desc)
+
+        # ---- Note Templates (NEW) ----
+        templates_section = self._create_settings_section(
+            "📝 Note Templates:",
+            container
+        )
+
+        templates_help = toga.Label(
+            "Create reusable templates for notes. Templates are inserted after the date stamp.",
+            style=Pack(margin=5, font_size=10)
+        )
+        templates_section.add(templates_help)
+
+        # Template selection (for editing/deleting)
+        template_select_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        template_select_label = toga.Label(
+            "Select Template:",
+            style=Pack(width=150)
+        )
+        self.template_selection = toga.Selection(
+            items=["None"],
+            on_change=self._on_template_selected,
+            style=Pack(flex=1)
+        )
+        self.template_selection.value = "None"
+        template_select_box.add(template_select_label)
+        template_select_box.add(self.template_selection)
+        templates_section.add(template_select_box)
+
+        # Template name input
+        template_name_box, self.template_name_input = self._create_input_row(
+            "Template Name:",
+            "Meeting Notes"
+        )
+        templates_section.add(template_name_box)
+
+        # Template content input
+        content_label = toga.Label(
+            "Template Content:",
+            style=Pack(margin=5, margin_bottom=2, font_weight="bold")
+        )
+        templates_section.add(content_label)
+
+        # Content + Buttons in a horizontal row
+        content_and_buttons_box = toga.Box(style=Pack(direction=ROW, margin=5))
+
+        # Text input on the left (takes most space)
+        self.template_content_input = toga.MultilineTextInput(
+            placeholder="Template content...\n\nUse \\n for new lines.",
+            style=Pack(flex=1, height=120, margin_right=10)
+        )
+        content_and_buttons_box.add(self.template_content_input)
+
+        # Buttons on the right (vertical stack)
+        template_buttons_column = toga.Box(style=Pack(direction=COLUMN))
+
+        self.add_template_button = toga.Button(
+            "➕ Add",
+            on_press=self._on_add_template,
+            style=Pack(width=100, margin_bottom=5, background_color=Theme.ACCENT_GREEN)
+        )
+        self.delete_template_button = toga.Button(
+            "🗑️ Delete",
+            on_press=self._on_delete_template,
+            style=Pack(width=100, background_color=Theme.ACCENT_RED)
+        )
+        self.delete_template_button.enabled = False  # Disabled until template selected
+
+        template_buttons_column.add(self.add_template_button)
+        template_buttons_column.add(self.delete_template_button)
+
+        content_and_buttons_box.add(template_buttons_column)
+        templates_section.add(content_and_buttons_box)
 
         # ---- Action Buttons ----
         button_box = toga.Box(
@@ -1207,7 +1380,7 @@ class LokalRAGApp(toga.App):
         label_text: str,
         placeholder: str,
         is_password: bool = False
-    ) -> toga.Box:
+    ) -> tuple[toga.Box, toga.Widget]:
         """
         Create an input row with label and text field.
 
@@ -1217,7 +1390,7 @@ class LokalRAGApp(toga.App):
             is_password: Whether to use password input
 
         Returns:
-            toga.Box: The input row
+            tuple: (row_box, input_field) for easy access to both
         """
         row = toga.Box(style=Pack(direction=ROW, margin=5))
 
@@ -1229,39 +1402,178 @@ class LokalRAGApp(toga.App):
         if is_password:
             input_field = toga.PasswordInput(
                 placeholder=placeholder,
-                style=Pack(
-                    flex=1
-                )
+                style=Pack(flex=1)
             )
         else:
             input_field = toga.TextInput(
                 placeholder=placeholder,
-                style=Pack(
-                    flex=1
-                )
+                style=Pack(flex=1)
             )
 
         row.add(label)
         row.add(input_field)
 
-        return row
+        return row, input_field
 
     # ========================================================================
     # Changelog Helper Methods
     # ========================================================================
+
+    def _render_changelog_html(self, markdown_text: str) -> None:
+        """
+        Render changelog markdown as HTML.
+
+        This method converts markdown to beautifullyformatted HTML with theme-aware styling.
+
+        Args:
+            markdown_text: Markdown content to render (empty string for placeholder)
+        """
+        # Helper function to convert Toga color to hex string
+        def color_to_hex(color):
+            """Convert Toga color object to hex string."""
+            if hasattr(color, 'hex'):
+                return color.hex
+            elif hasattr(color, 'rgba'):
+                rgba = color.rgba
+                if hasattr(rgba, 'r'):
+                    r = int(rgba.r * 255) if rgba.r <= 1 else int(rgba.r)
+                    g = int(rgba.g * 255) if rgba.g <= 1 else int(rgba.g)
+                    b = int(rgba.b * 255) if rgba.b <= 1 else int(rgba.b)
+                    return f"#{r:02x}{g:02x}{b:02x}"
+            return "#000000"
+
+        # Get current theme colors
+        theme = self.current_theme
+
+        # Base HTML structure
+        html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+            color: {color_to_hex(theme.TEXT_PRIMARY)};
+            background-color: {color_to_hex(theme.BG_PRIMARY)};
+            margin: 0;
+            padding: 20px;
+        }}
+
+        h1 {{
+            color: {color_to_hex(theme.ACCENT_BLUE)};
+            border-bottom: 2px solid {color_to_hex(theme.ACCENT_BLUE)};
+            padding-bottom: 10px;
+        }}
+
+        h2 {{
+            color: {color_to_hex(theme.ACCENT_GREEN)};
+            margin-top: 30px;
+        }}
+
+        h3 {{
+            color: {color_to_hex(theme.TEXT_PRIMARY)};
+        }}
+
+        ul, ol {{
+            margin: 10px 0;
+            padding-left: 30px;
+        }}
+
+        li {{
+            margin: 5px 0;
+        }}
+
+        code {{
+            background-color: rgba(0, 0, 0, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: "SF Mono", Monaco, Menlo, Consolas, monospace;
+            font-size: 13px;
+        }}
+
+        pre {{
+            background-color: rgba(0, 0, 0, 0.1);
+            padding: 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }}
+
+        pre code {{
+            background-color: transparent;
+            padding: 0;
+        }}
+
+        blockquote {{
+            border-left: 4px solid {color_to_hex(theme.ACCENT_BLUE)};
+            margin: 10px 0;
+            padding-left: 20px;
+            color: {color_to_hex(theme.TEXT_SECONDARY)};
+        }}
+
+        a {{
+            color: {color_to_hex(theme.ACCENT_BLUE)};
+            text-decoration: none;
+        }}
+
+        a:hover {{
+            text-decoration: underline;
+        }}
+
+        .placeholder {{
+            text-align: center;
+            color: {color_to_hex(theme.TEXT_SECONDARY)};
+            padding: 60px 20px;
+            font-style: italic;
+            font-size: 16px;
+        }}
+    </style>
+</head>
+<body>
+"""
+
+        if not markdown_text or not markdown_text.strip():
+            # Show placeholder
+            html += """
+    <div class="placeholder">
+        Select a changelog file to view...<br><br>
+        📋 История обработки документов
+    </div>
+"""
+        else:
+            # Convert markdown to HTML
+            import markdown as md
+            html_content = md.markdown(
+                markdown_text,
+                extensions=['fenced_code', 'codehilite', 'tables', 'nl2br']
+            )
+            html += html_content
+
+        # Close HTML
+        html += """
+</body>
+</html>
+"""
+
+        # Set WebView content
+        self.changelog_content.set_content("", html)
 
     def _load_changelog_files(self):
         """Load changelog files and populate selection."""
         changelog_path = Path("./changelog")
         if not changelog_path.exists():
             self.changelog_file_selection.items = []
-            self.changelog_content.value = "No changelog directory found.\n\nFiles will be created after processing documents."
+            self._render_changelog_html("# No changelog directory found\n\nFiles will be created after processing documents.")
             return
 
         files = sorted(changelog_path.glob("*.md"), reverse=True)
         if not files:
             self.changelog_file_selection.items = []
-            self.changelog_content.value = "No changelog files found.\n\nFiles will be created after processing documents."
+            self._render_changelog_html("# No changelog files found\n\nFiles will be created after processing documents.")
             return
 
         # Create display names
@@ -1290,17 +1602,17 @@ class LokalRAGApp(toga.App):
         """Handle changelog file selection change."""
         selected = self.changelog_file_selection.value
         if not selected or selected not in self.changelog_files_map:
-            self.changelog_content.value = ""
+            self._render_changelog_html("")
             return
 
         file_path = self.changelog_files_map[selected]
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            self.changelog_content.value = content
+            self._render_changelog_html(content)
             logger.info(f"Loaded changelog file: {file_path.name}")
         except Exception as e:
-            self.changelog_content.value = f"Error reading file:\n{str(e)}"
+            self._render_changelog_html(f"# Error reading file\n\n{str(e)}")
             logger.error(f"Error loading changelog file: {e}")
 
     def _on_refresh_changelog(self, widget):
@@ -1358,6 +1670,31 @@ class LokalRAGApp(toga.App):
         else:
             logger.warning("No clear chat callback set")
 
+    def _setup_chat_keyboard_handler(self, send_key: str = "shift_enter") -> None:
+        """
+        Set up macOS keyboard handler for chat input.
+
+        This method configures platform-specific keyboard shortcuts for sending
+        messages in the chat. On macOS, it intercepts Enter/Shift+Enter keypresses.
+        On other platforms, this is a no-op.
+
+        Args:
+            send_key: "shift_enter" or "enter" - determines send behavior
+        """
+        # Create wrapper callback that triggers send
+        def send_callback():
+            if self.on_send_message_callback:
+                self.on_send_message_callback()
+
+        # Set up macOS handler (no-op on other platforms)
+        # DISABLED: Keyboard handler causes issues with Settings fields
+        # Will revisit in the future - for now, use Send button
+        # setup_chat_input_keyboard_handler(
+        #     self.chat_input,
+        #     send_callback,
+        #     send_key
+        # )
+
     def _on_save_note(self, widget):
         """Handle save note button press."""
         if self.on_save_note_callback:
@@ -1368,6 +1705,13 @@ class LokalRAGApp(toga.App):
     def _on_clear_note(self, widget):
         """Handle clear note button press."""
         self.clear_note_text()
+
+    def _on_add_notes_from_folder(self, widget):
+        """Handle add notes from folder button press."""
+        if self.on_add_notes_from_folder_callback:
+            self.on_add_notes_from_folder_callback()
+        else:
+            logger.warning("No add notes from folder callback set")
 
     def _on_theme_changed(self, widget):
         """Handle theme selection change."""
@@ -1427,6 +1771,11 @@ class LokalRAGApp(toga.App):
 
     def _on_save_settings(self, widget):
         """Handle save settings button press."""
+        # Update chat keyboard handler with current setting before saving
+        send_key_display = self.chat_send_key_selection.value
+        send_key = "shift_enter" if send_key_display == "Shift+Enter" else "enter"
+        self._setup_chat_keyboard_handler(send_key)
+
         if self.on_save_settings_callback:
             self.on_save_settings_callback()
         else:
@@ -1440,6 +1789,99 @@ class LokalRAGApp(toga.App):
             "Test Connection",
             "Connection testing will be implemented in the next phase."
         )
+
+    def _on_template_selected(self, widget):
+        """Handle template selection change."""
+        # Check if UI is fully initialized (may be called during settings load)
+        if not hasattr(self, 'template_name_input'):
+            return
+
+        selected = self.template_selection.value
+        if selected and selected != "None":
+            # Find template by name
+            template = next((t for t in self.note_templates if t["name"] == selected), None)
+            if template:
+                self.template_name_input.value = template["name"]
+                self.template_content_input.value = template["content"]
+                self.delete_template_button.enabled = True
+                logger.info(f"Template selected: {selected}")
+        else:
+            # Clear fields
+            self.template_name_input.value = ""
+            self.template_content_input.value = ""
+            self.delete_template_button.enabled = False
+
+    def _on_add_template(self, widget):
+        """Handle add template button press."""
+        name = self.template_name_input.value or ""
+        content = self.template_content_input.value or ""
+
+        if not name.strip():
+            self.show_error_dialog("Error", "Template name cannot be empty")
+            return
+
+        if not content.strip():
+            self.show_error_dialog("Error", "Template content cannot be empty")
+            return
+
+        # Check if template with this name already exists
+        existing = next((t for t in self.note_templates if t["name"] == name), None)
+        if existing:
+            # Update existing template
+            existing["content"] = content
+            logger.info(f"Updated template: {name}")
+        else:
+            # Add new template
+            self.note_templates.append({"name": name, "content": content})
+            logger.info(f"Added new template: {name}")
+
+        # Update template selection dropdown
+        self._update_template_selection()
+
+        # Clear fields
+        self.template_name_input.value = ""
+        self.template_content_input.value = ""
+        self.template_selection.value = "None"
+
+        self.show_info_dialog("Success", f"Template '{name}' saved successfully")
+
+    def _on_delete_template(self, widget):
+        """Handle delete template button press."""
+        selected = self.template_selection.value
+        if selected and selected != "None":
+            # Remove template
+            self.note_templates = [t for t in self.note_templates if t["name"] != selected]
+            logger.info(f"Deleted template: {selected}")
+
+            # Update template selection dropdown
+            self._update_template_selection()
+
+            # Clear fields
+            self.template_name_input.value = ""
+            self.template_content_input.value = ""
+            self.template_selection.value = "None"
+            self.delete_template_button.enabled = False
+
+            self.show_info_dialog("Success", f"Template '{selected}' deleted successfully")
+
+    def _update_template_selection(self):
+        """Update template selection dropdown with current templates."""
+        template_names = ["None"] + [t["name"] for t in self.note_templates]
+        self.template_selection.items = template_names
+        # Also update Notes tab template selection
+        if hasattr(self, 'note_template_selection'):
+            self.note_template_selection.items = template_names
+        logger.info(f"Updated template selection: {len(self.note_templates)} templates")
+
+    def _on_note_template_selected(self, widget):
+        """Handle note template selection change."""
+        # This handler is called when user selects a template in Notes tab
+        # The template will be applied when saving the note
+        selected = self.note_template_selection.value
+        if selected and selected != "None":
+            logger.info(f"Note template selected: {selected}")
+        else:
+            logger.info("No note template selected")
 
     # ========================================================================
     # Public API (for app_controller.py) - V2: 100% Compatible with CustomTkinter
@@ -1528,6 +1970,20 @@ class LokalRAGApp(toga.App):
         """Get the current note text."""
         return self.note_text.value or ""
 
+    def get_selected_note_template(self) -> Optional[str]:
+        """
+        Get the content of the selected note template.
+
+        Returns:
+            Optional[str]: Template content if selected, None otherwise
+        """
+        selected = self.note_template_selection.value
+        if selected and selected != "None":
+            template = next((t for t in self.note_templates if t["name"] == selected), None)
+            if template:
+                return template["content"]
+        return None
+
     def clear_note_text(self) -> None:
         """Clear the note text area."""
         self.note_text.value = ""
@@ -1550,9 +2006,16 @@ class LokalRAGApp(toga.App):
         V2: FIXED API - Added missing fields
         - Added: translation_chunk_size
         - Added: vision_mode (from ingestion tab)
-        - Added: vector_db_path
+        - Added: vector_db_path_en (English vector database)
+        - Added: vector_db_path_ru (Russian vector database)
         - Added: markdown_output_path
         - Added: changelog_path
+        - Added: notes_path
+        - Added: note_templates (list of template dicts)
+
+        V3: Added chat settings
+        - Added: chat_context_messages (int)
+        - Added: chat_send_key ("enter" or "shift_enter")
 
         Returns:
             dict: LLM settings with all provider configurations
@@ -1598,9 +2061,17 @@ class LokalRAGApp(toga.App):
             "timeout": int(self.timeout_input.value or "300"),
             "translation_chunk_size": int(self.translation_chunk_input.value or "2000"),  # ← NEW
             # Storage Paths (NEW)
-            "vector_db_path": self.vector_db_path_input.value or "./lokal_rag_db",  # ← NEW
+            "vector_db_path_en": self.vector_db_path_en_input.value or "./chroma_db_en",  # ← NEW (English DB)
+            "vector_db_path_ru": self.vector_db_path_ru_input.value or "./chroma_db_ru",  # ← NEW (Russian DB)
             "markdown_output_path": self.markdown_output_path_input.value or "./output_markdown",  # ← NEW
             "changelog_path": self.changelog_path_input.value or "./changelog",  # ← NEW
+            "notes_path": self.notes_path_input.value or "./notes",  # ← NEW (notes directory)
+            # Note Templates (NEW)
+            "note_templates": self.note_templates,  # ← NEW: list of template dicts
+            # Chat Settings (NEW)
+            "chat_context_messages": int(self.chat_context_input.value or "10"),  # ← NEW: chat context limit
+            "rag_top_k": int(self.rag_topk_input.value or "20"),  # ← NEW: RAG retrieval count
+            "chat_send_key": "shift_enter" if self.chat_send_key_selection.value == "Shift+Enter" else "enter",  # ← NEW: send key preference
             # Database
             "database_language": db_language,
             # Appearance
@@ -1623,7 +2094,8 @@ class LokalRAGApp(toga.App):
         """
         Set LLM settings in the UI.
 
-        V2: Updated to handle new fields (translation_chunk_size, storage paths, vision_mode)
+        V2: Updated to handle new fields (translation_chunk_size, storage paths including notes_path, vision_mode)
+        V3: Added chat settings (chat_context_messages, chat_send_key)
 
         Args:
             settings: Dictionary of settings to populate
@@ -1696,9 +2168,13 @@ class LokalRAGApp(toga.App):
             self.translation_chunk_input.value = chunk_val
 
         # V2: Storage paths (NEW)
-        if "vector_db_path" in settings:
-            self.vector_db_path_input.value = settings["vector_db_path"]
-            logger.info(f"Setting vector DB path to: {settings['vector_db_path']}")
+        if "vector_db_path_en" in settings:
+            self.vector_db_path_en_input.value = settings["vector_db_path_en"]
+            logger.info(f"Setting English vector DB path to: {settings['vector_db_path_en']}")
+
+        if "vector_db_path_ru" in settings:
+            self.vector_db_path_ru_input.value = settings["vector_db_path_ru"]
+            logger.info(f"Setting Russian vector DB path to: {settings['vector_db_path_ru']}")
 
         if "markdown_output_path" in settings:
             self.markdown_output_path_input.value = settings["markdown_output_path"]
@@ -1707,6 +2183,35 @@ class LokalRAGApp(toga.App):
         if "changelog_path" in settings:
             self.changelog_path_input.value = settings["changelog_path"]
             logger.info(f"Setting changelog path to: {settings['changelog_path']}")
+
+        if "notes_path" in settings:
+            self.notes_path_input.value = settings["notes_path"]
+            logger.info(f"Setting notes path to: {settings['notes_path']}")
+
+        # Note templates (NEW)
+        if "note_templates" in settings:
+            self.note_templates = settings["note_templates"]
+            self._update_template_selection()  # Update both dropdowns
+            logger.info(f"Loaded {len(self.note_templates)} note templates")
+
+        # Chat settings (NEW)
+        if "chat_context_messages" in settings:
+            context_val = str(settings["chat_context_messages"])
+            self.chat_context_input.value = context_val
+            logger.info(f"Setting chat context messages to: {context_val}")
+
+        if "rag_top_k" in settings:
+            rag_top_k_val = str(settings["rag_top_k"])
+            self.rag_topk_input.value = rag_top_k_val
+            logger.info(f"Setting RAG top K to: {rag_top_k_val}")
+
+        if "chat_send_key" in settings:
+            send_key = settings["chat_send_key"]
+            display_value = "Shift+Enter" if send_key == "shift_enter" else "Enter"
+            self.chat_send_key_selection.value = display_value
+            logger.info(f"Setting chat send key to: {display_value}")
+            # Update macOS keyboard handler with new setting
+            self._setup_chat_keyboard_handler(send_key)
 
         # Database language
         if "database_language" in settings:
@@ -1816,25 +2321,240 @@ class LokalRAGApp(toga.App):
         # Auto-scroll to bottom by setting cursor to end
         # NOTE: Toga may handle this automatically
 
+    def _render_chat_html(self) -> None:
+        """
+        Render chat messages as HTML with markdown formatting.
+
+        This method converts the stored chat messages into beautifully
+        formatted HTML with proper markdown rendering, syntax highlighting,
+        and theme-aware styling.
+        """
+        # Helper function to convert Toga color to hex string
+        def color_to_hex(color):
+            """Convert Toga color object to hex string."""
+            # Try the most common methods first
+            if hasattr(color, 'hex'):
+                return color.hex
+            # Toga's rgb() returns an object with rgba property that has r, g, b, a attributes
+            elif hasattr(color, 'rgba'):
+                rgba = color.rgba
+                # rgba is an object with r, g, b, a attributes (not a tuple)
+                if hasattr(rgba, 'r'):
+                    r = int(rgba.r * 255) if rgba.r <= 1 else int(rgba.r)
+                    g = int(rgba.g * 255) if rgba.g <= 1 else int(rgba.g)
+                    b = int(rgba.b * 255) if rgba.b <= 1 else int(rgba.b)
+                    return f"#{r:02x}{g:02x}{b:02x}"
+            # Last resort: convert to string and try to parse
+            color_str = str(color)
+            if color_str.startswith('rgb('):
+                # Parse "rgb(255, 255, 255)"
+                values = color_str.replace('rgb(', '').replace(')', '').split(',')
+                if len(values) >= 3:
+                    r, g, b = [int(v.strip()) for v in values[:3]]
+                    return f"#{r:02x}{g:02x}{b:02x}"
+            # Default fallback
+            return "#000000"
+
+        # Get current theme colors
+        theme = self.current_theme
+
+        # Base HTML structure with embedded CSS
+        html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+            color: {color_to_hex(theme.TEXT_PRIMARY)};
+            background-color: {color_to_hex(theme.BG_PRIMARY)};
+            margin: 0;
+            padding: 16px;
+        }}
+
+        .message {{
+            margin-bottom: 20px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            background-color: {color_to_hex(theme.BG_SECONDARY)};
+        }}
+
+        .message-header {{
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }}
+
+        .user-message .message-header {{
+            color: {color_to_hex(theme.ACCENT_BLUE)};
+        }}
+
+        .assistant-message .message-header {{
+            color: {color_to_hex(theme.ACCENT_GREEN)};
+        }}
+
+        .system-message .message-header {{
+            color: {color_to_hex(theme.TEXT_SECONDARY)};
+            font-style: italic;
+        }}
+
+        .message-content {{
+            color: {color_to_hex(theme.TEXT_PRIMARY)};
+        }}
+
+        .message-content p {{
+            margin: 0 0 8px 0;
+        }}
+
+        .message-content p:last-child {{
+            margin-bottom: 0;
+        }}
+
+        .message-content ul, .message-content ol {{
+            margin: 8px 0;
+            padding-left: 24px;
+        }}
+
+        .message-content li {{
+            margin: 4px 0;
+        }}
+
+        .message-content code {{
+            background-color: rgba(0, 0, 0, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: "SF Mono", Monaco, Menlo, Consolas, monospace;
+            font-size: 13px;
+        }}
+
+        .message-content pre {{
+            background-color: rgba(0, 0, 0, 0.1);
+            padding: 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 8px 0;
+        }}
+
+        .message-content pre code {{
+            background-color: transparent;
+            padding: 0;
+        }}
+
+        .message-content blockquote {{
+            border-left: 4px solid {color_to_hex(theme.ACCENT_BLUE)};
+            margin: 8px 0;
+            padding-left: 16px;
+            color: {color_to_hex(theme.TEXT_SECONDARY)};
+        }}
+
+        .message-content strong {{
+            font-weight: 600;
+        }}
+
+        .message-content em {{
+            font-style: italic;
+        }}
+
+        .message-content a {{
+            color: {color_to_hex(theme.ACCENT_BLUE)};
+            text-decoration: none;
+        }}
+
+        .message-content a:hover {{
+            text-decoration: underline;
+        }}
+
+        .placeholder {{
+            text-align: center;
+            color: {color_to_hex(theme.TEXT_SECONDARY)};
+            padding: 40px 20px;
+            font-style: italic;
+        }}
+    </style>
+</head>
+<body>
+"""
+
+        # If no messages, show placeholder
+        if not self._chat_messages:
+            html += """
+    <div class="placeholder">
+        Chat history will appear here...<br><br>
+        Ask questions about your documents!
+    </div>
+"""
+        else:
+            # Render each message
+            for role, message in self._chat_messages:
+                # Convert markdown to HTML
+                message_html = markdown.markdown(
+                    message,
+                    extensions=['fenced_code', 'codehilite', 'tables', 'nl2br']
+                )
+
+                # Determine message class and header
+                if role == "user":
+                    message_class = "user-message"
+                    header = "👤 You"
+                elif role == "assistant":
+                    message_class = "assistant-message"
+                    header = "🤖 Assistant"
+                else:
+                    message_class = "system-message"
+                    header = role
+
+                # Add message div
+                html += f"""
+    <div class="message {message_class}">
+        <div class="message-header">{header}</div>
+        <div class="message-content">
+            {message_html}
+        </div>
+    </div>
+"""
+
+        # Close HTML with auto-scroll JavaScript
+        html += """
+    <script>
+        // Automatically scroll to bottom when page loads
+        window.onload = function() {
+            window.scrollTo(0, document.body.scrollHeight);
+        };
+    </script>
+</body>
+</html>
+"""
+
+        # Set WebView content
+        self.chat_history.set_content("", html)
+
     def append_chat_message(self, role: str, message: str) -> None:
         """
-        Append a message to the chat history.
+        Append a message to the chat history with markdown rendering.
 
         Args:
-            role: The role (user/assistant)
-            message: The message content
+            role: The role (user/assistant/system)
+            message: The message content (supports markdown formatting)
         """
-        current = self.chat_history.value or ""
+        # Add message to internal storage
+        self._chat_messages.append((role, message))
 
-        # Format the message
-        if role == "user":
-            formatted = f"👤 You: {message}\n"
-        elif role == "assistant":
-            formatted = f"🤖 Assistant: {message}\n"
-        else:
-            formatted = f"{role}: {message}\n"
+        # Re-render the chat HTML
+        self._render_chat_html()
 
-        self.chat_history.value = current + formatted + "\n"
+    def clear_chat_history(self) -> None:
+        """
+        Clear the chat history display.
+
+        This method clears all messages from the chat display.
+        """
+        self._chat_messages.clear()
+        self._render_chat_html()
 
     def clear_log(self) -> None:
         """Clear the processing log."""
@@ -1876,6 +2596,26 @@ class LokalRAGApp(toga.App):
     def show_info(self, title: str, message: str) -> None:
         """Alias for show_info_dialog (for CustomTkinter compatibility)."""
         self.show_info_dialog(title, message)
+
+    def select_folder_dialog(self, title: str = "Select Folder") -> Optional[str]:
+        """
+        Show folder selection dialog.
+
+        Args:
+            title: Dialog title
+
+        Returns:
+            Selected folder path or None if cancelled
+        """
+        try:
+            # Toga's select_folder_dialog returns a Path or None
+            folder_path = self.main_window.select_folder_dialog(title=title)
+            if folder_path:
+                return str(folder_path)
+            return None
+        except Exception as e:
+            logger.error(f"Error showing folder dialog: {e}")
+            return None
 
 
 def main():

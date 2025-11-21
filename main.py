@@ -144,7 +144,8 @@ def main() -> None:
         else:
             logger.info(f"  - LM Studio Model: {config.LMSTUDIO_MODEL}")
         logger.info(f"  - Embedding Model: {config.EMBEDDING_MODEL}")
-        logger.info(f"  - Vector DB Path: {config.VECTOR_DB_PATH}")
+        logger.info(f"  - English Vector DB Path: {config.VECTOR_DB_PATH_EN}")
+        logger.info(f"  - Russian Vector DB Path: {config.VECTOR_DB_PATH_RU}")
 
         # Ensure required directories exist
         logger.info("Creating required directories...")

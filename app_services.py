@@ -17,6 +17,7 @@ import gc
 import json
 import logging
 import re
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -1762,34 +1763,108 @@ def fn_generate_tags(text: str, config: AppConfig) -> list[str]:
 # ============================================================================
 
 
+def fn_extract_title_from_markdown(text: str, fallback: str = "Untitled") -> str:
+    """
+    Extract title from markdown text (first # heading).
+
+    This is a pure function that searches for the first H1 heading in markdown.
+
+    Args:
+        text: Markdown text content
+        fallback: Default title if no heading found
+
+    Returns:
+        str: Extracted title or fallback
+
+    Example:
+        >>> text = "# Machine Learning\\n\\nContent here..."
+        >>> fn_extract_title_from_markdown(text)
+        'Machine Learning'
+        >>> fn_extract_title_from_markdown("No heading", "Doc")
+        'Doc'
+    """
+    # Try to find first # heading
+    match = re.search(r'^#\s+(.+)$', text, re.MULTILINE)
+    if match:
+        title = match.group(1).strip()
+        # Remove markdown formatting from title (**, *, etc.)
+        title = re.sub(r'\*+', '', title)
+        # Limit to reasonable length
+        return title[:200]
+    return fallback
+
+
 def fn_create_text_chunks(
     text: str,
     source_file: str,
     config: AppConfig,
-    language: str = "en"
+    language: str = "en",
+    document_id: Optional[str] = None,
+    # Rich metadata (optional)
+    title: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+    author: Optional[str] = None,
+    url: Optional[str] = None,
+    file_path: Optional[str] = None,
+    summary: Optional[str] = None,
+    publication_date: Optional[str] = None,
 ) -> list[Document]:
     """
-    Split text into chunks suitable for embedding and vector storage.
+    Split text into chunks suitable for embedding and vector storage with rich metadata.
 
-    This is a pure function that uses LangChain's text splitter.
+    This is a pure function that uses LangChain's text splitter and enriches each
+    chunk with comprehensive metadata for better search, filtering, and display.
 
     Args:
         text: The text to split into chunks
         source_file: The name of the source file (for metadata)
         config: Application configuration containing chunk size parameters
         language: Language code for the text ("en" or "ru")
+        document_id: Unique document identifier (auto-generated if not provided)
+        title: Document title (extracted from first # heading or filename)
+        tags: List of tags from LLM (e.g., ["python", "ai", "tutorial"]) - stored as comma-separated string
+        author: Document author (from PDF metadata or web article)
+        url: Original URL (for web documents)
+        file_path: Path to saved markdown file
+        summary: Brief summary of document content
+        publication_date: ISO timestamp of when document was added to database
+
+    NOTE:
+        ChromaDB metadata only supports: str, int, float, bool, None
+        Lists (like tags) are converted to comma-separated strings
+        To retrieve tags as list: metadata["tags"].split(", ")
 
     Returns:
         list[Document]: A list of LangChain Document objects with:
             - page_content: The chunk text
-            - metadata: {"source": source_file, "language": language}
+            - metadata: Comprehensive metadata including all provided fields
 
     Example:
         >>> config = AppConfig()
-        >>> chunks = fn_create_text_chunks("Long text...", "doc.pdf", config, language="en")
-        >>> print(len(chunks))
+        >>> chunks = fn_create_text_chunks(
+        ...     text="Long text...",
+        ...     source_file="doc.pdf",
+        ...     config=config,
+        ...     language="en",
+        ...     title="Machine Learning Basics",
+        ...     tags=["ml", "python"],
+        ...     summary="Introduction to ML concepts"
+        ... )
+        >>> print(chunks[0].metadata['title'])
+        'Machine Learning Basics'
+        >>> print(chunks[0].metadata['total_chunks'])
         5
     """
+    from datetime import datetime
+
+    # Generate document_id if not provided
+    if document_id is None:
+        document_id = str(uuid.uuid4())
+
+    # Generate publication_date if not provided
+    if publication_date is None:
+        publication_date = datetime.utcnow().isoformat()
+
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=config.CHUNK_SIZE,
         chunk_overlap=config.CHUNK_OVERLAP,
@@ -1798,17 +1873,43 @@ def fn_create_text_chunks(
     )
 
     chunks = text_splitter.split_text(text)
+    total_chunks = len(chunks)
 
-    # Create Document objects with metadata
+    # Build base metadata (always present)
+    base_metadata = {
+        "source": source_file,
+        "language": language,
+        "document_id": document_id,
+        "total_chunks": total_chunks,
+        "publication_date": publication_date,
+    }
+
+    # Add optional metadata if provided
+    # NOTE: ChromaDB only accepts str, int, float, bool, None - no lists!
+    if title is not None:
+        base_metadata["title"] = title
+    if tags is not None and tags:
+        # Convert tags list to comma-separated string for ChromaDB
+        base_metadata["tags"] = ", ".join(tags)
+    if author is not None:
+        base_metadata["author"] = author
+    if url is not None:
+        base_metadata["url"] = url
+    if file_path is not None:
+        base_metadata["file_path"] = file_path
+    if summary is not None:
+        base_metadata["summary"] = summary
+
+    # Create Document objects with metadata including chunk_index
     documents = [
         Document(
             page_content=chunk,
             metadata={
-                "source": source_file,
-                "language": language,
+                **base_metadata,
+                "chunk_index": i,
             },
         )
-        for chunk in chunks
+        for i, chunk in enumerate(chunks)
     ]
 
     return documents
@@ -1924,12 +2025,12 @@ def fn_get_rag_response(
         >>> answer = fn_get_rag_response("What is Python?", docs, config, history)
     """
     # Format the context from retrieved documents
-    context = "\n\n".join(
-        [
-            f"[Source: {doc.metadata.get('source', 'unknown')}]\n{doc.page_content}"
-            for doc in retrieved_docs
-        ]
-    )
+    context_chunks = []
+    for i, doc in enumerate(retrieved_docs, 1):
+        source = doc.metadata.get('source', 'unknown')
+        context_chunks.append(f"[Document Chunk {i}/{len(retrieved_docs)} - Source: {source}]\n{doc.page_content}")
+
+    context = "\n\n---\n\n".join(context_chunks)
 
     # Format chat history if available
     history_text = ""
@@ -1946,7 +2047,9 @@ def fn_get_rag_response(
             history_text = "\n\nPrevious conversation:\n" + "\n".join(history_lines) + "\n"
 
     # Construct the prompt
-    prompt = f"""Context:
+    prompt = f"""You have access to {len(retrieved_docs)} document chunks from the knowledge base.
+
+Context from database:
 {context}{history_text}
 
 Question: {query}
@@ -2122,16 +2225,17 @@ def fn_create_changelog_file(
         raise
 
 
-def fn_save_note(note_text: str, config: AppConfig) -> Path:
+def fn_save_note(note_text: str, config: AppConfig, template_content: Optional[str] = None) -> Path:
     """
     Save a user note to a timestamped markdown file.
 
     Creates a markdown file with the current date/time as a header,
-    followed by the user's note text.
+    optionally followed by a template, and then the user's note text.
 
     Args:
         note_text: The text content of the note
         config: Application configuration
+        template_content: Optional template content to insert after date
 
     Returns:
         Path: Path to the created note file
@@ -2142,6 +2246,9 @@ def fn_save_note(note_text: str, config: AppConfig) -> Path:
     Example:
         >>> note = "Нужно добавить поддержку экспорта в PDF"
         >>> note_path = fn_save_note(note, config)
+
+        >>> template = "📋 Meeting Notes\n\nAttendees:\n-"
+        >>> note_path = fn_save_note(note, config, template_content=template)
     """
     from datetime import datetime
 
@@ -2149,9 +2256,10 @@ def fn_save_note(note_text: str, config: AppConfig) -> Path:
         # Ensure notes directory exists
         config.NOTES_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Create filename with current timestamp
+        # Create filename with current timestamp (ISO 8601 format)
+        # Format: YYYY-MM-DDTHH-MM-SS.md (example: 2025-11-19T19-58-09.md)
         timestamp = datetime.now()
-        filename = timestamp.strftime("note_%Y-%m-%d_%H-%M-%S.md")
+        filename = timestamp.strftime("%Y-%m-%dT%H-%M-%S.md")
         filepath = config.NOTES_DIR / filename
 
         # Format timestamp for display in Russian format
@@ -2170,7 +2278,14 @@ def fn_save_note(note_text: str, config: AppConfig) -> Path:
             display_timestamp = display_timestamp.replace(eng, rus)
 
         # Build markdown content
-        content = f"# Заметка от {display_timestamp}\n\n{note_text.strip()}\n"
+        content = f"# Заметка от {display_timestamp}\n\n"
+
+        # Add template content if provided
+        if template_content:
+            content += f"{template_content.strip()}\n\n"
+
+        # Add user's note text
+        content += f"{note_text.strip()}\n"
 
         # Write to file
         with open(filepath, 'w', encoding='utf-8') as f:

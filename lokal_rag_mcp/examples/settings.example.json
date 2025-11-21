@@ -1,0 +1,63 @@
+{
+  "_comment": "Lokal-RAG MCP Server Configuration Example",
+  "_comment2": "Copy this to ~/.lokal-rag/settings.json and customize",
+
+  "llm_provider": "gemini",
+  "gemini_api_key": "your-gemini-api-key-here",
+  "gemini_model": "gemini-2.5-pro-preview-03-25",
+
+  "ollama_base_url": "http://localhost:11434",
+  "ollama_model": "qwen2.5:7b-instruct",
+
+  "claude_api_key": "",
+  "claude_model": "claude-3-5-sonnet-20241022",
+
+  "mistral_api_key": "",
+  "mistral_model": "mistral-small-latest",
+
+  "timeout": 300,
+
+  "vector_db_path": "./lokal_rag_db",
+  "markdown_output_path": "./output_markdown",
+  "changelog_path": "./changelog",
+  "database_language": "en",
+
+  "vision_mode": "auto",
+  "vision_provider": "ollama",
+  "vision_base_url": "http://localhost:11434",
+  "vision_model": "granite-docling:258m",
+
+  "rerank": {
+    "_comment": "Re-ranking configuration",
+    "enabled": true,
+    "model": "jinaai/jina-reranker-v2-base-multilingual",
+    "device": "auto",
+    "default_top_k": 25,
+    "default_top_n": 5,
+    "batch_size": 16,
+    "cache_model": true,
+    "threshold": 0.0,
+    "_tips": {
+      "device": "auto (detects MPS/CUDA/CPU), mps (Apple Silicon), cuda (NVIDIA), cpu",
+      "default_top_k": "Stage 1: how many candidates to retrieve (20-50 recommended)",
+      "default_top_n": "Stage 2: final results after re-ranking (3-10 recommended)",
+      "batch_size": "Larger = faster on GPU, more memory (8-32 recommended)",
+      "cache_model": "Keep model in memory for faster subsequent calls",
+      "threshold": "Minimum re-rank score (0-1, 0 = no threshold)"
+    }
+  },
+
+  "mcp": {
+    "_comment": "MCP server-specific settings",
+    "log_level": "INFO",
+    "log_format": "json",
+    "enable_metrics": true,
+    "cache_ttl": 0,
+    "_tips": {
+      "log_level": "DEBUG, INFO, WARNING, ERROR",
+      "log_format": "json (structured), text (human-readable)",
+      "enable_metrics": "Collect performance metrics",
+      "cache_ttl": "Cache TTL in seconds (0 = disabled)"
+    }
+  }
+}

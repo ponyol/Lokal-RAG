@@ -13,9 +13,9 @@ Settings can be persisted to and loaded from ~/.lokal-rag/settings.json
 """
 
 import json
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict
 
 
 @dataclass(frozen=True)
@@ -37,7 +37,8 @@ class AppConfig:
         MISTRAL_MODEL: Mistral model to use (mistral-large-2411, mistral-small-2506, mistral-small-latest)
         LLM_REQUEST_TIMEOUT: Timeout for LLM API requests (in seconds)
         EMBEDDING_MODEL: Name of the HuggingFace embedding model
-        VECTOR_DB_PATH: Path to the ChromaDB persistent storage
+        VECTOR_DB_PATH_EN: Path to the English ChromaDB persistent storage
+        VECTOR_DB_PATH_RU: Path to the Russian ChromaDB persistent storage
         MARKDOWN_OUTPUT_PATH: Path where processed Markdown files will be saved
         CHANGELOG_PATH: Path where changelog files will be saved
         NOTES_DIR: Path where user notes will be saved
@@ -46,6 +47,8 @@ class AppConfig:
         TRANSLATION_CHUNK_SIZE: Size of text chunks for translation (in characters)
         MAX_TAGS: Maximum number of tags to generate per document
         RAG_TOP_K: Number of documents to retrieve for RAG context
+        CHAT_CONTEXT_MESSAGES: Number of messages to keep in chat history context
+        CHAT_SEND_KEY: Send message key ("enter" or "shift_enter")
         CLEANUP_MEMORY_AFTER_PDF: Whether to free memory after batch processing
         WEB_USE_BROWSER_COOKIES: Whether to use browser cookies for authenticated requests
         WEB_BROWSER_CHOICE: Which browser to extract cookies from
@@ -57,6 +60,7 @@ class AppConfig:
         VISION_BASE_URL: URL of the vision provider instance
         VISION_MODEL: Name of the vision model for local extraction
         VISION_MAX_IMAGES: Maximum number of images to process per document
+        NOTE_TEMPLATES: List of note templates with name and content
     """
 
     # LLM Configuration
@@ -77,7 +81,8 @@ class AppConfig:
     EMBEDDING_MODEL: str = "paraphrase-multilingual-MiniLM-L12-v2"
 
     # Storage Configuration
-    VECTOR_DB_PATH: Path = Path("./lokal_rag_db")
+    VECTOR_DB_PATH_EN: Path = Path("./chroma_db_en")  # English vector database
+    VECTOR_DB_PATH_RU: Path = Path("./chroma_db_ru")  # Russian vector database
     MARKDOWN_OUTPUT_PATH: Path = Path("./output_markdown")
     CHANGELOG_PATH: Path = Path("./changelog")  # Path for changelog files
     NOTES_DIR: Path = Path("./notes")  # Path for user notes
@@ -92,7 +97,11 @@ class AppConfig:
     MAX_TAGS: int = 3
 
     # RAG Configuration
-    RAG_TOP_K: int = 10  # Number of documents to retrieve for context (increased for better date recall)
+    RAG_TOP_K: int = 20  # Number of documents to retrieve for context (increased for full document retrieval)
+
+    # Chat Configuration
+    CHAT_CONTEXT_MESSAGES: int = 10  # Number of messages to keep in chat history context
+    CHAT_SEND_KEY: str = "shift_enter"  # Send message key: "enter" or "shift_enter"
 
     # Performance Configuration
     CLEANUP_MEMORY_AFTER_PDF: bool = True  # Free memory after batch completes (not between PDFs)
@@ -110,6 +119,18 @@ class AppConfig:
     VISION_BASE_URL: str = "http://localhost:11434"  # URL of the vision provider instance
     VISION_MODEL: str = "granite-docling:258m"  # Vision model name for local extraction
     VISION_MAX_IMAGES: int = 20  # Maximum images to process per document (to avoid excessive API calls)
+
+    # Notes Templates Configuration
+    NOTE_TEMPLATES: List[Dict[str, str]] = field(default_factory=lambda: [
+        {
+            "name": "Meeting Notes",
+            "content": "📋 Meeting Notes\n\nAttendees:\n- \n\nAgenda:\n- \n\nAction Items:\n- "
+        },
+        {
+            "name": "Daily Log",
+            "content": "📅 Daily Log\n\nCompleted:\n- \n\nIn Progress:\n- \n\nBlocked:\n- "
+        }
+    ])
 
 
 def create_default_config() -> AppConfig:
@@ -283,14 +304,20 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
     if "translation_chunk_size" in settings:
         overrides["TRANSLATION_CHUNK_SIZE"] = settings["translation_chunk_size"]
 
-    if "vector_db_path" in settings:
-        overrides["VECTOR_DB_PATH"] = Path(settings["vector_db_path"])
+    if "vector_db_path_en" in settings:
+        overrides["VECTOR_DB_PATH_EN"] = Path(settings["vector_db_path_en"])
+
+    if "vector_db_path_ru" in settings:
+        overrides["VECTOR_DB_PATH_RU"] = Path(settings["vector_db_path_ru"])
 
     if "markdown_output_path" in settings:
         overrides["MARKDOWN_OUTPUT_PATH"] = Path(settings["markdown_output_path"])
 
     if "changelog_path" in settings:
         overrides["CHANGELOG_PATH"] = Path(settings["changelog_path"])
+
+    if "notes_path" in settings:
+        overrides["NOTES_DIR"] = Path(settings["notes_path"])
 
     if "database_language" in settings:
         overrides["DATABASE_LANGUAGE"] = settings["database_language"]
@@ -307,6 +334,20 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
 
     if "vision_model" in settings:
         overrides["VISION_MODEL"] = settings["vision_model"]
+
+    # Chat settings
+    if "chat_context_messages" in settings:
+        overrides["CHAT_CONTEXT_MESSAGES"] = settings["chat_context_messages"]
+
+    if "rag_top_k" in settings:
+        overrides["RAG_TOP_K"] = settings["rag_top_k"]
+
+    if "chat_send_key" in settings:
+        overrides["CHAT_SEND_KEY"] = settings["chat_send_key"]
+
+    # Note templates
+    if "note_templates" in settings:
+        overrides["NOTE_TEMPLATES"] = settings["note_templates"]
 
     # Create new config with overrides
     if overrides:
@@ -366,11 +407,24 @@ LANGUAGE DETECTION AND RESPONSE:
 
 TASK:
 Answer the user's question based on the provided context from the document database.
+- Use ALL available context chunks when answering
 - If the context contains the answer, provide it clearly
 - If the context doesn't contain enough information, say so (in the same language as the question)
-- Be concise, accurate, and helpful
+- Be accurate and helpful
 
-IMPORTANT: Always match your response language to the user's question language!"""
+RESPONSE LENGTH:
+- For general questions: Provide concise, focused answers
+- If the user explicitly requests full content (e.g., "выведи полностью", "покажи весь документ", "show full document", "give me all details", "дай полное содержание"):
+  * OUTPUT EVERYTHING from ALL available document chunks
+  * Combine all chunks sequentially to reconstruct the full document
+  * Include ALL text from ALL chunks - DO NOT summarize or omit anything
+  * Preserve structure, headings, lists, and formatting from the source
+  * If you have 10, 20, or more chunks - use them ALL
+
+IMPORTANT:
+- The document chunks you receive are parts of the SAME document
+- When asked for "full content", you MUST output ALL chunks combined
+- Always match your response language to the user's question language!"""
 
 VISION_SYSTEM_PROMPT = """You are an expert at analyzing images from documents.
 

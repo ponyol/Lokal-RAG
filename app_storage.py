@@ -117,9 +117,9 @@ class StorageService:
         so no special cleanup is required (unlike 0.4.x versions).
         """
         try:
-            # Paths for both databases
-            db_path_en = self.config.VECTOR_DB_PATH.parent / "chroma_db_en"
-            db_path_ru = self.config.VECTOR_DB_PATH.parent / "chroma_db_ru"
+            # Paths for both databases (from config)
+            db_path_en = self.config.VECTOR_DB_PATH_EN
+            db_path_ru = self.config.VECTOR_DB_PATH_RU
 
             # Ensure directories exist
             db_path_en.mkdir(parents=True, exist_ok=True)
@@ -326,27 +326,41 @@ class StorageService:
         try:
             logger.info(f"Adding note to BOTH databases: {note_path.name}")
 
-            # Create Document with type="note" metadata
-            doc = Document(
-                page_content=note_content,
-                metadata={
-                    "source": str(note_path),
-                    "type": "note",
-                    "filename": note_path.name,
-                }
+            # Import chunking function and metadata extraction
+            from app_services import fn_create_text_chunks, fn_extract_title_from_markdown
+
+            # Extract title from note
+            title = fn_extract_title_from_markdown(note_content, fallback=note_path.stem)
+
+            # Create chunks with rich metadata (notes can be long too)
+            # Notes are language-agnostic, use "en" as default
+            chunks = fn_create_text_chunks(
+                text=note_content,
+                source_file=str(note_path),
+                config=self.config,
+                language="en",  # Notes are typically English
+                title=title,
+                file_path=str(note_path),
             )
 
-            # Add note to BOTH vector stores
+            # Add type="note" and filename to all chunks
+            for chunk in chunks:
+                chunk.metadata["type"] = "note"
+                chunk.metadata["filename"] = note_path.name
+
+            logger.info(f"  Created {len(chunks)} chunks for note")
+
+            # Add note chunks to BOTH vector stores
             logger.info("  → Adding to English database...")
-            self._vectorstore_en.add_documents([doc])
+            self._vectorstore_en.add_documents(chunks)
             logger.info("  ✓ Added to English database")
 
             logger.info("  → Adding to Russian database...")
-            self._vectorstore_ru.add_documents([doc])
+            self._vectorstore_ru.add_documents(chunks)
             logger.info("  ✓ Added to Russian database")
 
-            # Add note to BM25 index
-            self._all_documents.append(doc)
+            # Add note chunks to BM25 index
+            self._all_documents.extend(chunks)
             logger.info(f"Total documents in BM25 index: {len(self._all_documents)}")
 
             # Rebuild BM25 retriever with updated document list
@@ -456,6 +470,125 @@ class StorageService:
         except Exception as e:
             logger.error(f"Failed to search documents: {e}")
             raise
+
+    def get_all_chunks_by_document_id(self, document_id: str) -> list[Document]:
+        """
+        Retrieve ALL chunks of a specific document by its document_id.
+
+        This method is crucial for full document retrieval - it gets every chunk
+        of the document and returns them sorted by chunk_index.
+
+        Args:
+            document_id: The unique identifier of the document
+
+        Returns:
+            list[Document]: All chunks of the document, sorted by chunk_index
+
+        Example:
+            >>> storage = StorageService(config)
+            >>> chunks = storage.get_all_chunks_by_document_id("abc-123-def")
+            >>> print(f"Document has {len(chunks)} chunks")
+            >>> # Chunks are in order: 0, 1, 2, ...
+        """
+        if self._vectorstore is None:
+            raise RuntimeError("Vector store not initialized")
+
+        try:
+            # Get all chunks with matching document_id from ChromaDB
+            # Note: ChromaDB's get() with where filter returns all matching documents
+            collection = self._vectorstore._collection
+            results = collection.get(
+                where={"document_id": document_id},
+                include=["documents", "metadatas"]
+            )
+
+            if not results or not results['documents']:
+                logger.warning(f"No chunks found for document_id: {document_id}")
+                return []
+
+            # Create Document objects
+            docs = [
+                Document(
+                    page_content=content,
+                    metadata=metadata
+                )
+                for content, metadata in zip(results['documents'], results['metadatas'])
+            ]
+
+            # Sort by chunk_index to preserve document order
+            sorted_docs = sorted(docs, key=lambda x: x.metadata.get('chunk_index', 0))
+
+            logger.info(f"Retrieved {len(sorted_docs)} chunks for document_id: {document_id}")
+            return sorted_docs
+
+        except Exception as e:
+            logger.error(f"Failed to retrieve chunks for document_id {document_id}: {e}")
+            return []
+
+    def search_with_full_document(
+        self,
+        query: str,
+        k: Optional[int] = None,
+        search_type: Optional[str] = None,
+        include_full_doc: bool = False
+    ) -> list[Document]:
+        """
+        Search for documents with option to retrieve the full document.
+
+        This is the "smart retrieval" method that can automatically expand
+        a search result to include ALL chunks of the document.
+
+        Workflow:
+        1. Perform hybrid search to find top-K relevant chunks
+        2. If include_full_doc=True:
+           - Take the first (most relevant) chunk
+           - Get its document_id
+           - Retrieve ALL chunks of that document
+           - Return them sorted by chunk_index
+
+        Args:
+            query: The search query text
+            k: Number of documents to retrieve in initial search
+            search_type: Filter by type - "document", "note", or None (all)
+            include_full_doc: If True, expand to include ALL chunks of the top document
+
+        Returns:
+            list[Document]: Either top-K chunks OR all chunks of the top document
+
+        Example:
+            >>> storage = StorageService(config)
+            >>> # Normal search: get top 10 relevant chunks
+            >>> chunks = storage.search_with_full_document("Claude Code", k=10)
+            >>> # Full document search: get ALL chunks of the most relevant document
+            >>> full_doc = storage.search_with_full_document("Claude Code", include_full_doc=True)
+            >>> print(f"Full document has {len(full_doc)} chunks")
+        """
+        # Step 1: Perform normal hybrid search
+        top_chunks = self.search_similar_documents(query, k=k, search_type=search_type)
+
+        # Step 2: If full document requested and we have results
+        if include_full_doc and top_chunks:
+            # Get document_id from the most relevant chunk
+            first_chunk_meta = top_chunks[0].metadata
+            doc_id = first_chunk_meta.get('document_id')
+
+            if doc_id:
+                logger.info(f"Expanding search to full document (document_id: {doc_id})")
+                # Retrieve ALL chunks of this document
+                all_chunks = self.get_all_chunks_by_document_id(doc_id)
+
+                if all_chunks:
+                    logger.info(f"Retrieved full document: {len(all_chunks)} chunks")
+                    return all_chunks
+                else:
+                    logger.warning(f"Failed to retrieve full document, returning top chunks")
+                    return top_chunks
+            else:
+                logger.warning("No document_id in top chunk metadata, returning top chunks")
+                return top_chunks
+
+        # Step 3: Return normal search results
+        return top_chunks
 
     def get_document_count(self) -> int:
         """
@@ -645,6 +778,7 @@ def fn_ensure_directories_exist(config: AppConfig) -> None:
         >>> config = AppConfig()
         >>> fn_ensure_directories_exist(config)
     """
-    config.VECTOR_DB_PATH.mkdir(parents=True, exist_ok=True)
+    config.VECTOR_DB_PATH_EN.mkdir(parents=True, exist_ok=True)
+    config.VECTOR_DB_PATH_RU.mkdir(parents=True, exist_ok=True)
     config.MARKDOWN_OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
     logger.info("All required directories created")

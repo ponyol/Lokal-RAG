@@ -1,0 +1,263 @@
+"""
+macOS-specific platform code for Lokal-RAG.
+
+This module provides macOS-specific functionality using native APIs
+through Toga's platform interface.
+"""
+
+import sys
+from typing import Callable, Optional
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Global storage for keyboard handler callback
+_keyboard_handler_callback = None
+_keyboard_handler_mode = None
+_swizzled_classes = set()
+_KeyDownHelper = None  # Cached helper class
+_chat_input_widget = None  # Reference to the specific chat input widget
+
+
+def _get_helper_class():
+    """Get or create the KeyDownHelper class (singleton)."""
+    global _KeyDownHelper
+
+    if _KeyDownHelper is not None:
+        return _KeyDownHelper
+
+    # Only create on macOS
+    if sys.platform != "darwin":
+        return None
+
+    try:
+        from rubicon.objc import ObjCClass, objc_method
+        from rubicon.objc.runtime import objc_id, send_message
+
+        NSObject = ObjCClass("NSObject")
+
+        # Create helper class with our keyDown implementation
+        class KeyDownHelper(NSObject):
+            """Helper class to get IMP for our keyDown method."""
+
+            @objc_method
+            def lokalragKeyDown_(self, event):
+                """Our custom keyDown implementation."""
+                try:
+                    global _keyboard_handler_callback, _keyboard_handler_mode, _chat_input_widget
+
+                    # CRITICAL: Only handle events from the specific chat input widget
+                    # This prevents the handler from affecting other text fields (Settings, etc.)
+                    import struct
+                    if hasattr(self, 'ptr'):
+                        self_ptr = struct.unpack('Q', self.ptr)[0]
+                    else:
+                        self_ptr = 0
+
+                    if _chat_input_widget is not None and self_ptr != _chat_input_widget:
+                        # This is NOT the chat input - pass through to original implementation
+                        send_message(self, 'lokalragKeyDown:', event, restype=None, argtypes=[objc_id])
+                        return
+
+                    # Get key code
+                    key_code = event.keyCode
+                    # Enter key = 36, Return key = 76
+                    if key_code in (36, 76):
+                        # Check modifier flags
+                        modifier_flags = int(event.modifierFlags)
+                        shift_pressed = (modifier_flags & (1 << 17)) != 0
+
+                        logger.info(f"🔑 Enter key! keyCode={key_code}, shift={shift_pressed}, mode={_keyboard_handler_mode}")
+
+                        # Determine if we should send
+                        should_send = False
+                        if _keyboard_handler_mode == "shift_enter":
+                            should_send = shift_pressed
+                        else:  # "enter"
+                            should_send = not shift_pressed
+
+                        if should_send and _keyboard_handler_callback:
+                            logger.info(f"🚀 Sending message via keyboard shortcut")
+                            _keyboard_handler_callback()
+                            return  # Don't call super (consume event)
+
+                    # Not our event - call original implementation
+                    # After swizzling, lokalragKeyDown: contains the original keyDown: implementation
+                    send_message(self, 'lokalragKeyDown:', event, restype=None, argtypes=[objc_id])
+
+                except Exception as e:
+                    logger.error(f"Error in keyDown handler: {e}", exc_info=True)
+                    # Fall back to original
+                    send_message(self, 'lokalragKeyDown:', event, restype=None, argtypes=[objc_id])
+
+        _KeyDownHelper = KeyDownHelper
+        logger.info("Created KeyDownHelper class")
+        return KeyDownHelper
+
+    except Exception as e:
+        logger.error(f"Failed to create KeyDownHelper class: {e}", exc_info=True)
+        return None
+
+
+def setup_chat_input_keyboard_handler(
+    chat_input,
+    send_callback: Callable[[], None],
+    send_key: str = "shift_enter"
+) -> None:
+    """
+    Set up keyboard handler for chat input on macOS.
+
+    This function intercepts keyDown events in TogaTextView to handle
+    Enter/Shift+Enter for sending messages.
+
+    Args:
+        chat_input: Toga MultilineTextInput widget
+        send_callback: Function to call when send key is pressed
+        send_key: "shift_enter" or "enter" - determines send behavior
+    """
+    # Only run on macOS
+    if sys.platform != "darwin":
+        logger.info("Keyboard handler only available on macOS, skipping")
+        return
+
+    try:
+        from rubicon.objc import ObjCClass, objc_method, ObjCInstance
+        from rubicon.objc.runtime import objc_id, SEL, libobjc, send_super, send_message
+        import ctypes
+
+        global _keyboard_handler_callback, _keyboard_handler_mode, _swizzled_classes, _chat_input_widget
+
+        # Store callback globally
+        _keyboard_handler_callback = send_callback
+        _keyboard_handler_mode = send_key
+
+        NSEvent = ObjCClass("NSEvent")
+        NSObject = ObjCClass("NSObject")
+
+        # Get the native widget
+        native_widget = chat_input._impl.native
+        logger.info(f"Native widget: {native_widget.className if hasattr(native_widget, 'className') else type(native_widget)}")
+
+        # Get TogaTextView
+        native_text_view = None
+        if hasattr(native_widget, 'documentView'):
+            native_text_view = native_widget.documentView
+            class_name = native_text_view.className if hasattr(native_text_view, 'className') else 'unknown'
+            logger.info(f"DocumentView: {class_name}")
+        else:
+            logger.warning("Could not find documentView")
+            return
+
+        # Store reference to this specific widget using ptr as integer
+        # ptr returns bytes, need to convert to int for comparison
+        import struct
+        ptr_bytes = native_text_view.ptr
+        # Convert bytes to pointer-sized integer (8 bytes on 64-bit macOS)
+        _chat_input_widget = struct.unpack('Q', ptr_bytes)[0]  # Q = unsigned long long (8 bytes)
+        logger.info(f"Stored chat input widget ptr: {_chat_input_widget} (hex: {hex(_chat_input_widget)})")
+
+        # Get the class name for swizzle check
+        toga_class_name = str(native_text_view.className)
+
+        # Check if already swizzled
+        if toga_class_name in _swizzled_classes:
+            logger.info(f"{toga_class_name} already swizzled, updating callback only")
+            return
+
+        # Get helper class (created once at module level)
+        KeyDownHelper = _get_helper_class()
+        if KeyDownHelper is None:
+            logger.warning("Failed to get KeyDownHelper class")
+            return
+
+        # Get class pointers - use .ptr directly from ObjC class
+        helper_class_ptr = KeyDownHelper.ptr if hasattr(KeyDownHelper, 'ptr') else libobjc.object_getClass(KeyDownHelper.alloc().ptr)
+        target_class_ptr = libobjc.object_getClass(native_text_view.ptr)
+
+        logger.info(f"Helper class ptr: {helper_class_ptr}, Target class ptr: {target_class_ptr}")
+
+        # List all methods in helper class for debugging
+        method_count = ctypes.c_uint(0)
+        method_list = libobjc.class_copyMethodList(helper_class_ptr, ctypes.byref(method_count))
+        logger.info(f"Helper class has {method_count.value} methods")
+        if method_count.value > 0:
+            for i in range(method_count.value):
+                method = method_list[i]
+                sel = libobjc.method_getName(method)
+                sel_name = libobjc.sel_getName(sel)
+                logger.info(f"  Method {i}: {sel_name}")
+
+        # Get our method from helper class (lokalragKeyDown_ → lokalragKeyDown:)
+        our_method = libobjc.class_getInstanceMethod(
+            helper_class_ptr,
+            SEL(b'lokalragKeyDown:')
+        )
+
+        # Get original keyDown from target class
+        original_method = libobjc.class_getInstanceMethod(
+            target_class_ptr,
+            SEL(b'keyDown:')
+        )
+
+        if not our_method:
+            logger.warning("Could not find lokal_rag_keyDown: in helper class")
+            return
+
+        if not original_method:
+            logger.warning("Could not find keyDown: in TogaTextView")
+            return
+
+        # Get IMP from our method
+        our_imp = libobjc.method_getImplementation(our_method)
+
+        # Try to add our method to target class
+        added = libobjc.class_addMethod(
+            target_class_ptr,
+            SEL(b'lokalragKeyDown:'),
+            our_imp,
+            b'v@:@'  # void return, id self, SEL cmd, id event
+        )
+
+        if added:
+            logger.info("Added lokalragKeyDown: to class")
+
+            # Now swap implementations
+            swizzled_method = libobjc.class_getInstanceMethod(
+                target_class_ptr,
+                SEL(b'lokalragKeyDown:')
+            )
+
+            if swizzled_method:
+                libobjc.method_exchangeImplementations(original_method, swizzled_method)
+                _swizzled_classes.add(toga_class_name)
+                logger.info(f"✓ Successfully swizzled {toga_class_name}.keyDown: (mode: {send_key})")
+            else:
+                logger.warning("Could not get swizzled method back")
+        else:
+            logger.warning("Could not add method to class (may already exist)")
+
+    except ImportError as e:
+        logger.warning(f"Could not import rubicon.objc: {e}")
+    except Exception as e:
+        logger.error(f"Failed to setup macOS keyboard handler: {e}", exc_info=True)
+
+
+def update_chat_input_send_mode(
+    chat_input,
+    send_callback: Callable[[], None],
+    send_key: str = "shift_enter"
+) -> None:
+    """
+    Update the send mode for an already configured chat input.
+
+    Args:
+        chat_input: Toga MultilineTextInput widget
+        send_callback: Function to call when send key is pressed
+        send_key: "shift_enter" or "enter" - determines send behavior
+    """
+    global _keyboard_handler_callback, _keyboard_handler_mode
+
+    _keyboard_handler_callback = send_callback
+    _keyboard_handler_mode = send_key
+
+    logger.info(f"Updated keyboard handler (mode: {send_key})")

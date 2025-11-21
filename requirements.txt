@@ -33,6 +33,7 @@ pydantic==2.12.4
 browser-cookie3==0.20.1  # Extract cookies from browser for authenticated requests
 readability-lxml==0.8.4.1  # Extract main article content from HTML
 markdownify==1.2.0  # Convert HTML to Markdown
+markdown==3.10  # Convert Markdown to HTML (for chat message rendering)
 lxml==6.0.2  # Required by readability-lxml
 beautifulsoup4==4.14.2  # HTML parsing utilities
 

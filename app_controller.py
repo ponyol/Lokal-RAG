@@ -108,6 +108,7 @@ class TogaAppOrchestrator:
         self.view.on_save_settings_callback = self.on_save_settings
         self.view.on_load_settings_callback = self.on_load_settings
         self.view.on_save_note_callback = self.on_save_note
+        self.view.on_add_notes_from_folder_callback = self.on_add_notes_from_folder
         self.view.on_clear_chat_callback = self.on_clear_chat  # V2: Added
         self.view.on_ui_ready_callback = self._init_ui  # V2: Called when UI is ready
 
@@ -378,8 +379,9 @@ class TogaAppOrchestrator:
 
         This method:
         1. Gets the note text from the view
-        2. Saves it to a markdown file
-        3. Adds it to the vector database
+        2. Gets the selected template (if any)
+        3. Saves it to a markdown file with template
+        4. Adds it to the vector database
         """
         # Get note text from view
         note_text = self.view.get_note_text()
@@ -390,8 +392,11 @@ class TogaAppOrchestrator:
             return
 
         try:
-            # Save note to markdown file
-            note_path = fn_save_note(note_text, self.config)
+            # Get selected template content (if any)
+            template_content = self.view.get_selected_note_template()
+
+            # Save note to markdown file with template
+            note_path = fn_save_note(note_text, self.config, template_content=template_content)
             logger.info(f"Note saved to: {note_path}")
 
             # Read the saved file content (includes the header with date/time)
@@ -412,6 +417,98 @@ class TogaAppOrchestrator:
             self.view.show_note_status(f"✗ {error_msg}", is_error=True)
             logger.error(error_msg, exc_info=True)
 
+    def on_add_notes_from_folder(self) -> None:
+        """
+        Handle the "Add Notes from Folder" button click.
+
+        This method:
+        1. Prompts user to select a folder
+        2. Finds all .md files in the folder
+        3. For each file: saves as note and adds to vector DB
+        4. Applies template if one is selected
+        """
+        # Spawn worker thread
+        worker_thread = threading.Thread(
+            target=self._add_notes_from_folder_worker,
+            daemon=True
+        )
+        worker_thread.start()
+        logger.info("Add notes from folder worker started")
+
+    def _add_notes_from_folder_worker(self) -> None:
+        """
+        Worker thread for adding notes from a folder.
+
+        Runs in background thread to avoid blocking the UI.
+        """
+        try:
+            # Get selected template (if any)
+            template_content = self.view.get_selected_note_template()
+
+            # Show folder selection dialog
+            folder_path = self.view.select_folder_dialog("Select folder with markdown files")
+
+            if not folder_path:
+                logger.info("Folder selection cancelled")
+                self.view.show_note_status("Folder selection cancelled", is_error=False)
+                return
+
+            # Find all .md files in folder
+            from pathlib import Path
+            folder = Path(folder_path)
+            md_files = list(folder.glob("*.md"))
+
+            if not md_files:
+                self.view.show_note_status("No .md files found in folder", is_error=True)
+                return
+
+            logger.info(f"Found {len(md_files)} markdown files in {folder_path}")
+            self.view.show_note_status(f"Processing {len(md_files)} files...", is_error=False)
+
+            # Process each file
+            success_count = 0
+            error_count = 0
+
+            for md_file in md_files:
+                try:
+                    # Read file content
+                    with open(md_file, 'r', encoding='utf-8') as f:
+                        note_text = f.read()
+
+                    if not note_text.strip():
+                        logger.warning(f"Skipping empty file: {md_file.name}")
+                        continue
+
+                    # Save as note (this creates a new timestamped file with template)
+                    note_path = fn_save_note(note_text, self.config, template_content=template_content)
+
+                    # Read the saved file content (includes header with date/time and template)
+                    with open(note_path, 'r', encoding='utf-8') as f:
+                        full_content = f.read()
+
+                    # Add to vector database
+                    self.storage.add_note(full_content, note_path)
+
+                    success_count += 1
+                    logger.info(f"Added note from: {md_file.name}")
+
+                except Exception as e:
+                    error_count += 1
+                    logger.error(f"Failed to process {md_file.name}: {e}")
+
+            # Show final status
+            status_msg = f"✓ Added {success_count} notes"
+            if error_count > 0:
+                status_msg += f" ({error_count} errors)"
+
+            self.view.show_note_status(status_msg, is_error=(error_count > 0))
+            logger.info(f"Bulk import complete: {success_count} success, {error_count} errors")
+
+        except Exception as e:
+            error_msg = f"Failed to add notes from folder: {e}"
+            self.view.show_note_status(f"✗ {error_msg}", is_error=True)
+            logger.error(error_msg, exc_info=True)
+
     def on_clear_chat(self) -> None:
         """
         Handle the "Clear" button click in chat.
@@ -420,6 +517,8 @@ class TogaAppOrchestrator:
         """
         self.chat_history.clear()
         logger.info("Chat history cleared")
+        # Clear the visual chat display
+        self.view.clear_chat_history()
         # Optionally show a visual confirmation
         self.view.append_chat_message("system", "Chat history cleared")
 
@@ -694,8 +793,22 @@ def processing_pipeline_worker(
                     # Continue without translation
                     russian_text = None
 
-            # Step 3: Tagging (optional)
-            # Use English text for tagging (tags are in English)
+            # Step 3: Extract metadata (title, tags, summary)
+            # Import metadata extraction functions
+            from app_services import fn_extract_title_from_markdown, fn_generate_summary
+
+            # Extract title and prepare metadata
+            if source_type == "pdf":
+                title = fn_extract_title_from_markdown(markdown_text, fallback=item.stem)
+                source_name = item.name
+                url = None  # PDF doesn't have URL
+            else:
+                # Web document
+                title = fn_extract_title_from_markdown(markdown_text, fallback="Web Article")
+                url = item  # Store original URL
+                source_name = item
+
+            # Tagging (optional)
             tags = ["general"]
             if do_tagging:
                 view_queue.put(f"LOG:   → Generating tags...")
@@ -707,32 +820,35 @@ def processing_pipeline_worker(
                     view_queue.put(f"LOG:   ⚠️  Tag generation failed, using 'general'")
                     tags = ["general"]
 
+            # Generate summary (will be used in metadata)
+            view_queue.put(f"LOG:   → Generating summary...")
+            summary = None
+            try:
+                # Use Russian text if available, otherwise English
+                text_for_summary = russian_text if (do_translation and russian_text is not None) else markdown_text
+                summary = fn_generate_summary(text_for_summary, config)
+                view_queue.put(f"LOG:   ✓ Summary generated")
+            except Exception as summary_error:
+                logger.warning(f"Failed to generate summary (non-fatal): {summary_error}")
+                view_queue.put(f"LOG:   ⚠️  Summary generation skipped")
+                summary = None
+
             # Step 4: Save to disk
             primary_tag = tags[0] if tags else "general"
+
+            # Generate filename with timestamp and primary tag
+            # Format: YYYY-MM-DDTHH-MM-SS-{primary_tag}.md (example: 2025-11-19T19-58-09-ai-tool.md)
+            from datetime import datetime
+            timestamp = datetime.now()
+            # Sanitize primary_tag for filename (remove special chars, replace spaces with hyphens)
+            import re
+            safe_tag = re.sub(r'[^\w\s-]', '', primary_tag)
+            safe_tag = re.sub(r'[-\s]+', '-', safe_tag).lower()
+            filename = timestamp.strftime(f"%Y-%m-%dT%H-%M-%S-{safe_tag}")
 
             # Debug: Log markdown size before saving (if vision is enabled)
             if vision_mode != "disabled":
                 view_queue.put(f"LOG:   [DEBUG] Markdown size before save: {len(markdown_text)} chars")
-
-            # Generate filename based on source type
-            if source_type == "pdf":
-                filename = item.stem
-                source_name = item.name
-            else:
-                # Extract title from markdown (first # heading) or use URL
-                import re
-                title_match = re.search(r'^#\s+(.+)$', markdown_text, re.MULTILINE)
-                if title_match:
-                    filename = title_match.group(1)[:50]  # Limit to 50 chars
-                    # Sanitize filename
-                    filename = re.sub(r'[^\w\s-]', '', filename)
-                    filename = re.sub(r'[-\s]+', '-', filename)
-                else:
-                    # Use domain + path as filename
-                    from urllib.parse import urlparse
-                    parsed = urlparse(item)
-                    filename = f"{parsed.netloc}{parsed.path}".replace("/", "-")[:50]
-                source_name = item
 
             # Save English version
             if do_translation and russian_text is not None:
@@ -768,21 +884,31 @@ def processing_pipeline_worker(
             # Step 5: Create chunks and add to vector database
             if do_translation and russian_text is not None:
                 # Bilingual storage: create chunks for both languages
-                view_queue.put(f"LOG:   → Creating English chunks...")
+                view_queue.put(f"LOG:   → Creating English chunks with rich metadata...")
                 chunks_en = fn_create_text_chunks(
                     text=markdown_text,
                     source_file=source_name,
                     config=config,
                     language="en",
+                    title=title,
+                    tags=tags,
+                    url=url,
+                    file_path=str(saved_path_en),
+                    summary=summary,
                 )
                 view_queue.put(f"LOG:   ✓ Created {len(chunks_en)} English chunks")
 
-                view_queue.put(f"LOG:   → Creating Russian chunks...")
+                view_queue.put(f"LOG:   → Creating Russian chunks with rich metadata...")
                 chunks_ru = fn_create_text_chunks(
                     text=russian_text,
                     source_file=source_name,
                     config=config,
                     language="ru",
+                    title=title,  # Same title for both languages
+                    tags=tags,
+                    url=url,
+                    file_path=str(saved_path_ru),
+                    summary=summary,
                 )
                 view_queue.put(f"LOG:   ✓ Created {len(chunks_ru)} Russian chunks")
 
@@ -792,12 +918,17 @@ def processing_pipeline_worker(
                 view_queue.put(f"LOG:   ✓ Added {len(chunks_en)} + {len(chunks_ru)} chunks to database")
             else:
                 # Monolingual storage: create chunks only for English (or when translation failed)
-                view_queue.put(f"LOG:   → Creating chunks...")
+                view_queue.put(f"LOG:   → Creating chunks with rich metadata...")
                 chunks = fn_create_text_chunks(
                     text=markdown_text,
                     source_file=source_name,
                     config=config,
                     language="en",
+                    title=title,
+                    tags=tags,
+                    url=url,
+                    file_path=str(saved_path),
+                    summary=summary,
                 )
                 view_queue.put(f"LOG:   ✓ Created {len(chunks)} chunks")
 
@@ -811,28 +942,11 @@ def processing_pipeline_worker(
             else:
                 view_queue.put(f"LOG: ✅ SUCCESS: {item_name}")
 
-            # Generate summary for changelog
-            view_queue.put(f"LOG:   → Generating summary for changelog...")
-            try:
-                from app_services import fn_generate_summary
-                # Use Russian text if available, otherwise English
-                text_for_summary = russian_text if (do_translation and russian_text is not None) else markdown_text
-                summary = fn_generate_summary(text_for_summary, config)
-                view_queue.put(f"LOG:   ✓ Summary generated")
-
-                # Add to processed items for changelog
-                processed_items.append({
-                    'name': str(item) if source_type == "web" else item_name,
-                    'summary': summary,
-                })
-            except Exception as summary_error:
-                logger.warning(f"Failed to generate summary (non-fatal): {summary_error}")
-                view_queue.put(f"LOG:   ⚠️  Summary generation skipped")
-                # Add with fallback summary
-                processed_items.append({
-                    'name': str(item) if source_type == "web" else item_name,
-                    'summary': "Не удалось сгенерировать описание документа.",
-                })
+            # Add to processed items for changelog (summary already generated above)
+            processed_items.append({
+                'name': str(item) if source_type == "web" else item_name,
+                'summary': summary if summary else "Не удалось сгенерировать описание документа.",
+            })
 
             view_queue.put("LOG: " + "-" * 50)
 
@@ -910,11 +1024,24 @@ def rag_chat_worker(
         if expanded_query != query:
             logger.info(f"Expanded query: '{query}' → '{expanded_query}'")
 
-        # Step 2: Search for relevant documents (with type filter)
+        # Step 1.5: Detect if user wants full document
+        full_doc_keywords = [
+            'полностью', 'весь документ', 'все содержимое', 'полное содержание', 'целиком',
+            'full document', 'entire document', 'complete content', 'whole document', 'full text'
+        ]
+        include_full_doc = any(keyword in query.lower() for keyword in full_doc_keywords)
+
+        if include_full_doc:
+            logger.info("🔍 Full document request detected! Will retrieve ALL chunks of the document.")
+
+        # Step 2: Search for relevant documents (with type filter and full doc option)
         search_desc = f"{search_type}s" if search_type else "all documents"
         logger.info(f"Searching {search_desc} for: {query[:50]}...")
-        retrieved_docs = storage.search_similar_documents(
-            expanded_query, k=config.RAG_TOP_K, search_type=search_type
+        retrieved_docs = storage.search_with_full_document(
+            expanded_query,
+            k=config.RAG_TOP_K,
+            search_type=search_type,
+            include_full_doc=include_full_doc
         )
 
         if not retrieved_docs:
@@ -922,11 +1049,15 @@ def rag_chat_worker(
         else:
             # Log retrieved document sources for debugging
             logger.info(f"Generating response with {len(retrieved_docs)} context documents")
+            total_chars = 0
             for i, doc in enumerate(retrieved_docs, 1):
                 source = doc.metadata.get('source', 'unknown')
                 doc_type = doc.metadata.get('type', 'unknown')
+                content_length = len(doc.page_content)
+                total_chars += content_length
                 preview = doc.page_content[:100].replace('\n', ' ')
-                logger.info(f"  Doc {i} [{doc_type}]: {source} | Preview: {preview}...")
+                logger.info(f"  Doc {i} [{doc_type}]: {source} | Length: {content_length} chars | Preview: {preview}...")
+            logger.info(f"Total context size: {total_chars} characters ({total_chars // 1000}K)")
 
             # Step 3: Generate response with context and history
             response = fn_get_rag_response(query, retrieved_docs, config, chat_history or [])
@@ -935,9 +1066,10 @@ def rag_chat_worker(
         if chat_history is not None:
             chat_history.append({"role": "user", "content": query})
             chat_history.append({"role": "assistant", "content": response})
-            # Keep only last 10 messages (5 exchanges) to avoid context overflow
-            if len(chat_history) > 10:
-                chat_history[:] = chat_history[-10:]
+            # Keep only last N messages based on config to avoid context overflow
+            max_messages = config.CHAT_CONTEXT_MESSAGES
+            if len(chat_history) > max_messages:
+                chat_history[:] = chat_history[-max_messages:]
 
         # Send response to view
         view_queue.put(f"CHAT: assistant: {response}")
