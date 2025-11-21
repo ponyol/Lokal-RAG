@@ -115,6 +115,31 @@ def main() -> None:
     5. Initializes all components
     6. Starts the Toga GUI main loop
     """
+    # Suppress WebKit debug logs (macOS native logs)
+    import os
+    os.environ['WEBKIT_DISABLE_COMPOSITING_MODE'] = '1'
+
+    # Redirect stderr to filter out WebKit logs
+    import sys
+
+    class WebKitLogFilter:
+        """Filter to suppress WebKit native debug logs on macOS."""
+        def __init__(self, stream):
+            self.stream = stream
+            self.buffer = ""
+
+        def write(self, text):
+            # Filter out WebKit frame policy logs
+            if 'WebKit::' not in text and 'WebFramePolicyListenerProxy' not in text:
+                self.stream.write(text)
+                self.stream.flush()
+
+        def flush(self):
+            self.stream.flush()
+
+    # Only filter stderr (WebKit logs go there)
+    sys.stderr = WebKitLogFilter(sys.stderr)
+
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
         description="Lokal-RAG - Local Knowledge Base Application (Toga UI)"
