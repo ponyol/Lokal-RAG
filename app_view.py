@@ -1150,7 +1150,6 @@ class LokalRAGApp(toga.App):
         )
         self.pdf_conversion_method = toga.Selection(
             items=["marker-pdf", "llm-studio-ocr"],
-            on_change=self._on_pdf_method_changed,
             style=Pack(flex=1)
         )
         self.pdf_conversion_method.value = "marker-pdf"
@@ -1188,6 +1187,10 @@ class LokalRAGApp(toga.App):
         # Hide LLM OCR settings by default
         self.llm_ocr_settings_box.style.display = "none"
         pdf_section.add(self.llm_ocr_settings_box)
+
+        # Set on_change handler AFTER creating llm_ocr_settings_box
+        # (to avoid AttributeError when handler is triggered during init)
+        self.pdf_conversion_method.on_change = self._on_pdf_method_changed
 
         # ---- General Settings ----
         general_section = self._create_settings_section(
@@ -1835,8 +1838,9 @@ class LokalRAGApp(toga.App):
         logger.info(f"PDF conversion method changed to: {method}")
 
         # Show/hide LLM OCR settings based on selection
+        # NOTE: Toga display property only accepts "pack" or "none" (not "flex")
         if method == "llm-studio-ocr":
-            self.llm_ocr_settings_box.style.display = "flex"
+            self.llm_ocr_settings_box.style.display = "pack"
         else:
             self.llm_ocr_settings_box.style.display = "none"
 
@@ -2292,8 +2296,9 @@ class LokalRAGApp(toga.App):
             self.pdf_conversion_method.value = settings["pdf_conversion_method"]
             logger.info(f"Setting PDF conversion method to: {settings['pdf_conversion_method']}")
             # Trigger UI update to show/hide LLM OCR settings
+            # NOTE: Toga display property only accepts "pack" or "none" (not "flex")
             if settings["pdf_conversion_method"] == "llm-studio-ocr":
-                self.llm_ocr_settings_box.style.display = "flex"
+                self.llm_ocr_settings_box.style.display = "pack"
             else:
                 self.llm_ocr_settings_box.style.display = "none"
 
