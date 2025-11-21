@@ -121,7 +121,7 @@ class LokalRAGApp(toga.App):
         self.on_ui_ready_callback: Optional[Callable] = None  # NEW: Called when UI is ready
 
         # Source type tracking
-        self.source_type_value = "pdf"  # Default to PDF
+        self.source_type_value = "web"  # Default to WEB
 
         # Changelog file mapping (for file selection)
         self.changelog_files_map = {}
@@ -335,10 +335,10 @@ class LokalRAGApp(toga.App):
 
         # Source type selector
         self.source_type_selection = toga.Selection(
-            items=["PDF / Markdown Files", "Web URLs"],
+            items=["Web URLs", "PDF / Markdown Files"],
             style=Pack(margin=5)
         )
-        self.source_type_selection.value = "PDF / Markdown Files"
+        self.source_type_selection.value = "Web URLs"
         self.source_type_selection.on_change = self._on_source_type_changed
         container.add(self.source_type_selection)
 
@@ -402,10 +402,10 @@ class LokalRAGApp(toga.App):
             style=Pack(width=180)
         )
         self.browser_selection = toga.Selection(
-            items=["chrome", "firefox", "safari", "edge", "all"],
+            items=["firefox", "chrome", "safari", "edge", "all"],
             style=Pack(flex=1)
         )
-        self.browser_selection.value = "chrome"
+        self.browser_selection.value = "firefox"
         browser_box.add(browser_label)
         browser_box.add(self.browser_selection)
         container.add(browser_box)
