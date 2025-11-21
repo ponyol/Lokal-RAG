@@ -2608,8 +2608,8 @@ class LokalRAGApp(toga.App):
             Selected folder path or None if cancelled
         """
         try:
-            # Toga's select_folder_dialog returns a Path or None
-            folder_path = self.main_window.select_folder_dialog(title=title)
+            # Use the new Toga API (dialog method with SelectFolderDialog)
+            folder_path = self.main_window.dialog(toga.SelectFolderDialog(title=title))
             if folder_path:
                 return str(folder_path)
             return None

@@ -427,31 +427,37 @@ class TogaAppOrchestrator:
         3. For each file: saves as note and adds to vector DB
         4. Applies template if one is selected
         """
-        # Spawn worker thread
+        # IMPORTANT: Show folder dialog in main thread (UI operations must be in main thread)
+        folder_path = self.view.select_folder_dialog("Select folder with markdown files")
+
+        if not folder_path:
+            logger.info("Folder selection cancelled")
+            self.view.show_note_status("Folder selection cancelled", is_error=False)
+            return
+
+        # Get selected template (if any) - also must be in main thread
+        template_content = self.view.get_selected_note_template()
+
+        # Now spawn worker thread with folder_path
         worker_thread = threading.Thread(
             target=self._add_notes_from_folder_worker,
+            args=(folder_path, template_content),
             daemon=True
         )
         worker_thread.start()
-        logger.info("Add notes from folder worker started")
+        logger.info(f"Add notes from folder worker started for: {folder_path}")
 
-    def _add_notes_from_folder_worker(self) -> None:
+    def _add_notes_from_folder_worker(self, folder_path: str, template_content: Optional[str]) -> None:
         """
         Worker thread for adding notes from a folder.
+
+        Args:
+            folder_path: Path to folder containing .md files
+            template_content: Optional template to apply to each note
 
         Runs in background thread to avoid blocking the UI.
         """
         try:
-            # Get selected template (if any)
-            template_content = self.view.get_selected_note_template()
-
-            # Show folder selection dialog
-            folder_path = self.view.select_folder_dialog("Select folder with markdown files")
-
-            if not folder_path:
-                logger.info("Folder selection cancelled")
-                self.view.show_note_status("Folder selection cancelled", is_error=False)
-                return
 
             # Find all .md files in folder
             from pathlib import Path
