@@ -493,6 +493,12 @@ class TogaAppOrchestrator:
                     success_count += 1
                     logger.info(f"Added note from: {md_file.name}")
 
+                    # IMPORTANT: Sleep to ensure unique timestamps for each file
+                    # fn_save_note uses timestamp format without milliseconds
+                    # We need at least 1 second between files to avoid name collisions
+                    import time
+                    time.sleep(1.1)
+
                 except Exception as e:
                     error_count += 1
                     logger.error(f"Failed to process {md_file.name}: {e}")
