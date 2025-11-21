@@ -108,6 +108,7 @@ class TogaAppOrchestrator:
         self.view.on_save_settings_callback = self.on_save_settings
         self.view.on_load_settings_callback = self.on_load_settings
         self.view.on_save_note_callback = self.on_save_note
+        self.view.on_add_notes_from_folder_callback = self.on_add_notes_from_folder
         self.view.on_clear_chat_callback = self.on_clear_chat  # V2: Added
         self.view.on_ui_ready_callback = self._init_ui  # V2: Called when UI is ready
 
@@ -413,6 +414,98 @@ class TogaAppOrchestrator:
 
         except Exception as e:
             error_msg = f"Failed to save note: {e}"
+            self.view.show_note_status(f"✗ {error_msg}", is_error=True)
+            logger.error(error_msg, exc_info=True)
+
+    def on_add_notes_from_folder(self) -> None:
+        """
+        Handle the "Add Notes from Folder" button click.
+
+        This method:
+        1. Prompts user to select a folder
+        2. Finds all .md files in the folder
+        3. For each file: saves as note and adds to vector DB
+        4. Applies template if one is selected
+        """
+        # Spawn worker thread
+        worker_thread = threading.Thread(
+            target=self._add_notes_from_folder_worker,
+            daemon=True
+        )
+        worker_thread.start()
+        logger.info("Add notes from folder worker started")
+
+    def _add_notes_from_folder_worker(self) -> None:
+        """
+        Worker thread for adding notes from a folder.
+
+        Runs in background thread to avoid blocking the UI.
+        """
+        try:
+            # Get selected template (if any)
+            template_content = self.view.get_selected_note_template()
+
+            # Show folder selection dialog
+            folder_path = self.view.select_folder_dialog("Select folder with markdown files")
+
+            if not folder_path:
+                logger.info("Folder selection cancelled")
+                self.view.show_note_status("Folder selection cancelled", is_error=False)
+                return
+
+            # Find all .md files in folder
+            from pathlib import Path
+            folder = Path(folder_path)
+            md_files = list(folder.glob("*.md"))
+
+            if not md_files:
+                self.view.show_note_status("No .md files found in folder", is_error=True)
+                return
+
+            logger.info(f"Found {len(md_files)} markdown files in {folder_path}")
+            self.view.show_note_status(f"Processing {len(md_files)} files...", is_error=False)
+
+            # Process each file
+            success_count = 0
+            error_count = 0
+
+            for md_file in md_files:
+                try:
+                    # Read file content
+                    with open(md_file, 'r', encoding='utf-8') as f:
+                        note_text = f.read()
+
+                    if not note_text.strip():
+                        logger.warning(f"Skipping empty file: {md_file.name}")
+                        continue
+
+                    # Save as note (this creates a new timestamped file with template)
+                    note_path = fn_save_note(note_text, self.config, template_content=template_content)
+
+                    # Read the saved file content (includes header with date/time and template)
+                    with open(note_path, 'r', encoding='utf-8') as f:
+                        full_content = f.read()
+
+                    # Add to vector database
+                    self.storage.add_note(full_content, note_path)
+
+                    success_count += 1
+                    logger.info(f"Added note from: {md_file.name}")
+
+                except Exception as e:
+                    error_count += 1
+                    logger.error(f"Failed to process {md_file.name}: {e}")
+
+            # Show final status
+            status_msg = f"✓ Added {success_count} notes"
+            if error_count > 0:
+                status_msg += f" ({error_count} errors)"
+
+            self.view.show_note_status(status_msg, is_error=(error_count > 0))
+            logger.info(f"Bulk import complete: {success_count} success, {error_count} errors")
+
+        except Exception as e:
+            error_msg = f"Failed to add notes from folder: {e}"
             self.view.show_note_status(f"✗ {error_msg}", is_error=True)
             logger.error(error_msg, exc_info=True)
 

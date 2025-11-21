@@ -116,6 +116,7 @@ class LokalRAGApp(toga.App):
         self.on_save_settings_callback: Optional[Callable] = None
         self.on_load_settings_callback: Optional[Callable] = None
         self.on_save_note_callback: Optional[Callable] = None
+        self.on_add_notes_from_folder_callback: Optional[Callable] = None
         self.on_clear_chat_callback: Optional[Callable] = None  # NEW
         self.on_ui_ready_callback: Optional[Callable] = None  # NEW: Called when UI is ready
 
@@ -698,6 +699,19 @@ class LokalRAGApp(toga.App):
         button_box.add(save_button)
         button_box.add(clear_button)
         container.add(button_box)
+
+        # Bulk import button
+        bulk_button_box = toga.Box(style=Pack(direction=ROW, margin_top=10))
+        add_folder_button = toga.Button(
+            "📁 Add Notes from Folder",
+            on_press=self._on_add_notes_from_folder,
+            style=Pack(
+                flex=1,
+                background_color=Theme.ACCENT_BLUE
+            )
+        )
+        bulk_button_box.add(add_folder_button)
+        container.add(bulk_button_box)
 
         # Status label (for showing save success/error messages)
         self.note_status_label = toga.Label(
@@ -1692,6 +1706,13 @@ class LokalRAGApp(toga.App):
         """Handle clear note button press."""
         self.clear_note_text()
 
+    def _on_add_notes_from_folder(self, widget):
+        """Handle add notes from folder button press."""
+        if self.on_add_notes_from_folder_callback:
+            self.on_add_notes_from_folder_callback()
+        else:
+            logger.warning("No add notes from folder callback set")
+
     def _on_theme_changed(self, widget):
         """Handle theme selection change."""
         theme_name = self.theme_selection.value
@@ -2575,6 +2596,26 @@ class LokalRAGApp(toga.App):
     def show_info(self, title: str, message: str) -> None:
         """Alias for show_info_dialog (for CustomTkinter compatibility)."""
         self.show_info_dialog(title, message)
+
+    def select_folder_dialog(self, title: str = "Select Folder") -> Optional[str]:
+        """
+        Show folder selection dialog.
+
+        Args:
+            title: Dialog title
+
+        Returns:
+            Selected folder path or None if cancelled
+        """
+        try:
+            # Toga's select_folder_dialog returns a Path or None
+            folder_path = self.main_window.select_folder_dialog(title=title)
+            if folder_path:
+                return str(folder_path)
+            return None
+        except Exception as e:
+            logger.error(f"Error showing folder dialog: {e}")
+            return None
 
 
 def main():
