@@ -1130,6 +1130,65 @@ class LokalRAGApp(toga.App):
         )
         vision_section.add(vision_model_help)
 
+        # ---- PDF Conversion Settings ----
+        pdf_section = self._create_settings_section(
+            "📄 PDF Conversion Settings:",
+            container
+        )
+
+        pdf_help = toga.Label(
+            "Choose method for extracting text from PDF files.",
+            style=Pack(margin=5, font_size=10)
+        )
+        pdf_section.add(pdf_help)
+
+        # PDF conversion method selection
+        pdf_method_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        pdf_method_label = toga.Label(
+            "Conversion Method:",
+            style=Pack(width=150)
+        )
+        self.pdf_conversion_method = toga.Selection(
+            items=["marker-pdf", "llm-studio-ocr"],
+            on_change=self._on_pdf_method_changed,
+            style=Pack(flex=1)
+        )
+        self.pdf_conversion_method.value = "marker-pdf"
+        pdf_method_box.add(pdf_method_label)
+        pdf_method_box.add(self.pdf_conversion_method)
+        pdf_section.add(pdf_method_box)
+
+        # LLM Studio OCR settings (shown only when llm-studio-ocr is selected)
+        self.llm_ocr_settings_box = toga.Box(style=Pack(direction=COLUMN, margin_left=155))
+
+        llm_ocr_url_box, self.llm_ocr_url_input = self._create_input_row(
+            "OCR Base URL:",
+            "http://localhost:1234/v1"
+        )
+        self.llm_ocr_settings_box.add(llm_ocr_url_box)
+
+        llm_ocr_model_box, self.llm_ocr_model_input = self._create_input_row(
+            "OCR Model:",
+            "ocrflux-3b"
+        )
+        self.llm_ocr_settings_box.add(llm_ocr_model_box)
+
+        llm_ocr_model_help = toga.Label(
+            "Models: ocrflux-3b, deepseek-ocr, or any vision model in LM Studio",
+            style=Pack(margin_left=155, font_size=10)
+        )
+        self.llm_ocr_settings_box.add(llm_ocr_model_help)
+
+        llm_ocr_key_box, self.llm_ocr_api_key_input = self._create_input_row(
+            "API Key (optional):",
+            ""
+        )
+        self.llm_ocr_settings_box.add(llm_ocr_key_box)
+
+        # Hide LLM OCR settings by default
+        self.llm_ocr_settings_box.style.display = "none"
+        pdf_section.add(self.llm_ocr_settings_box)
+
         # ---- General Settings ----
         general_section = self._create_settings_section(
             "General Settings:",
@@ -1770,6 +1829,17 @@ class LokalRAGApp(toga.App):
         else:
             logger.warning("No add notes from folder callback set")
 
+    def _on_pdf_method_changed(self, widget):
+        """Handle PDF conversion method selection change."""
+        method = self.pdf_conversion_method.value
+        logger.info(f"PDF conversion method changed to: {method}")
+
+        # Show/hide LLM OCR settings based on selection
+        if method == "llm-studio-ocr":
+            self.llm_ocr_settings_box.style.display = "flex"
+        else:
+            self.llm_ocr_settings_box.style.display = "none"
+
     def _on_theme_changed(self, widget):
         """Handle theme selection change."""
         theme_name = self.theme_selection.value
@@ -2114,6 +2184,11 @@ class LokalRAGApp(toga.App):
             "vision_provider": self.vision_provider_input.value or "ollama",
             "vision_base_url": self.vision_base_url_input.value or "http://localhost:11434",
             "vision_model": self.vision_model_input.value or "granite-docling:258m",
+            # PDF Conversion
+            "pdf_conversion_method": self.pdf_conversion_method.value or "marker-pdf",  # ← NEW: marker-pdf or llm-studio-ocr
+            "llm_ocr_url": self.llm_ocr_url_input.value or "http://localhost:1234/v1",  # ← NEW: LLM Studio OCR URL
+            "llm_ocr_model": self.llm_ocr_model_input.value or "ocrflux-3b",  # ← NEW: OCR model name
+            "llm_ocr_api_key": self.llm_ocr_api_key_input.value or "",  # ← NEW: Optional API key
             # General
             "timeout": int(self.timeout_input.value or "300"),
             "translation_chunk_size": int(self.translation_chunk_input.value or "2000"),  # ← NEW
@@ -2211,6 +2286,23 @@ class LokalRAGApp(toga.App):
             self.vision_base_url_input.value = settings["vision_base_url"]
         if "vision_model" in settings:
             self.vision_model_input.value = settings["vision_model"]
+
+        # PDF Conversion (NEW)
+        if "pdf_conversion_method" in settings:
+            self.pdf_conversion_method.value = settings["pdf_conversion_method"]
+            logger.info(f"Setting PDF conversion method to: {settings['pdf_conversion_method']}")
+            # Trigger UI update to show/hide LLM OCR settings
+            if settings["pdf_conversion_method"] == "llm-studio-ocr":
+                self.llm_ocr_settings_box.style.display = "flex"
+            else:
+                self.llm_ocr_settings_box.style.display = "none"
+
+        if "llm_ocr_url" in settings:
+            self.llm_ocr_url_input.value = settings["llm_ocr_url"]
+        if "llm_ocr_model" in settings:
+            self.llm_ocr_model_input.value = settings["llm_ocr_model"]
+        if "llm_ocr_api_key" in settings:
+            self.llm_ocr_api_key_input.value = settings["llm_ocr_api_key"]
 
         # General
         if "timeout" in settings:
