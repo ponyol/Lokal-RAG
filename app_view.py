@@ -2497,8 +2497,14 @@ class LokalRAGApp(toga.App):
     </div>
 """
 
-        # Close HTML
+        # Close HTML with auto-scroll JavaScript
         html += """
+    <script>
+        // Automatically scroll to bottom when page loads
+        window.onload = function() {
+            window.scrollTo(0, document.body.scrollHeight);
+        };
+    </script>
 </body>
 </html>
 """
