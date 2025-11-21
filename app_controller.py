@@ -417,28 +417,23 @@ class TogaAppOrchestrator:
             self.view.show_note_status(f"✗ {error_msg}", is_error=True)
             logger.error(error_msg, exc_info=True)
 
-    def on_add_notes_from_folder(self) -> None:
+    def on_add_notes_from_folder(self, folder_path: str) -> None:
         """
         Handle the "Add Notes from Folder" button click.
 
+        Args:
+            folder_path: Path to folder containing .md files (passed from async dialog)
+
         This method:
-        1. Prompts user to select a folder
+        1. Gets selected template
         2. Finds all .md files in the folder
         3. For each file: saves as note and adds to vector DB
         4. Applies template if one is selected
         """
-        # IMPORTANT: Show folder dialog in main thread (UI operations must be in main thread)
-        folder_path = self.view.select_folder_dialog("Select folder with markdown files")
-
-        if not folder_path:
-            logger.info("Folder selection cancelled")
-            self.view.show_note_status("Folder selection cancelled", is_error=False)
-            return
-
-        # Get selected template (if any) - also must be in main thread
+        # Get selected template (if any) - must be in main thread
         template_content = self.view.get_selected_note_template()
 
-        # Now spawn worker thread with folder_path
+        # Spawn worker thread with folder_path and template
         worker_thread = threading.Thread(
             target=self._add_notes_from_folder_worker,
             args=(folder_path, template_content),

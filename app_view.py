@@ -1635,9 +1635,14 @@ class LokalRAGApp(toga.App):
 
     def _on_select_folder(self, widget):
         """Handle folder selection button press."""
+        import asyncio
+        asyncio.create_task(self._select_folder_async())
+
+    async def _select_folder_async(self):
+        """Async helper for folder selection dialog."""
         try:
-            folder_path = self.main_window.select_folder_dialog(
-                "Select PDF/Markdown Folder"
+            folder_path = await self.main_window.dialog(
+                toga.SelectFolderDialog(title="Select PDF/Markdown Folder")
             )
             if folder_path:
                 self.folder_input.value = str(folder_path)
@@ -1708,10 +1713,28 @@ class LokalRAGApp(toga.App):
 
     def _on_add_notes_from_folder(self, widget):
         """Handle add notes from folder button press."""
-        if self.on_add_notes_from_folder_callback:
-            self.on_add_notes_from_folder_callback()
-        else:
-            logger.warning("No add notes from folder callback set")
+        import asyncio
+        asyncio.create_task(self._add_notes_from_folder_async())
+
+    async def _add_notes_from_folder_async(self):
+        """Async helper for folder selection and processing."""
+        try:
+            # Show folder dialog and wait for result
+            folder_path = await self.main_window.dialog(
+                toga.SelectFolderDialog(title="Select folder with markdown files")
+            )
+
+            if folder_path and self.on_add_notes_from_folder_callback:
+                # Call controller callback with folder path
+                self.on_add_notes_from_folder_callback(str(folder_path))
+            elif not folder_path:
+                logger.info("Folder selection cancelled")
+                self.show_note_status("Folder selection cancelled", is_error=False)
+            else:
+                logger.warning("No add notes from folder callback set")
+        except Exception as e:
+            logger.error(f"Error in add notes from folder: {e}")
+            self.show_note_status(f"Error: {e}", is_error=True)
 
     def _on_theme_changed(self, widget):
         """Handle theme selection change."""
@@ -2596,26 +2619,6 @@ class LokalRAGApp(toga.App):
     def show_info(self, title: str, message: str) -> None:
         """Alias for show_info_dialog (for CustomTkinter compatibility)."""
         self.show_info_dialog(title, message)
-
-    def select_folder_dialog(self, title: str = "Select Folder") -> Optional[str]:
-        """
-        Show folder selection dialog.
-
-        Args:
-            title: Dialog title
-
-        Returns:
-            Selected folder path or None if cancelled
-        """
-        try:
-            # Use the working API (same as Content Ingestion section)
-            folder_path = self.main_window.select_folder_dialog(title)
-            if folder_path:
-                return str(folder_path)
-            return None
-        except Exception as e:
-            logger.error(f"Error showing folder dialog: {e}")
-            return None
 
 
 def main():
