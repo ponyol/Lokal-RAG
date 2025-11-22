@@ -758,8 +758,8 @@ def processing_pipeline_worker(
                     markdown_text = fn_read_markdown_file(item)
                     view_queue.put(f"LOG:   ✓ Read Markdown file ({len(markdown_text)} chars)")
                 else:
-                    # PDF file - convert with marker-pdf
-                    markdown_text = fn_extract_markdown(item, config)
+                    # PDF file - convert with marker-pdf (pass view_queue for image progress)
+                    markdown_text = fn_extract_markdown(item, config, view_queue)
                     view_queue.put(f"LOG:   ✓ Extracted Markdown ({len(markdown_text)} chars)")
             else:
                 # Web article processing (HTML or MD URL)
@@ -773,8 +773,8 @@ def processing_pipeline_worker(
                     markdown_text = fn_fetch_raw_markdown(item, config)
                     view_queue.put(f"LOG:   ✓ Downloaded Markdown ({len(markdown_text)} chars)")
                 else:
-                    # HTML article - extract and convert
-                    markdown_text = fn_fetch_web_article(item, config)
+                    # HTML article - extract and convert (pass view_queue for image progress)
+                    markdown_text = fn_fetch_web_article(item, config, view_queue)
                     view_queue.put(f"LOG:   ✓ Extracted article ({len(markdown_text)} chars)")
 
             # Step 2: Translation (optional)

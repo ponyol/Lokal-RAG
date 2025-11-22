@@ -16,6 +16,7 @@ Side effects (I/O) are isolated and clearly marked.
 import gc
 import json
 import logging
+import queue
 import re
 import uuid
 from pathlib import Path
@@ -1002,7 +1003,7 @@ def fn_read_markdown_file(md_path: Path) -> str:
 # ============================================================================
 
 
-def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
+def fn_extract_markdown(pdf_path: Path, config: AppConfig, view_queue: Optional['queue.Queue'] = None) -> str:
     """
     Convert a PDF file to Markdown using configured conversion method.
 
@@ -1021,6 +1022,7 @@ def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
     Args:
         pdf_path: Path to the PDF file to convert
         config: Application configuration (for PDF conversion and vision settings)
+        view_queue: Optional queue for sending progress updates to GUI
 
     Returns:
         str: The Markdown content extracted from the PDF (with optional image descriptions)
@@ -1044,10 +1046,10 @@ def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
     # Route to appropriate conversion method
     if config.PDF_CONVERSION_METHOD == "llm-studio-ocr":
         logger.info(f"Using LLM Studio OCR for PDF conversion: {config.LLM_OCR_MODEL}")
-        return fn_extract_markdown_llm_ocr(pdf_path, config)
+        return fn_extract_markdown_llm_ocr(pdf_path, config, view_queue)
     else:
         logger.info(f"Using marker-pdf for PDF conversion")
-        # Fall through to original marker-pdf implementation
+        # Fall through to original marker-pdf implementation (with view_queue)
 
     try:
         # NOTE: marker-pdf is imported here to avoid loading heavy ML models
@@ -1120,6 +1122,8 @@ def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
             for idx, (image_path, image_data) in enumerate(images_to_process.items(), 1):
                 try:
                     logger.info(f"Processing image {idx}/{len(images_to_process)}: {image_path}")
+                    if view_queue:
+                        view_queue.put(f"LOG:   → Processing image {idx}/{len(images_to_process)}...")
 
                     # image_data is a PIL Image object, convert to bytes
                     from io import BytesIO
@@ -1132,9 +1136,13 @@ def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
 
                     image_descriptions.append(f"### Image {idx}\n\n{description}\n")
                     logger.info(f"✓ Image {idx} processed successfully")
+                    if view_queue:
+                        view_queue.put(f"LOG:   ✓ Image {idx} processed successfully")
 
                 except Exception as e:
                     logger.error(f"Failed to process image {idx}: {e}")
+                    if view_queue:
+                        view_queue.put(f"LOG:   ✗ Image {idx} failed: {str(e)[:100]}")
                     image_descriptions.append(f"### Image {idx}\n\n[Error: Could not process image - {str(e)}]\n")
 
             # Append image descriptions to the markdown
@@ -1156,7 +1164,7 @@ def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
         raise Exception(f"Failed to extract Markdown from {pdf_path}: {e}") from e
 
 
-def fn_extract_markdown_llm_ocr(pdf_path: Path, config: AppConfig) -> str:
+def fn_extract_markdown_llm_ocr(pdf_path: Path, config: AppConfig, view_queue: Optional['queue.Queue'] = None) -> str:
     """
     Convert a PDF file to Markdown using LLM Studio OCR (vision model).
 
@@ -1166,6 +1174,7 @@ def fn_extract_markdown_llm_ocr(pdf_path: Path, config: AppConfig) -> str:
     Args:
         pdf_path: Path to the PDF file to convert
         config: Application configuration (for LLM OCR settings)
+        view_queue: Optional queue for sending progress updates to GUI
 
     Returns:
         str: The Markdown content extracted from the PDF
@@ -1212,6 +1221,8 @@ def fn_extract_markdown_llm_ocr(pdf_path: Path, config: AppConfig) -> str:
         page_texts = []
         for idx, image in enumerate(images, 1):
             logger.info(f"Processing page {idx}/{len(images)} with LLM OCR model: {config.LLM_OCR_MODEL}")
+            if view_queue:
+                view_queue.put(f"LOG:   → OCR processing page {idx}/{len(images)}...")
 
             # Convert PIL Image to bytes (PNG format)
             from io import BytesIO
@@ -1282,9 +1293,13 @@ def fn_extract_markdown_llm_ocr(pdf_path: Path, config: AppConfig) -> str:
                 page_texts.append(f"# Page {idx}\n\n{page_text}\n\n---\n")
 
                 logger.info(f"✓ Page {idx} processed successfully ({len(page_text)} chars)")
+                if view_queue:
+                    view_queue.put(f"LOG:   ✓ Page {idx} OCR complete ({len(page_text)} chars)")
 
             except Exception as e:
                 logger.error(f"Failed to process page {idx}: {e}")
+                if view_queue:
+                    view_queue.put(f"LOG:   ✗ Page {idx} OCR failed: {str(e)[:100]}")
                 page_texts.append(f"# Page {idx}\n\n[Error: Could not extract text - {str(e)}]\n\n---\n")
 
         # Combine all pages
@@ -1393,7 +1408,7 @@ def fn_fetch_raw_markdown(url: str, config: AppConfig) -> str:
         raise Exception(f"Failed to fetch Markdown from {url}: {e}") from e
 
 
-def fn_fetch_web_article(url: str, config: AppConfig) -> str:
+def fn_fetch_web_article(url: str, config: AppConfig, view_queue: Optional['queue.Queue'] = None) -> str:
     """
     Fetch, authenticate, clean, and convert a web article to Markdown.
 
@@ -1408,6 +1423,7 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
     Args:
         url: The URL of the article to fetch
         config: Application configuration
+        view_queue: Optional queue for sending progress updates to GUI
 
     Returns:
         str: The article content in Markdown format
@@ -1761,6 +1777,8 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
                             img_url = urljoin(url, img_url)
 
                             logger.info(f"Processing image {idx}/{len(images_to_process)}: {img_url[:100]}...")
+                            if view_queue:
+                                view_queue.put(f"LOG:   → Processing web image {idx}/{len(images_to_process)}...")
 
                             # Download image
                             with httpx.Client(timeout=config.WEB_REQUEST_TIMEOUT) as client:
@@ -1773,9 +1791,13 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
 
                             image_descriptions.append(f"### Image {idx}\n\n**Source:** {img_url}\n\n{description}\n")
                             logger.info(f"✓ Image {idx} processed successfully")
+                            if view_queue:
+                                view_queue.put(f"LOG:   ✓ Web image {idx} processed successfully")
 
                         except Exception as e:
                             logger.error(f"Failed to process image {idx}: {e}")
+                            if view_queue:
+                                view_queue.put(f"LOG:   ✗ Web image {idx} failed: {str(e)[:100]}")
                             image_descriptions.append(f"### Image {idx}\n\n[Error: Could not process image - {str(e)}]\n")
 
                     # Append image descriptions to the markdown
