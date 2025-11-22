@@ -1475,8 +1475,89 @@ def fn_fetch_web_article(url: str, config: AppConfig, view_queue: Optional['queu
 
                     logger.info(f"Loading cookies from {browser_name}...")
 
+                    # DEBUG: Detailed logging for Chrome cookie loading
+                    if config.WEB_BROWSER_CHOICE.lower() == "chrome":
+                        logger.info("🔍 DEBUG: Chrome cookie loading diagnostics")
+
+                        # Check Chrome cookie database location
+                        import os
+                        import platform
+                        system = platform.system()
+
+                        # Chrome cookie paths (try multiple locations)
+                        cookie_paths = []
+                        if system == "Darwin":  # macOS
+                            cookie_paths = [
+                                os.path.expanduser("~/Library/Application Support/Google/Chrome/Default/Cookies"),
+                                os.path.expanduser("~/Library/Application Support/Google/Chrome/Default/Network/Cookies"),  # Chrome 96+
+                            ]
+                        elif system == "Linux":
+                            cookie_paths = [
+                                os.path.expanduser("~/.config/google-chrome/Default/Cookies"),
+                                os.path.expanduser("~/.config/google-chrome/Default/Network/Cookies"),  # Chrome 96+
+                            ]
+                        elif system == "Windows":
+                            cookie_paths = [
+                                os.path.expanduser(r"~\AppData\Local\Google\Chrome\User Data\Default\Network\Cookies"),  # Chrome 96+
+                                os.path.expanduser(r"~\AppData\Local\Google\Chrome\User Data\Default\Cookies"),  # Legacy
+                            ]
+
+                        if cookie_paths:
+                            logger.info(f"🔍 Checking Chrome cookie database locations...")
+                            found_cookie_db = False
+
+                            for cookie_path in cookie_paths:
+                                logger.info(f"  Checking: {cookie_path}")
+
+                                if os.path.exists(cookie_path):
+                                    found_cookie_db = True
+                                    file_size = os.path.getsize(cookie_path)
+                                    logger.info(f"  ✓ Found! (size: {file_size} bytes)")
+
+                                    # Check if we have read permissions
+                                    if os.access(cookie_path, os.R_OK):
+                                        logger.info(f"  ✓ Cookie database is readable")
+                                    else:
+                                        logger.error(f"  ✗ No read permission!")
+                                        logger.error("    → macOS: Grant 'Full Disk Access' to Terminal/Python")
+                                        logger.error("    → Linux: Check file permissions")
+                                    break  # Found the database
+                                else:
+                                    logger.info(f"  ✗ Not found")
+
+                            if not found_cookie_db:
+                                logger.error("✗ Chrome cookie database NOT FOUND in any expected location")
+                                logger.error("  Tried paths:")
+                                for p in cookie_paths:
+                                    logger.error(f"    - {p}")
+                                logger.error("  → Is Chrome installed?")
+                                logger.error("  → Are you using a different Chrome profile?")
+                                logger.error("  → Try Safari or Firefox if available")
+
+                        # Check browser_cookie3 version
+                        try:
+                            import browser_cookie3
+                            bc3_version = getattr(browser_cookie3, '__version__', 'unknown')
+                            logger.info(f"🔍 browser_cookie3 version: {bc3_version}")
+                        except:
+                            pass
+
                     # Load cookies for the specific domain
-                    cookies = browser_func(domain_name=domain)
+                    try:
+                        logger.info(f"Calling browser_cookie3.{config.WEB_BROWSER_CHOICE}(domain_name='{domain}')...")
+                        cookies = browser_func(domain_name=domain)
+                        logger.info(f"✓ browser_cookie3 call successful")
+                    except PermissionError as e:
+                        logger.error(f"✗ PERMISSION ERROR loading cookies: {e}")
+                        logger.error("  → macOS: System Preferences → Security & Privacy → Full Disk Access")
+                        logger.error("  → Add Terminal.app or your Python IDE to the list")
+                        raise
+                    except Exception as e:
+                        logger.error(f"✗ ERROR loading cookies: {type(e).__name__}: {e}")
+                        logger.error(f"  Full exception: {e}")
+                        import traceback
+                        logger.error(f"  Traceback:\n{traceback.format_exc()}")
+                        raise
 
                     # If we have a subdomain, also load cookies from parent domain and merge
                     if base_domain and base_domain != domain:
