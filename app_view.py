@@ -2626,13 +2626,26 @@ class LokalRAGApp(toga.App):
             logger.info(f"Loaded {len(self.note_templates)} note templates")
 
         # Chat prompts (NEW)
-        if "chat_prompts" in settings:
+        if "chat_prompts" in settings and settings["chat_prompts"]:
             self.chat_prompts = settings["chat_prompts"]
-            self._update_chat_prompt_selection()  # Update both dropdowns
-            logger.info(f"Loaded {len(self.chat_prompts)} chat prompts")
+            logger.info(f"Loaded {len(self.chat_prompts)} chat prompts from settings")
+        else:
+            # If no prompts in settings, use defaults from config
+            from app_config import create_default_config
+            default_config = create_default_config()
+            self.chat_prompts = default_config.CHAT_PROMPTS.copy()
+            logger.info(f"Using default chat prompts from config (no saved prompts found)")
+
+        # Always update prompt selection after loading
+        self._update_chat_prompt_selection()
 
         if "chat_active_prompt" in settings:
             self.chat_active_prompt = settings["chat_active_prompt"]
+            # Update chat tab selection if it exists
+            if hasattr(self, 'chat_system_prompt_selection'):
+                active_prompts = [p["name"] for p in self.chat_prompts]
+                if self.chat_active_prompt in active_prompts:
+                    self.chat_system_prompt_selection.value = self.chat_active_prompt
             logger.info(f"Active chat prompt: {self.chat_active_prompt}")
 
         # Chat settings (NEW)
