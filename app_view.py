@@ -2230,6 +2230,25 @@ class LokalRAGApp(toga.App):
                 self.chat_system_prompt_selection.value = self.chat_active_prompt
         logger.info(f"Updated chat prompt selection: {len(self.chat_prompts)} prompts")
 
+    def _get_custom_chat_prompts(self) -> list[dict[str, str]]:
+        """
+        Get only custom chat prompts (excluding defaults from config).
+
+        This is used when saving settings to ensure default prompts
+        are not saved to settings.json, allowing us to update defaults
+        in future releases without affecting user settings.
+
+        Returns:
+            list: List of custom prompt dicts (name + content)
+        """
+        from app_config import create_default_config
+        default_config = create_default_config()
+        default_names = {p["name"] for p in default_config.CHAT_PROMPTS}
+
+        # Return only prompts that are not in defaults
+        custom_prompts = [p for p in self.chat_prompts if p["name"] not in default_names]
+        return custom_prompts
+
     def _update_template_selection(self):
         """Update template selection dropdown with current templates."""
         template_names = ["None"] + [t["name"] for t in self.note_templates]
@@ -2470,7 +2489,9 @@ class LokalRAGApp(toga.App):
             # Note Templates (NEW)
             "note_templates": self.note_templates,  # ← NEW: list of template dicts
             # Chat Prompts (NEW)
-            "chat_prompts": self.chat_prompts,  # ← NEW: list of chat prompt dicts
+            # IMPORTANT: Save only CUSTOM prompts (not defaults from config)
+            # This allows us to update default prompts in future releases
+            "chat_prompts": self._get_custom_chat_prompts(),  # ← NEW: list of custom chat prompt dicts
             "chat_active_prompt": self.chat_active_prompt,  # ← NEW: currently active prompt name
             # Chat Settings (NEW)
             "chat_context_messages": int(self.chat_context_input.value or "10"),  # ← NEW: chat context limit
@@ -2626,15 +2647,26 @@ class LokalRAGApp(toga.App):
             logger.info(f"Loaded {len(self.note_templates)} note templates")
 
         # Chat prompts (NEW)
+        # Always start with default prompts from config
+        from app_config import create_default_config
+        default_config = create_default_config()
+        self.chat_prompts = default_config.CHAT_PROMPTS.copy()
+        logger.info(f"Loaded {len(self.chat_prompts)} default chat prompts from config")
+
+        # Add custom prompts from settings (merge with defaults)
         if "chat_prompts" in settings and settings["chat_prompts"]:
-            self.chat_prompts = settings["chat_prompts"]
-            logger.info(f"Loaded {len(self.chat_prompts)} chat prompts from settings")
-        else:
-            # If no prompts in settings, use defaults from config
-            from app_config import create_default_config
-            default_config = create_default_config()
-            self.chat_prompts = default_config.CHAT_PROMPTS.copy()
-            logger.info(f"Using default chat prompts from config (no saved prompts found)")
+            saved_prompts = settings["chat_prompts"]
+            # Get default prompt names to avoid duplicates
+            default_names = {p["name"] for p in self.chat_prompts}
+
+            # Add only custom prompts (not defaults)
+            custom_prompts = [p for p in saved_prompts if p["name"] not in default_names]
+            self.chat_prompts.extend(custom_prompts)
+
+            if custom_prompts:
+                logger.info(f"Added {len(custom_prompts)} custom prompts from settings")
+
+            logger.info(f"Total prompts: {len(self.chat_prompts)} (defaults + custom)")
 
         # Always update prompt selection after loading
         self._update_chat_prompt_selection()
