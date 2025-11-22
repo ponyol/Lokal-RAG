@@ -1743,7 +1743,8 @@ def fn_fetch_web_article(url: str, config: AppConfig, view_queue: Optional['queu
         # Save raw HTML for debugging (if enabled)
         if config.WEB_SAVE_RAW_HTML:
             from pathlib import Path
-            debug_dir = config.MARKDOWN_OUTPUT_PATH / "_debug"
+            # Use EN path for debug files (language-agnostic debug data)
+            debug_dir = config.MARKDOWN_OUTPUT_PATH_EN / "_debug"
             debug_dir.mkdir(parents=True, exist_ok=True)
 
             # Create safe filename from URL

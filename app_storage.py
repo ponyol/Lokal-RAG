@@ -735,27 +735,29 @@ def fn_save_markdown_to_disk(
     This is a pure function (aside from the I/O side effect of writing the file).
     It creates the directory structure if it doesn't exist.
 
-    Directory structure:
-        output_markdown/
-        ├── en/
-        │   ├── python/
-        │   │   ├── document1.md
-        │   │   └── document2.md
-        │   └── machine-learning/
-        │       └── document3.md
-        └── ru/
-            ├── python/
-            │   ├── document1_ru.md
-            │   └── document2_ru.md
-            └── machine-learning/
-                └── document3_ru.md
+    Directory structure (example with default paths):
+        MARKDOWN_OUTPUT_PATH_EN (./output_markdown/en):
+        ├── python/
+        │   ├── document1.md
+        │   └── document2.md
+        └── machine-learning/
+            └── document3.md
+
+        MARKDOWN_OUTPUT_PATH_RU (./output_markdown/ru):
+        ├── python/
+        │   ├── document1_ru.md
+        │   └── document2_ru.md
+        └── machine-learning/
+            └── document3_ru.md
+
+    Note: EN and RU paths can be configured to completely different directories.
 
     Args:
         text: The Markdown content to save
         tag: The category tag (used as subdirectory name)
         filename: The base filename (without extension)
         config: Application configuration
-        language: Language code ("en" or "ru") for subdirectory
+        language: Language code ("en" or "ru") - determines which base path to use
 
     Returns:
         Path: The path to the created file
@@ -765,6 +767,7 @@ def fn_save_markdown_to_disk(
 
     Example:
         >>> config = AppConfig()
+        >>> # With MARKDOWN_OUTPUT_PATH_EN = "./output_markdown/en"
         >>> path = fn_save_markdown_to_disk("# Title", "python", "doc1", config, "en")
         >>> print(path)
         output_markdown/en/python/doc1.md
@@ -773,8 +776,14 @@ def fn_save_markdown_to_disk(
     safe_tag = tag.replace(" ", "-").lower()
     safe_tag = "".join(c for c in safe_tag if c.isalnum() or c in ("-", "_"))
 
-    # Create the output directory structure with language subfolder
-    output_dir = config.MARKDOWN_OUTPUT_PATH / language / safe_tag
+    # Create the output directory structure using language-specific base path
+    # Choose the appropriate base path based on language
+    if language == "ru":
+        base_path = config.MARKDOWN_OUTPUT_PATH_RU
+    else:  # Default to English for "en" or any other value
+        base_path = config.MARKDOWN_OUTPUT_PATH_EN
+
+    output_dir = base_path / safe_tag
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Create the output file path
@@ -807,5 +816,6 @@ def fn_ensure_directories_exist(config: AppConfig) -> None:
     """
     config.VECTOR_DB_PATH_EN.mkdir(parents=True, exist_ok=True)
     config.VECTOR_DB_PATH_RU.mkdir(parents=True, exist_ok=True)
-    config.MARKDOWN_OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
+    config.MARKDOWN_OUTPUT_PATH_EN.mkdir(parents=True, exist_ok=True)
+    config.MARKDOWN_OUTPUT_PATH_RU.mkdir(parents=True, exist_ok=True)
     logger.info("All required directories created")

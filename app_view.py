@@ -1295,12 +1295,18 @@ class LokalRAGApp(toga.App):
         )
         paths_section.add(vector_db_ru_box)
 
-        # Markdown output path
-        markdown_output_box, self.markdown_output_path_input = self._create_input_row(
-            "Markdown Output Path:",
-            "./output_markdown"
+        # Markdown output paths (separate for EN and RU)
+        markdown_output_en_box, self.markdown_output_path_en_input = self._create_input_row(
+            "Markdown Output Path (EN):",
+            "./output_markdown/en"
         )
-        paths_section.add(markdown_output_box)
+        paths_section.add(markdown_output_en_box)
+
+        markdown_output_ru_box, self.markdown_output_path_ru_input = self._create_input_row(
+            "Markdown Output Path (RU):",
+            "./output_markdown/ru"
+        )
+        paths_section.add(markdown_output_ru_box)
 
         # Changelog path
         changelog_box, self.changelog_path_input = self._create_input_row(
@@ -2482,7 +2488,8 @@ class LokalRAGApp(toga.App):
             # Storage Paths (NEW)
             "vector_db_path_en": self.vector_db_path_en_input.value or "./chroma_db_en",  # ← NEW (English DB)
             "vector_db_path_ru": self.vector_db_path_ru_input.value or "./chroma_db_ru",  # ← NEW (Russian DB)
-            "markdown_output_path": self.markdown_output_path_input.value or "./output_markdown",  # ← NEW
+            "markdown_output_path_en": self.markdown_output_path_en_input.value or "./output_markdown/en",  # ← NEW (English markdown)
+            "markdown_output_path_ru": self.markdown_output_path_ru_input.value or "./output_markdown/ru",  # ← NEW (Russian markdown)
             "changelog_path": self.changelog_path_input.value or "./changelog",  # ← NEW
             "notes_path": self.notes_path_input.value or "./notes",  # ← NEW (notes directory)
             "embedding_cache_dir": self.embedding_cache_dir_input.value or str(Path.home() / ".cache" / "huggingface" / "hub"),  # ← NEW (HuggingFace cache)
@@ -2624,9 +2631,21 @@ class LokalRAGApp(toga.App):
             self.vector_db_path_ru_input.value = settings["vector_db_path_ru"]
             logger.info(f"Setting Russian vector DB path to: {settings['vector_db_path_ru']}")
 
-        if "markdown_output_path" in settings:
-            self.markdown_output_path_input.value = settings["markdown_output_path"]
-            logger.info(f"Setting markdown output path to: {settings['markdown_output_path']}")
+        # Markdown output paths (separate for EN and RU)
+        if "markdown_output_path_en" in settings:
+            self.markdown_output_path_en_input.value = settings["markdown_output_path_en"]
+            logger.info(f"Setting English markdown output path to: {settings['markdown_output_path_en']}")
+
+        if "markdown_output_path_ru" in settings:
+            self.markdown_output_path_ru_input.value = settings["markdown_output_path_ru"]
+            logger.info(f"Setting Russian markdown output path to: {settings['markdown_output_path_ru']}")
+
+        # Backward compatibility: if old single path exists, use it for both
+        if "markdown_output_path" in settings and "markdown_output_path_en" not in settings:
+            old_path = settings["markdown_output_path"]
+            self.markdown_output_path_en_input.value = f"{old_path}/en"
+            self.markdown_output_path_ru_input.value = f"{old_path}/ru"
+            logger.info(f"Migrating old markdown_output_path: {old_path} -> {old_path}/en and {old_path}/ru")
 
         if "changelog_path" in settings:
             self.changelog_path_input.value = settings["changelog_path"]

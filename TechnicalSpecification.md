@@ -51,8 +51,10 @@ class AppConfig:
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     LLM_MODEL: str = "qwen2.5:7b-instruct"
     EMBEDDING_MODEL: str = "paraphrase-multilingual-MiniLM-L12-v2"
-    VECTOR_DB_PATH: Path = Path("./lokal_rag_db")
-    MARKDOWN_OUTPUT_PATH: Path = Path("./output_markdown")
+    VECTOR_DB_PATH_EN: Path = Path("./chroma_db_en")
+    VECTOR_DB_PATH_RU: Path = Path("./chroma_db_ru")
+    MARKDOWN_OUTPUT_PATH_EN: Path = Path("./output_markdown/en")
+    MARKDOWN_OUTPUT_PATH_RU: Path = Path("./output_markdown/ru")
     # ... other settings
 ```
 
@@ -64,9 +66,9 @@ This module initializes and encapsulates the heavy, stateful objects (`ChromaDB`
       * `__init__(self, config: AppConfig)`: Initializes the `HuggingFaceEmbeddings` model (loading it into memory) and the `ChromaDB` persistent client.
       * `get_vectorstore(self) -> Chroma`: Returns the Chroma collection instance.
       * `add_documents(self, docs: list) -> None`: A stateful method to add documents to the DB.
-  * **`fn_save_markdown_to_disk(text: str, tag: str, filename: str, config: AppConfig) -> Path`:**
+  * **`fn_save_markdown_to_disk(text: str, tag: str, filename: str, config: AppConfig, language: str) -> Path`:**
       * A **pure function** that takes the content and metadata.
-      * It determines the `output_path` (e.g., `config.MARKDOWN_OUTPUT_PATH / tag / filename`).
+      * It determines the `output_path` based on language (e.g., `config.MARKDOWN_OUTPUT_PATH_EN / tag / filename` for English).
       * It performs the I/O (side effect) of writing the file.
       * Returns the `Path` to the newly created file.
 
