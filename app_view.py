@@ -1264,6 +1264,13 @@ class LokalRAGApp(toga.App):
         )
         paths_section.add(notes_box)
 
+        # Embedding cache directory
+        embedding_cache_box, self.embedding_cache_dir_input = self._create_input_row(
+            "HuggingFace Cache Dir:",
+            str(Path.home() / ".cache" / "huggingface" / "hub")
+        )
+        paths_section.add(embedding_cache_box)
+
         # ---- Chat Settings ----
         chat_section = self._create_settings_section(
             "💬 Chat Settings:",
@@ -2202,6 +2209,7 @@ class LokalRAGApp(toga.App):
             "markdown_output_path": self.markdown_output_path_input.value or "./output_markdown",  # ← NEW
             "changelog_path": self.changelog_path_input.value or "./changelog",  # ← NEW
             "notes_path": self.notes_path_input.value or "./notes",  # ← NEW (notes directory)
+            "embedding_cache_dir": self.embedding_cache_dir_input.value or str(Path.home() / ".cache" / "huggingface" / "hub"),  # ← NEW (HuggingFace cache)
             # Note Templates (NEW)
             "note_templates": self.note_templates,  # ← NEW: list of template dicts
             # Chat Settings (NEW)
@@ -2341,6 +2349,10 @@ class LokalRAGApp(toga.App):
         if "notes_path" in settings:
             self.notes_path_input.value = settings["notes_path"]
             logger.info(f"Setting notes path to: {settings['notes_path']}")
+
+        if "embedding_cache_dir" in settings:
+            self.embedding_cache_dir_input.value = settings["embedding_cache_dir"]
+            logger.info(f"Setting embedding cache dir to: {settings['embedding_cache_dir']}")
 
         # Note templates (NEW)
         if "note_templates" in settings:
