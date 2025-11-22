@@ -4,19 +4,27 @@ A local-first desktop application for building a private RAG (Retrieval-Augmente
 
 ## Features
 
+### Document Processing
 - 📄 **PDF Ingestion**: Convert PDF files to high-quality Markdown using marker-pdf
 - 🖼️ **Image Extraction**: Extract and describe images from PDFs using vision models
 - 🌐 **Web Article Ingestion**: Fetch and extract content from web articles (Medium, blogs, news sites)
 - 🔐 **Authenticated Access**: Use your browser cookies to access paywalled content (Medium, etc.)
 - 🌍 **Translation**: Optional translation to Russian using local LLM
 - 🏷️ **Auto-tagging**: Automatic content categorization based on subject matter
-- 💾 **Local Storage**: All data stays on your machine - no cloud required
+
+### Chat & Search
 - 💬 **Chat Interface**: Query your knowledge base using natural language
-- 📝 **Notes**: Create searchable notes that integrate with your knowledge base
+- 🤖 **Custom Chat Prompts**: Create and manage multiple system prompts for different chat behaviors
+- 🔀 **Dual LLM Providers**: Use different LLM providers for document processing vs. chat
 - 🔍 **Hybrid Search**: BM25 + Vector search for better retrieval (dates, keywords, semantics)
+- 📝 **Notes**: Create searchable notes that integrate with your knowledge base
+
+### Privacy & Performance
+- 💾 **Local Storage**: All data stays on your machine - no cloud required
 - 🔒 **Privacy-First**: Uses local Ollama instance or API providers (Claude, Gemini, Mistral)
+- ⚡ **Offline Mode**: HuggingFace models cached locally (no network after first download)
 - 🎨 **Native UI**: Cross-platform native interface using Toga (BeeWare)
-- ⚙️ **Customizable**: Theme selection (Light/Dark) and window size presets
+- ⚙️ **Highly Customizable**: Separate LLM providers, custom prompts, themes (Light/Dark), window sizes
 
 ## Architecture
 
@@ -123,6 +131,129 @@ https://news.ycombinator.com/item?id=12345
 3. Press Enter or click "Send"
 4. The assistant will respond based on your ingested documents
 
+## Advanced: Chat Customization
+
+### Dual LLM Providers
+
+You can use different LLM providers for document processing and chat:
+
+**Example Use Case**: Use local Ollama for document processing (free, fast), but use Claude API for chat (higher quality responses).
+
+**How to Configure**:
+1. Go to **Settings** tab
+2. Set **"🔧 LLM Provider (Document Processing)"** → Your choice for PDF/web ingestion
+3. Set **"💬 LLM Provider (Chat)"** → Your choice for chat conversations
+4. Click **"Save Settings"**
+
+This allows you to:
+- Keep costs low for batch processing (use local models)
+- Get premium quality for interactive chat (use API models)
+- Experiment with different providers without affecting your workflow
+
+### Custom Chat Prompts
+
+Create specialized chat assistants by defining custom system prompts:
+
+**Built-in Prompts**:
+- **Default RAG Assistant**: General-purpose Q&A with language detection (Russian/English)
+
+**Creating Custom Prompts**:
+
+1. Go to **Settings** → **"🤖 Chat System Prompts"** section
+2. Enter a **Prompt Name**: e.g., "Code Reviewer"
+3. Enter **Prompt Content**:
+   ```
+   You are an expert code reviewer. Analyze code snippets from the knowledge base.
+   Focus on: bugs, security issues, best practices, and optimization opportunities.
+   Provide specific, actionable feedback.
+   ```
+4. Click **➕ Add**
+5. Click **"Save Settings"**
+
+**Using Custom Prompts in Chat**:
+1. Go to **Chat** tab
+2. Select your prompt from **"Системный промпт"** dropdown
+3. Start chatting with the new behavior!
+
+**Example Prompts**:
+
+<details>
+<summary><b>Code Reviewer</b></summary>
+
+```
+You are an expert code reviewer with 10+ years of experience.
+
+TASK:
+Review code snippets from the knowledge base and provide:
+- Bug detection and security vulnerabilities
+- Best practices and design patterns
+- Performance optimization suggestions
+- Code readability improvements
+
+FORMAT:
+1. Summary (2-3 sentences)
+2. Issues Found (bulleted list)
+3. Recommendations (specific, actionable)
+
+Be constructive and educational.
+```
+</details>
+
+<details>
+<summary><b>Documentation Writer</b></summary>
+
+```
+You are a technical documentation specialist.
+
+TASK:
+Create clear, comprehensive documentation based on code and context from the knowledge base.
+
+FOCUS ON:
+- Clear explanations for non-experts
+- Step-by-step examples
+- Common pitfalls and troubleshooting
+- API/function signatures with parameter descriptions
+
+STYLE:
+- Use Markdown formatting
+- Include code examples
+- Add "Note" and "Warning" callouts where appropriate
+```
+</details>
+
+<details>
+<summary><b>Research Assistant</b></summary>
+
+```
+You are a research assistant with access to academic papers and technical documents.
+
+TASK:
+Provide comprehensive, well-researched answers with citations.
+
+STYLE:
+- Start with a concise summary
+- Provide detailed explanation with context
+- Cite sources from the knowledge base
+- Suggest related topics for further reading
+
+IMPORTANT:
+- Always cite document sources: [Source: filename.pdf]
+- Distinguish between facts from documents and general knowledge
+- If information is incomplete, say so explicitly
+```
+</details>
+
+**Where Prompts Are Stored**:
+- Default prompts: `app_config.py` (lines 134-171)
+- Custom prompts: `~/.lokal-rag/settings.json` (`chat_prompts` field)
+- Active prompt: `~/.lokal-rag/settings.json` (`chat_active_prompt` field)
+
+**Tips**:
+- Prompts are saved per-user (in `~/.lokal-rag/settings.json`)
+- You can have as many prompts as you want
+- Switch prompts mid-conversation without restarting
+- Default prompt is always available (cannot be deleted)
+
 ## Vision Models for Image Extraction (Optional)
 
 When processing PDFs with images, you can enable vision models to extract text and content from images. The system supports multiple vision backends:
@@ -192,14 +323,54 @@ Enable vision extraction:
 
 ## Configuration
 
-Edit `app_config.py` to customize:
+### Settings UI (Recommended)
 
-### Core Settings
-- **Ollama URL and model**: Change LLM endpoint or model
-- **Embedding model**: Choose different HuggingFace embedding model
-- **Vector database path**: Location for ChromaDB storage
-- **Output directory**: Where to save processed Markdown files
-- **Chunk size and overlap**: Text splitting parameters for RAG
+The easiest way to configure the application is through the **Settings** tab in the UI:
+
+1. Launch the application: `python main.py`
+2. Go to **Settings** tab
+3. Configure your preferences:
+   - **LLM Providers**: Separate providers for document processing vs. chat
+   - **API Keys**: Claude, Gemini, Mistral (if using cloud providers)
+   - **Storage Paths**: Vector database, markdown output, notes, HuggingFace cache
+   - **Chat Prompts**: Create and manage custom system prompts
+   - **Performance**: Chunk sizes, context length, retrieval count
+4. Click **"Save Settings"**
+
+Settings are saved to:
+- **Linux/macOS**: `~/.lokal-rag/settings.json`
+- **Windows**: `%USERPROFILE%\.lokal-rag\settings.json`
+
+### Advanced: Edit Configuration File
+
+For advanced users, you can edit `app_config.py` directly:
+
+#### Core Settings
+- **`LLM_PROVIDER`**: Provider for document processing (`"ollama"`, `"lmstudio"`, `"claude"`, `"gemini"`, `"mistral"`)
+- **`LLM_PROVIDER_CHAT`**: Provider for chat (can be different from document processing)
+- **`EMBEDDING_MODEL`**: HuggingFace embedding model (default: `paraphrase-multilingual-MiniLM-L12-v2`)
+- **`EMBEDDING_CACHE_DIR`**: Local cache for HuggingFace models (default: `~/.cache/huggingface/hub`)
+- **`VECTOR_DB_PATH_EN`/`VECTOR_DB_PATH_RU`**: ChromaDB storage locations
+- **`MARKDOWN_OUTPUT_PATH`**: Where to save processed Markdown files
+- **`CHUNK_SIZE`** and **`CHUNK_OVERLAP`**: Text splitting parameters for RAG
+
+#### Chat Prompts
+Custom chat prompts are defined in `CHAT_PROMPTS`:
+
+```python
+CHAT_PROMPTS: List[Dict[str, str]] = field(default_factory=lambda: [
+    {
+        "name": "Default RAG Assistant",
+        "content": """You are a helpful AI assistant with access to a document database..."""
+    },
+    {
+        "name": "Your Custom Prompt",
+        "content": """Your system prompt here..."""
+    }
+])
+```
+
+**Note**: It's easier to manage prompts through the Settings UI rather than editing code.
 
 ### Web Scraping Settings
 
@@ -374,9 +545,11 @@ The application now includes automatic memory cleanup **after batch completion**
 | GUI | Toga (BeeWare) | Native cross-platform UI with platform look & feel |
 | Orchestration | asyncio + threading | Async event loop with background workers |
 | PDF Parser | marker-pdf | SOTA PDF-to-Markdown conversion |
-| LLM | Ollama + Qwen2.5-7B | Translation, tagging, RAG |
+| LLM (Documents) | Ollama / LM Studio / Claude / Gemini / Mistral | Translation, tagging, vision (separate from chat) |
+| LLM (Chat) | Ollama / LM Studio / Claude / Gemini / Mistral | Chat conversations (configurable independently) |
 | Vector DB | ChromaDB | Local persistent vector store |
-| Embeddings | paraphrase-multilingual-MiniLM-L12-v2 | Fast multilingual embeddings |
+| Embeddings | paraphrase-multilingual-MiniLM-L12-v2 | Fast multilingual embeddings (cached offline) |
+| Search | BM25 + Vector (Ensemble) | Hybrid keyword + semantic search |
 | Text Processing | LangChain | Text splitting and RAG utilities |
 | Web Scraping | browser-cookie3 + httpx | Authenticated web article fetching |
 
