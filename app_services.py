@@ -16,6 +16,7 @@ Side effects (I/O) are isolated and clearly marked.
 import gc
 import json
 import logging
+import queue
 import re
 import uuid
 from pathlib import Path
@@ -1002,7 +1003,7 @@ def fn_read_markdown_file(md_path: Path) -> str:
 # ============================================================================
 
 
-def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
+def fn_extract_markdown(pdf_path: Path, config: AppConfig, view_queue: Optional['queue.Queue'] = None) -> str:
     """
     Convert a PDF file to Markdown using configured conversion method.
 
@@ -1021,6 +1022,7 @@ def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
     Args:
         pdf_path: Path to the PDF file to convert
         config: Application configuration (for PDF conversion and vision settings)
+        view_queue: Optional queue for sending progress updates to GUI
 
     Returns:
         str: The Markdown content extracted from the PDF (with optional image descriptions)
@@ -1044,10 +1046,10 @@ def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
     # Route to appropriate conversion method
     if config.PDF_CONVERSION_METHOD == "llm-studio-ocr":
         logger.info(f"Using LLM Studio OCR for PDF conversion: {config.LLM_OCR_MODEL}")
-        return fn_extract_markdown_llm_ocr(pdf_path, config)
+        return fn_extract_markdown_llm_ocr(pdf_path, config, view_queue)
     else:
         logger.info(f"Using marker-pdf for PDF conversion")
-        # Fall through to original marker-pdf implementation
+        # Fall through to original marker-pdf implementation (with view_queue)
 
     try:
         # NOTE: marker-pdf is imported here to avoid loading heavy ML models
@@ -1120,6 +1122,8 @@ def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
             for idx, (image_path, image_data) in enumerate(images_to_process.items(), 1):
                 try:
                     logger.info(f"Processing image {idx}/{len(images_to_process)}: {image_path}")
+                    if view_queue:
+                        view_queue.put(f"LOG:   → Processing image {idx}/{len(images_to_process)}...")
 
                     # image_data is a PIL Image object, convert to bytes
                     from io import BytesIO
@@ -1132,9 +1136,13 @@ def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
 
                     image_descriptions.append(f"### Image {idx}\n\n{description}\n")
                     logger.info(f"✓ Image {idx} processed successfully")
+                    if view_queue:
+                        view_queue.put(f"LOG:   ✓ Image {idx} processed successfully")
 
                 except Exception as e:
                     logger.error(f"Failed to process image {idx}: {e}")
+                    if view_queue:
+                        view_queue.put(f"LOG:   ✗ Image {idx} failed: {str(e)[:100]}")
                     image_descriptions.append(f"### Image {idx}\n\n[Error: Could not process image - {str(e)}]\n")
 
             # Append image descriptions to the markdown
@@ -1156,7 +1164,7 @@ def fn_extract_markdown(pdf_path: Path, config: AppConfig) -> str:
         raise Exception(f"Failed to extract Markdown from {pdf_path}: {e}") from e
 
 
-def fn_extract_markdown_llm_ocr(pdf_path: Path, config: AppConfig) -> str:
+def fn_extract_markdown_llm_ocr(pdf_path: Path, config: AppConfig, view_queue: Optional['queue.Queue'] = None) -> str:
     """
     Convert a PDF file to Markdown using LLM Studio OCR (vision model).
 
@@ -1166,6 +1174,7 @@ def fn_extract_markdown_llm_ocr(pdf_path: Path, config: AppConfig) -> str:
     Args:
         pdf_path: Path to the PDF file to convert
         config: Application configuration (for LLM OCR settings)
+        view_queue: Optional queue for sending progress updates to GUI
 
     Returns:
         str: The Markdown content extracted from the PDF
@@ -1212,6 +1221,8 @@ def fn_extract_markdown_llm_ocr(pdf_path: Path, config: AppConfig) -> str:
         page_texts = []
         for idx, image in enumerate(images, 1):
             logger.info(f"Processing page {idx}/{len(images)} with LLM OCR model: {config.LLM_OCR_MODEL}")
+            if view_queue:
+                view_queue.put(f"LOG:   → OCR processing page {idx}/{len(images)}...")
 
             # Convert PIL Image to bytes (PNG format)
             from io import BytesIO
@@ -1282,9 +1293,13 @@ def fn_extract_markdown_llm_ocr(pdf_path: Path, config: AppConfig) -> str:
                 page_texts.append(f"# Page {idx}\n\n{page_text}\n\n---\n")
 
                 logger.info(f"✓ Page {idx} processed successfully ({len(page_text)} chars)")
+                if view_queue:
+                    view_queue.put(f"LOG:   ✓ Page {idx} OCR complete ({len(page_text)} chars)")
 
             except Exception as e:
                 logger.error(f"Failed to process page {idx}: {e}")
+                if view_queue:
+                    view_queue.put(f"LOG:   ✗ Page {idx} OCR failed: {str(e)[:100]}")
                 page_texts.append(f"# Page {idx}\n\n[Error: Could not extract text - {str(e)}]\n\n---\n")
 
         # Combine all pages
@@ -1393,7 +1408,7 @@ def fn_fetch_raw_markdown(url: str, config: AppConfig) -> str:
         raise Exception(f"Failed to fetch Markdown from {url}: {e}") from e
 
 
-def fn_fetch_web_article(url: str, config: AppConfig) -> str:
+def fn_fetch_web_article(url: str, config: AppConfig, view_queue: Optional['queue.Queue'] = None) -> str:
     """
     Fetch, authenticate, clean, and convert a web article to Markdown.
 
@@ -1408,6 +1423,7 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
     Args:
         url: The URL of the article to fetch
         config: Application configuration
+        view_queue: Optional queue for sending progress updates to GUI
 
     Returns:
         str: The article content in Markdown format
@@ -1459,8 +1475,89 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
 
                     logger.info(f"Loading cookies from {browser_name}...")
 
+                    # DEBUG: Detailed logging for Chrome cookie loading
+                    if config.WEB_BROWSER_CHOICE.lower() == "chrome":
+                        logger.info("🔍 DEBUG: Chrome cookie loading diagnostics")
+
+                        # Check Chrome cookie database location
+                        import os
+                        import platform
+                        system = platform.system()
+
+                        # Chrome cookie paths (try multiple locations)
+                        cookie_paths = []
+                        if system == "Darwin":  # macOS
+                            cookie_paths = [
+                                os.path.expanduser("~/Library/Application Support/Google/Chrome/Default/Cookies"),
+                                os.path.expanduser("~/Library/Application Support/Google/Chrome/Default/Network/Cookies"),  # Chrome 96+
+                            ]
+                        elif system == "Linux":
+                            cookie_paths = [
+                                os.path.expanduser("~/.config/google-chrome/Default/Cookies"),
+                                os.path.expanduser("~/.config/google-chrome/Default/Network/Cookies"),  # Chrome 96+
+                            ]
+                        elif system == "Windows":
+                            cookie_paths = [
+                                os.path.expanduser(r"~\AppData\Local\Google\Chrome\User Data\Default\Network\Cookies"),  # Chrome 96+
+                                os.path.expanduser(r"~\AppData\Local\Google\Chrome\User Data\Default\Cookies"),  # Legacy
+                            ]
+
+                        if cookie_paths:
+                            logger.info(f"🔍 Checking Chrome cookie database locations...")
+                            found_cookie_db = False
+
+                            for cookie_path in cookie_paths:
+                                logger.info(f"  Checking: {cookie_path}")
+
+                                if os.path.exists(cookie_path):
+                                    found_cookie_db = True
+                                    file_size = os.path.getsize(cookie_path)
+                                    logger.info(f"  ✓ Found! (size: {file_size} bytes)")
+
+                                    # Check if we have read permissions
+                                    if os.access(cookie_path, os.R_OK):
+                                        logger.info(f"  ✓ Cookie database is readable")
+                                    else:
+                                        logger.error(f"  ✗ No read permission!")
+                                        logger.error("    → macOS: Grant 'Full Disk Access' to Terminal/Python")
+                                        logger.error("    → Linux: Check file permissions")
+                                    break  # Found the database
+                                else:
+                                    logger.info(f"  ✗ Not found")
+
+                            if not found_cookie_db:
+                                logger.error("✗ Chrome cookie database NOT FOUND in any expected location")
+                                logger.error("  Tried paths:")
+                                for p in cookie_paths:
+                                    logger.error(f"    - {p}")
+                                logger.error("  → Is Chrome installed?")
+                                logger.error("  → Are you using a different Chrome profile?")
+                                logger.error("  → Try Safari or Firefox if available")
+
+                        # Check browser_cookie3 version
+                        try:
+                            import browser_cookie3
+                            bc3_version = getattr(browser_cookie3, '__version__', 'unknown')
+                            logger.info(f"🔍 browser_cookie3 version: {bc3_version}")
+                        except:
+                            pass
+
                     # Load cookies for the specific domain
-                    cookies = browser_func(domain_name=domain)
+                    try:
+                        logger.info(f"Calling browser_cookie3.{config.WEB_BROWSER_CHOICE}(domain_name='{domain}')...")
+                        cookies = browser_func(domain_name=domain)
+                        logger.info(f"✓ browser_cookie3 call successful")
+                    except PermissionError as e:
+                        logger.error(f"✗ PERMISSION ERROR loading cookies: {e}")
+                        logger.error("  → macOS: System Preferences → Security & Privacy → Full Disk Access")
+                        logger.error("  → Add Terminal.app or your Python IDE to the list")
+                        raise
+                    except Exception as e:
+                        logger.error(f"✗ ERROR loading cookies: {type(e).__name__}: {e}")
+                        logger.error(f"  Full exception: {e}")
+                        import traceback
+                        logger.error(f"  Traceback:\n{traceback.format_exc()}")
+                        raise
 
                     # If we have a subdomain, also load cookies from parent domain and merge
                     if base_domain and base_domain != domain:
@@ -1550,8 +1647,23 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
         if "medium.com" in domain:
             headers["Referer"] = "https://medium.com/"
 
+        # Convert cookies for httpx compatibility
+        if cookies:
+            # IMPORTANT FIX: browser_cookie3 returns http.cookiejar.CookieJar
+            # but httpx.Client() works better with plain dict
+            # This conversion ensures cookies are actually sent in requests
+            cookie_dict = {}
+            for cookie in cookies:
+                cookie_dict[cookie.name] = cookie.value
+
+            logger.info(f"Prepared {len(cookie_dict)} cookies for transmission")
+            cookies_to_use = cookie_dict
+        else:
+            logger.info("No cookies to send")
+            cookies_to_use = None
+
         with httpx.Client(
-            cookies=cookies,
+            cookies=cookies_to_use,
             follow_redirects=True,
             timeout=config.WEB_REQUEST_TIMEOUT
         ) as client:
@@ -1761,6 +1873,8 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
                             img_url = urljoin(url, img_url)
 
                             logger.info(f"Processing image {idx}/{len(images_to_process)}: {img_url[:100]}...")
+                            if view_queue:
+                                view_queue.put(f"LOG:   → Processing web image {idx}/{len(images_to_process)}...")
 
                             # Download image
                             with httpx.Client(timeout=config.WEB_REQUEST_TIMEOUT) as client:
@@ -1773,9 +1887,13 @@ def fn_fetch_web_article(url: str, config: AppConfig) -> str:
 
                             image_descriptions.append(f"### Image {idx}\n\n**Source:** {img_url}\n\n{description}\n")
                             logger.info(f"✓ Image {idx} processed successfully")
+                            if view_queue:
+                                view_queue.put(f"LOG:   ✓ Web image {idx} processed successfully")
 
                         except Exception as e:
                             logger.error(f"Failed to process image {idx}: {e}")
+                            if view_queue:
+                                view_queue.put(f"LOG:   ✗ Web image {idx} failed: {str(e)[:100]}")
                             image_descriptions.append(f"### Image {idx}\n\n[Error: Could not process image - {str(e)}]\n")
 
                     # Append image descriptions to the markdown
@@ -2168,6 +2286,8 @@ def fn_get_rag_response(
     retrieved_docs: list[Document],
     config: AppConfig,
     chat_history: Optional[list[dict]] = None,
+    llm_provider: Optional[str] = None,
+    system_prompt: Optional[str] = None,
 ) -> str:
     """
     Generate a response to a query using retrieved documents as context.
@@ -2183,6 +2303,8 @@ def fn_get_rag_response(
         retrieved_docs: Documents retrieved from the vector store
         config: Application configuration
         chat_history: Previous chat messages (list of {"role": "user"/"assistant", "content": "..."})
+        llm_provider: LLM provider to use (overrides config.LLM_PROVIDER if provided)
+        system_prompt: System prompt to use (overrides default RAG_SYSTEM_PROMPT if provided)
 
     Returns:
         str: The LLM's answer based on the retrieved context and chat history
@@ -2225,11 +2347,21 @@ Question: {query}
 
 Answer:"""
 
+    # Use provided system prompt or fall back to default
+    active_system_prompt = system_prompt if system_prompt else RAG_SYSTEM_PROMPT
+
+    # Create a temporary config with chat LLM provider if provided
+    if llm_provider:
+        from dataclasses import replace
+        chat_config = replace(config, LLM_PROVIDER=llm_provider)
+    else:
+        chat_config = config
+
     # Get response from LLM
     response = fn_call_llm(
         prompt=prompt,
-        system_prompt=RAG_SYSTEM_PROMPT,
-        config=config,
+        system_prompt=active_system_prompt,
+        config=chat_config,
     )
 
     return response
