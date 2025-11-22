@@ -41,7 +41,8 @@ class AppConfig:
         EMBEDDING_CACHE_DIR: Directory for caching HuggingFace models (to avoid re-downloading)
         VECTOR_DB_PATH_EN: Path to the English ChromaDB persistent storage
         VECTOR_DB_PATH_RU: Path to the Russian ChromaDB persistent storage
-        MARKDOWN_OUTPUT_PATH: Path where processed Markdown files will be saved
+        MARKDOWN_OUTPUT_PATH_EN: Path where English processed Markdown files will be saved
+        MARKDOWN_OUTPUT_PATH_RU: Path where Russian processed Markdown files will be saved
         CHANGELOG_PATH: Path where changelog files will be saved
         NOTES_DIR: Path where user notes will be saved
         CHUNK_SIZE: Size of text chunks for vector database (in characters)
@@ -93,7 +94,8 @@ class AppConfig:
     # Storage Configuration
     VECTOR_DB_PATH_EN: Path = Path("./chroma_db_en")  # English vector database
     VECTOR_DB_PATH_RU: Path = Path("./chroma_db_ru")  # Russian vector database
-    MARKDOWN_OUTPUT_PATH: Path = Path("./output_markdown")
+    MARKDOWN_OUTPUT_PATH_EN: Path = Path("./output_markdown/en")  # English markdown output
+    MARKDOWN_OUTPUT_PATH_RU: Path = Path("./output_markdown/ru")  # Russian markdown output
     CHANGELOG_PATH: Path = Path("./changelog")  # Path for changelog files
     NOTES_DIR: Path = Path("./notes")  # Path for user notes
     DATABASE_LANGUAGE: str = "en"  # Language for database to use: "en" or "ru"
@@ -373,8 +375,18 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
     if "vector_db_path_ru" in settings:
         overrides["VECTOR_DB_PATH_RU"] = Path(settings["vector_db_path_ru"])
 
-    if "markdown_output_path" in settings:
-        overrides["MARKDOWN_OUTPUT_PATH"] = Path(settings["markdown_output_path"])
+    # Markdown output paths (separate for EN and RU)
+    if "markdown_output_path_en" in settings:
+        overrides["MARKDOWN_OUTPUT_PATH_EN"] = Path(settings["markdown_output_path_en"])
+
+    if "markdown_output_path_ru" in settings:
+        overrides["MARKDOWN_OUTPUT_PATH_RU"] = Path(settings["markdown_output_path_ru"])
+
+    # Backward compatibility: if old single path exists, use it for both
+    if "markdown_output_path" in settings and "markdown_output_path_en" not in settings:
+        base_path = Path(settings["markdown_output_path"])
+        overrides["MARKDOWN_OUTPUT_PATH_EN"] = base_path / "en"
+        overrides["MARKDOWN_OUTPUT_PATH_RU"] = base_path / "ru"
 
     if "changelog_path" in settings:
         overrides["CHANGELOG_PATH"] = Path(settings["changelog_path"])

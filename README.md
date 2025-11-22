@@ -351,7 +351,7 @@ For advanced users, you can edit `app_config.py` directly:
 - **`EMBEDDING_MODEL`**: HuggingFace embedding model (default: `paraphrase-multilingual-MiniLM-L12-v2`)
 - **`EMBEDDING_CACHE_DIR`**: Local cache for HuggingFace models (default: `~/.cache/huggingface/hub`)
 - **`VECTOR_DB_PATH_EN`/`VECTOR_DB_PATH_RU`**: ChromaDB storage locations
-- **`MARKDOWN_OUTPUT_PATH`**: Where to save processed Markdown files
+- **`MARKDOWN_OUTPUT_PATH_EN`/`MARKDOWN_OUTPUT_PATH_RU`**: Where to save processed Markdown files (separate paths for English and Russian)
 - **`CHUNK_SIZE`** and **`CHUNK_OVERLAP`**: Text splitting parameters for RAG
 
 #### Chat Prompts
