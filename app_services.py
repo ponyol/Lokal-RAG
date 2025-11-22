@@ -2168,6 +2168,8 @@ def fn_get_rag_response(
     retrieved_docs: list[Document],
     config: AppConfig,
     chat_history: Optional[list[dict]] = None,
+    llm_provider: Optional[str] = None,
+    system_prompt: Optional[str] = None,
 ) -> str:
     """
     Generate a response to a query using retrieved documents as context.
@@ -2183,6 +2185,8 @@ def fn_get_rag_response(
         retrieved_docs: Documents retrieved from the vector store
         config: Application configuration
         chat_history: Previous chat messages (list of {"role": "user"/"assistant", "content": "..."})
+        llm_provider: LLM provider to use (overrides config.LLM_PROVIDER if provided)
+        system_prompt: System prompt to use (overrides default RAG_SYSTEM_PROMPT if provided)
 
     Returns:
         str: The LLM's answer based on the retrieved context and chat history
@@ -2225,11 +2229,21 @@ Question: {query}
 
 Answer:"""
 
+    # Use provided system prompt or fall back to default
+    active_system_prompt = system_prompt if system_prompt else RAG_SYSTEM_PROMPT
+
+    # Create a temporary config with chat LLM provider if provided
+    if llm_provider:
+        from dataclasses import replace
+        chat_config = replace(config, LLM_PROVIDER=llm_provider)
+    else:
+        chat_config = config
+
     # Get response from LLM
     response = fn_call_llm(
         prompt=prompt,
-        system_prompt=RAG_SYSTEM_PROMPT,
-        config=config,
+        system_prompt=active_system_prompt,
+        config=chat_config,
     )
 
     return response

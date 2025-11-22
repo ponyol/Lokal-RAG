@@ -24,9 +24,10 @@ class AppConfig:
     Immutable configuration for the Lokal-RAG application.
 
     Attributes:
-        LLM_PROVIDER: Which LLM provider to use ("ollama", "lmstudio", "claude", "gemini", or "mistral")
+        LLM_PROVIDER: Which LLM provider to use for document processing ("ollama", "lmstudio", "claude", "gemini", or "mistral")
+        LLM_PROVIDER_CHAT: Which LLM provider to use for chat (independent from document processing)
         OLLAMA_BASE_URL: URL of the local Ollama instance
-        OLLAMA_MODEL: Name of the Ollama model to use for translation, tagging, and RAG
+        OLLAMA_MODEL: Name of the Ollama model to use for translation, tagging, and document processing
         LMSTUDIO_BASE_URL: URL of the local LM Studio instance
         LMSTUDIO_MODEL: Name of the LM Studio model to use for translation, tagging, and RAG
         CLAUDE_API_KEY: Anthropic API key for Claude models
@@ -66,10 +67,13 @@ class AppConfig:
         LLM_OCR_MODEL: OCR model name (e.g., ocrflux-3b, deepseek-ocr)
         LLM_OCR_API_KEY: Optional API key for LLM Studio OCR
         NOTE_TEMPLATES: List of note templates with name and content
+        CHAT_PROMPTS: List of chat system prompts with name and content
+        CHAT_ACTIVE_PROMPT: Name of the currently active chat prompt
     """
 
     # LLM Configuration
-    LLM_PROVIDER: str = "ollama"  # "ollama", "lmstudio", "claude", "gemini", or "mistral"
+    LLM_PROVIDER: str = "ollama"  # "ollama", "lmstudio", "claude", "gemini", or "mistral" (for document processing)
+    LLM_PROVIDER_CHAT: str = "ollama"  # LLM provider for chat (can be different from document processing)
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "qwen2.5:7b-instruct"
     LMSTUDIO_BASE_URL: str = "http://localhost:1234/v1"
@@ -131,6 +135,47 @@ class AppConfig:
     LLM_OCR_URL: str = "http://localhost:1234/v1"  # LLM Studio URL for OCR (when using llm-studio-ocr)
     LLM_OCR_MODEL: str = "ocrflux-3b"  # OCR model name (ocrflux-3b, deepseek-ocr, or any vision model)
     LLM_OCR_API_KEY: str = ""  # Optional API key for LLM Studio OCR
+
+    # Chat Prompts Configuration
+    CHAT_PROMPTS: List[Dict[str, str]] = field(default_factory=lambda: [
+        {
+            "name": "Default RAG Assistant",
+            "content": """You are a helpful AI assistant with access to a document database.
+
+LANGUAGE DETECTION AND RESPONSE:
+- If the user's question is in RUSSIAN (Cyrillic text), you MUST:
+  * Respond ONLY in Russian
+  * Think about the question in Russian
+  * Provide answers in Russian
+
+- If the user's question is in ENGLISH (Latin text), you MUST:
+  * Respond ONLY in English
+  * Think about the question in English
+  * Provide answers in English
+
+TASK:
+Answer the user's question based on the provided context from the document database.
+- Use ALL available context chunks when answering
+- If the context contains the answer, provide it clearly
+- If the context doesn't contain enough information, say so (in the same language as the question)
+- Be accurate and helpful
+
+RESPONSE LENGTH:
+- For general questions: Provide concise, focused answers
+- If the user explicitly requests full content (e.g., "выведи полностью", "покажи весь документ", "show full document", "give me all details", "дай полное содержание"):
+  * OUTPUT EVERYTHING from ALL available document chunks
+  * Combine all chunks sequentially to reconstruct the full document
+  * Include ALL text from ALL chunks - DO NOT summarize or omit anything
+  * Preserve structure, headings, lists, and formatting from the source
+  * If you have 10, 20, or more chunks - use them ALL
+
+IMPORTANT:
+- The document chunks you receive are parts of the SAME document
+- When asked for "full content", you MUST output ALL chunks combined
+- Always match your response language to the user's question language!"""
+        }
+    ])
+    CHAT_ACTIVE_PROMPT: str = "Default RAG Assistant"  # Name of the currently active chat prompt
 
     # Notes Templates Configuration
     NOTE_TEMPLATES: List[Dict[str, str]] = field(default_factory=lambda: [
@@ -280,6 +325,9 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
     if "llm_provider" in settings:
         overrides["LLM_PROVIDER"] = settings["llm_provider"]
 
+    if "llm_provider_chat" in settings:
+        overrides["LLM_PROVIDER_CHAT"] = settings["llm_provider_chat"]
+
     if "ollama_base_url" in settings:
         overrides["OLLAMA_BASE_URL"] = settings["ollama_base_url"]
 
@@ -372,6 +420,13 @@ def create_config_from_settings(settings: Optional[dict] = None) -> AppConfig:
 
     if "chat_send_key" in settings:
         overrides["CHAT_SEND_KEY"] = settings["chat_send_key"]
+
+    # Chat prompts
+    if "chat_prompts" in settings:
+        overrides["CHAT_PROMPTS"] = settings["chat_prompts"]
+
+    if "chat_active_prompt" in settings:
+        overrides["CHAT_ACTIVE_PROMPT"] = settings["chat_active_prompt"]
 
     # Note templates
     if "note_templates" in settings:

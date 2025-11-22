@@ -129,6 +129,10 @@ class LokalRAGApp(toga.App):
         # Note templates management
         self.note_templates = []  # Will be loaded from settings
 
+        # Chat prompts management
+        self.chat_prompts = []  # Will be loaded from settings
+        self.chat_active_prompt = "Default RAG Assistant"  # Currently active prompt
+
         # Chat messages storage (for markdown rendering)
         self._chat_messages = []  # List of tuples: (role, message)
 
@@ -579,6 +583,27 @@ class LokalRAGApp(toga.App):
         search_box.add(self.clear_chat_button)
         container.add(search_box)
 
+        # V2: System prompt selection
+        prompt_box = toga.Box(
+            style=Pack(
+                direction=ROW,
+                margin_bottom=10
+            )
+        )
+        prompt_label = toga.Label(
+            "Системный промпт:",
+            style=Pack(width=120)
+        )
+        self.chat_system_prompt_selection = toga.Selection(
+            items=["Default RAG Assistant"],  # Will be populated from settings
+            on_change=self._on_chat_system_prompt_changed,
+            style=Pack(flex=1)
+        )
+        self.chat_system_prompt_selection.value = "Default RAG Assistant"
+        prompt_box.add(prompt_label)
+        prompt_box.add(self.chat_system_prompt_selection)
+        container.add(prompt_box)
+
         # Chat history display (WebView for markdown rendering)
         self.chat_history = toga.WebView(
             style=Pack(
@@ -968,11 +993,17 @@ class LokalRAGApp(toga.App):
         )
         db_section.add(db_info_label)
 
-        # ---- LLM Provider Selection ----
+        # ---- LLM Provider Selection (Document Processing) ----
         provider_section = self._create_settings_section(
-            "LLM Provider:",
+            "🔧 LLM Provider (Document Processing):",
             container
         )
+
+        provider_help = toga.Label(
+            "Provider for translation, tagging, and document processing operations.",
+            style=Pack(margin=5, font_size=10)
+        )
+        provider_section.add(provider_help)
 
         self.llm_provider_selection = toga.Selection(
             items=["ollama", "lmstudio", "claude", "gemini", "mistral"],
@@ -982,6 +1013,27 @@ class LokalRAGApp(toga.App):
         )
         self.llm_provider_selection.value = "ollama"
         provider_section.add(self.llm_provider_selection)
+
+        # ---- LLM Provider Selection (Chat) ----
+        provider_chat_section = self._create_settings_section(
+            "💬 LLM Provider (Chat):",
+            container
+        )
+
+        provider_chat_help = toga.Label(
+            "Provider for chat conversations (can be different from document processing).",
+            style=Pack(margin=5, font_size=10)
+        )
+        provider_chat_section.add(provider_chat_help)
+
+        self.llm_provider_chat_selection = toga.Selection(
+            items=["ollama", "lmstudio", "claude", "gemini", "mistral"],
+            style=Pack(
+                margin=5
+            )
+        )
+        self.llm_provider_chat_selection.value = "ollama"
+        provider_chat_section.add(self.llm_provider_chat_selection)
 
         # ---- Ollama Settings ----
         ollama_section = self._create_settings_section(
@@ -1329,6 +1381,79 @@ class LokalRAGApp(toga.App):
             style=Pack(margin_left=5, margin_bottom=10, font_size=9)
         )
         chat_section.add(send_key_desc)
+
+        # ---- Chat Prompts (NEW) ----
+        chat_prompts_section = self._create_settings_section(
+            "🤖 Chat System Prompts:",
+            container
+        )
+
+        prompts_help = toga.Label(
+            "Create and manage system prompts for chat. Each prompt defines chat behavior.",
+            style=Pack(margin=5, font_size=10)
+        )
+        chat_prompts_section.add(prompts_help)
+
+        # Prompt selection (for editing/deleting)
+        prompt_select_box = toga.Box(style=Pack(direction=ROW, margin=5))
+        prompt_select_label = toga.Label(
+            "Select Prompt:",
+            style=Pack(width=150)
+        )
+        self.chat_prompt_selection = toga.Selection(
+            items=["None"],
+            on_change=self._on_chat_prompt_selected,
+            style=Pack(flex=1)
+        )
+        self.chat_prompt_selection.value = "None"
+        prompt_select_box.add(prompt_select_label)
+        prompt_select_box.add(self.chat_prompt_selection)
+        chat_prompts_section.add(prompt_select_box)
+
+        # Prompt name input
+        prompt_name_box, self.chat_prompt_name_input = self._create_input_row(
+            "Prompt Name:",
+            "Default RAG Assistant"
+        )
+        chat_prompts_section.add(prompt_name_box)
+
+        # Prompt content input
+        prompt_content_label = toga.Label(
+            "Prompt Content:",
+            style=Pack(margin=5, margin_bottom=2, font_weight="bold")
+        )
+        chat_prompts_section.add(prompt_content_label)
+
+        # Content + Buttons in a horizontal row
+        prompt_content_and_buttons_box = toga.Box(style=Pack(direction=ROW, margin=5))
+
+        # Text input on the left (takes most space)
+        self.chat_prompt_content_input = toga.MultilineTextInput(
+            placeholder="System prompt for chat...\n\nThis defines how the chat assistant behaves.",
+            style=Pack(flex=1, height=200, margin_right=10)
+        )
+        prompt_content_and_buttons_box.add(self.chat_prompt_content_input)
+
+        # Buttons on the right (vertical stack)
+        prompt_buttons_column = toga.Box(style=Pack(direction=COLUMN))
+
+        self.add_chat_prompt_button = toga.Button(
+            "➕ Add",
+            on_press=self._on_add_chat_prompt,
+            style=Pack(width=100, margin_bottom=5, background_color=Theme.ACCENT_GREEN)
+        )
+        self.delete_chat_prompt_button = toga.Button(
+            "🗑️ Delete",
+            on_press=self._on_delete_chat_prompt,
+            style=Pack(width=100, background_color=Theme.ACCENT_RED)
+        )
+        self.delete_chat_prompt_button.enabled = False  # Disabled until prompt selected
+
+        prompt_buttons_column.add(self.add_chat_prompt_button)
+        prompt_buttons_column.add(self.delete_chat_prompt_button)
+
+        prompt_content_and_buttons_box.add(prompt_buttons_column)
+        chat_prompts_section.add(prompt_content_and_buttons_box)
 
         # ---- Note Templates (NEW) ----
         templates_section = self._create_settings_section(
@@ -2002,6 +2127,109 @@ class LokalRAGApp(toga.App):
 
             self.show_info_dialog("Success", f"Template '{selected}' deleted successfully")
 
+    def _on_chat_system_prompt_changed(self, widget):
+        """Handle system prompt selection change in Chat tab."""
+        selected = self.chat_system_prompt_selection.value
+        if selected:
+            self.chat_active_prompt = selected
+            logger.info(f"Active chat prompt changed to: {selected}")
+
+    def _on_chat_prompt_selected(self, widget):
+        """Handle chat prompt selection change in Settings tab."""
+        # Check if UI is fully initialized (may be called during settings load)
+        if not hasattr(self, 'chat_prompt_name_input'):
+            return
+
+        selected = self.chat_prompt_selection.value
+        if selected and selected != "None":
+            # Find prompt by name
+            prompt = next((p for p in self.chat_prompts if p["name"] == selected), None)
+            if prompt:
+                self.chat_prompt_name_input.value = prompt["name"]
+                self.chat_prompt_content_input.value = prompt["content"]
+                self.delete_chat_prompt_button.enabled = True
+                logger.info(f"Chat prompt selected for editing: {selected}")
+        else:
+            # Clear fields
+            self.chat_prompt_name_input.value = ""
+            self.chat_prompt_content_input.value = ""
+            self.delete_chat_prompt_button.enabled = False
+
+    def _on_add_chat_prompt(self, widget):
+        """Handle add chat prompt button press."""
+        name = self.chat_prompt_name_input.value or ""
+        content = self.chat_prompt_content_input.value or ""
+
+        if not name.strip():
+            self.show_error_dialog("Error", "Prompt name cannot be empty")
+            return
+
+        if not content.strip():
+            self.show_error_dialog("Error", "Prompt content cannot be empty")
+            return
+
+        # Check if prompt with this name already exists
+        existing = next((p for p in self.chat_prompts if p["name"] == name), None)
+        if existing:
+            # Update existing prompt
+            existing["content"] = content
+            logger.info(f"Updated chat prompt: {name}")
+        else:
+            # Add new prompt
+            self.chat_prompts.append({"name": name, "content": content})
+            logger.info(f"Added new chat prompt: {name}")
+
+        # Update prompt selection dropdowns (Settings + Chat tab)
+        self._update_chat_prompt_selection()
+
+        # Clear fields
+        self.chat_prompt_name_input.value = ""
+        self.chat_prompt_content_input.value = ""
+        self.chat_prompt_selection.value = "None"
+
+        self.show_info_dialog("Success", f"Chat prompt '{name}' saved successfully")
+
+    def _on_delete_chat_prompt(self, widget):
+        """Handle delete chat prompt button press."""
+        selected = self.chat_prompt_selection.value
+        if selected and selected != "None":
+            # Don't allow deleting if it's the last prompt
+            if len(self.chat_prompts) == 1:
+                self.show_error_dialog("Error", "Cannot delete the last prompt. At least one prompt must exist.")
+                return
+
+            # Remove prompt
+            self.chat_prompts = [p for p in self.chat_prompts if p["name"] != selected]
+            logger.info(f"Deleted chat prompt: {selected}")
+
+            # If deleted prompt was active, switch to first available
+            if self.chat_active_prompt == selected:
+                self.chat_active_prompt = self.chat_prompts[0]["name"] if self.chat_prompts else "Default RAG Assistant"
+
+            # Update prompt selection dropdowns
+            self._update_chat_prompt_selection()
+
+            # Clear fields
+            self.chat_prompt_name_input.value = ""
+            self.chat_prompt_content_input.value = ""
+            self.chat_prompt_selection.value = "None"
+            self.delete_chat_prompt_button.enabled = False
+
+            self.show_info_dialog("Success", f"Chat prompt '{selected}' deleted successfully")
+
+    def _update_chat_prompt_selection(self):
+        """Update chat prompt selection dropdowns with current prompts."""
+        prompt_names = ["None"] + [p["name"] for p in self.chat_prompts]
+        self.chat_prompt_selection.items = prompt_names
+        # Also update Chat tab prompt selection if it exists
+        if hasattr(self, 'chat_system_prompt_selection'):
+            active_prompts = [p["name"] for p in self.chat_prompts]
+            self.chat_system_prompt_selection.items = active_prompts
+            # Set to active prompt if available
+            if self.chat_active_prompt in active_prompts:
+                self.chat_system_prompt_selection.value = self.chat_active_prompt
+        logger.info(f"Updated chat prompt selection: {len(self.chat_prompts)} prompts")
+
     def _update_template_selection(self):
         """Update template selection dropdown with current templates."""
         template_names = ["None"] + [t["name"] for t in self.note_templates]
@@ -2104,6 +2332,34 @@ class LokalRAGApp(toga.App):
             return None  # ← IMPORTANT: None means "all"
         return value
 
+    def get_chat_active_prompt(self) -> str:
+        """
+        Get the content of the currently active chat prompt.
+
+        Returns:
+            str: The system prompt content for the chat
+        """
+        # Find prompt by name
+        prompt = next((p for p in self.chat_prompts if p["name"] == self.chat_active_prompt), None)
+        if prompt:
+            return prompt["content"]
+        # Fallback to default RAG prompt if not found
+        default_prompt = next((p for p in self.chat_prompts if p["name"] == "Default RAG Assistant"), None)
+        if default_prompt:
+            return default_prompt["content"]
+        # Ultimate fallback
+        from app_config import RAG_SYSTEM_PROMPT
+        return RAG_SYSTEM_PROMPT
+
+    def get_llm_provider_chat(self) -> str:
+        """
+        Get the selected LLM provider for chat.
+
+        Returns:
+            str: The LLM provider name ("ollama", "lmstudio", "claude", "gemini", "mistral")
+        """
+        return self.llm_provider_chat_selection.value
+
     def get_note_text(self) -> str:
         """Get the current note text."""
         return self.note_text.value or ""
@@ -2175,6 +2431,7 @@ class LokalRAGApp(toga.App):
 
         return {
             "llm_provider": self.llm_provider_selection.value,
+            "llm_provider_chat": self.llm_provider_chat_selection.value,
             # Ollama
             "ollama_base_url": self.ollama_url_input.value or "http://localhost:11434",
             "ollama_model": self.ollama_model_input.value or "qwen2.5:7b-instruct",
@@ -2212,6 +2469,9 @@ class LokalRAGApp(toga.App):
             "embedding_cache_dir": self.embedding_cache_dir_input.value or str(Path.home() / ".cache" / "huggingface" / "hub"),  # ← NEW (HuggingFace cache)
             # Note Templates (NEW)
             "note_templates": self.note_templates,  # ← NEW: list of template dicts
+            # Chat Prompts (NEW)
+            "chat_prompts": self.chat_prompts,  # ← NEW: list of chat prompt dicts
+            "chat_active_prompt": self.chat_active_prompt,  # ← NEW: currently active prompt name
             # Chat Settings (NEW)
             "chat_context_messages": int(self.chat_context_input.value or "10"),  # ← NEW: chat context limit
             "rag_top_k": int(self.rag_topk_input.value or "20"),  # ← NEW: RAG retrieval count
@@ -2250,6 +2510,11 @@ class LokalRAGApp(toga.App):
             provider = settings["llm_provider"]
             logger.info(f"Setting LLM provider to: {provider}")
             self.llm_provider_selection.value = provider
+
+        if "llm_provider_chat" in settings:
+            provider_chat = settings["llm_provider_chat"]
+            logger.info(f"Setting LLM provider (chat) to: {provider_chat}")
+            self.llm_provider_chat_selection.value = provider_chat
 
         # Ollama
         if "ollama_base_url" in settings:
@@ -2359,6 +2624,16 @@ class LokalRAGApp(toga.App):
             self.note_templates = settings["note_templates"]
             self._update_template_selection()  # Update both dropdowns
             logger.info(f"Loaded {len(self.note_templates)} note templates")
+
+        # Chat prompts (NEW)
+        if "chat_prompts" in settings:
+            self.chat_prompts = settings["chat_prompts"]
+            self._update_chat_prompt_selection()  # Update both dropdowns
+            logger.info(f"Loaded {len(self.chat_prompts)} chat prompts")
+
+        if "chat_active_prompt" in settings:
+            self.chat_active_prompt = settings["chat_active_prompt"]
+            logger.info(f"Active chat prompt: {self.chat_active_prompt}")
 
         # Chat settings (NEW)
         if "chat_context_messages" in settings:

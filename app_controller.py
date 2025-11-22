@@ -363,15 +363,19 @@ class TogaAppOrchestrator:
         # Get search type from view
         search_type = self.view.get_search_type()
 
+        # Get LLM provider for chat and active prompt
+        llm_provider_chat = self.view.get_llm_provider_chat()
+        chat_prompt = self.view.get_chat_active_prompt()
+
         # Spawn worker thread
         worker = threading.Thread(
             target=rag_chat_worker,
-            args=(query, self.config, self.storage, self.view_queue, search_type, self.chat_history),
+            args=(query, self.config, self.storage, self.view_queue, search_type, self.chat_history, llm_provider_chat, chat_prompt),
             daemon=True,
         )
         worker.start()
 
-        logger.info(f"Started chat query: {query[:50]}... (search_type: {search_type})")
+        logger.info(f"Started chat query: {query[:50]}... (search_type: {search_type}, llm_provider: {llm_provider_chat})")
 
     def on_save_note(self) -> None:
         """
@@ -1008,6 +1012,8 @@ def rag_chat_worker(
     view_queue: queue.Queue,
     search_type: Optional[str] = None,
     chat_history: Optional[list[dict]] = None,
+    llm_provider_chat: Optional[str] = None,
+    chat_prompt: Optional[str] = None,
 ) -> None:
     """
     Worker function to handle RAG chat queries.
@@ -1024,6 +1030,8 @@ def rag_chat_worker(
         view_queue: Queue for sending updates to the GUI
         search_type: Filter search by type ("document", "note", or None for all)
         chat_history: Previous chat messages for context (list of {"role": "...", "content": "..."})
+        llm_provider_chat: LLM provider to use for chat (overrides config.LLM_PROVIDER)
+        chat_prompt: System prompt for chat (overrides default RAG_SYSTEM_PROMPT)
     """
     try:
         # Step 1: Expand query with date variations for better search
@@ -1067,7 +1075,14 @@ def rag_chat_worker(
             logger.info(f"Total context size: {total_chars} characters ({total_chars // 1000}K)")
 
             # Step 3: Generate response with context and history
-            response = fn_get_rag_response(query, retrieved_docs, config, chat_history or [])
+            response = fn_get_rag_response(
+                query,
+                retrieved_docs,
+                config,
+                chat_history or [],
+                llm_provider=llm_provider_chat,
+                system_prompt=chat_prompt
+            )
 
         # Step 4: Update chat history
         if chat_history is not None:
