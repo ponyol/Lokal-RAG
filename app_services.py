@@ -1647,13 +1647,56 @@ def fn_fetch_web_article(url: str, config: AppConfig, view_queue: Optional['queu
         if "medium.com" in domain:
             headers["Referer"] = "https://medium.com/"
 
+        # DEBUG: Log cookies that will be sent
+        if cookies:
+            logger.info("🔍 DEBUG: Preparing to send cookies with httpx.Client")
+            logger.info(f"🔍 Cookie jar type: {type(cookies)}")
+
+            # Convert CookieJar to dict for better httpx compatibility
+            # browser_cookie3 returns http.cookiejar.CookieJar
+            # httpx works better with dict or httpx.Cookies
+            cookie_dict = {}
+            for cookie in cookies:
+                cookie_dict[cookie.name] = cookie.value
+                logger.info(f"🔍   Cookie: {cookie.name} = {cookie.value[:20]}... (domain: {cookie.domain}, path: {cookie.path})")
+
+            logger.info(f"🔍 Total cookies to send: {len(cookie_dict)}")
+
+            # Use dict instead of CookieJar for httpx
+            cookies_to_use = cookie_dict
+        else:
+            logger.info("No cookies to send")
+            cookies_to_use = None
+
         with httpx.Client(
-            cookies=cookies,
+            cookies=cookies_to_use,
             follow_redirects=True,
             timeout=config.WEB_REQUEST_TIMEOUT
         ) as client:
             logger.info(f"Fetching URL: {url}")
+
+            # DEBUG: Log actual cookies being sent in request
+            logger.info("🔍 DEBUG: httpx.Client initialized")
+            if client.cookies:
+                actual_cookies = dict(client.cookies)
+                logger.info(f"🔍 Cookies in httpx.Client: {len(actual_cookies)} cookies")
+                for name, value in list(actual_cookies.items())[:5]:
+                    logger.info(f"🔍   {name} = {value[:20]}...")
+            else:
+                logger.warning("🔍 ⚠️  httpx.Client has NO cookies!")
+
             response = client.get(url, headers=headers)
+
+            # DEBUG: Check what cookies were actually sent in request
+            logger.info("🔍 DEBUG: Request completed")
+            if hasattr(response, 'request') and hasattr(response.request, 'headers'):
+                cookie_header = response.request.headers.get('cookie', 'None')
+                if cookie_header != 'None':
+                    logger.info(f"🔍 Cookie header sent: {cookie_header[:200]}...")
+                else:
+                    logger.error("🔍 ✗ NO Cookie header was sent in request!")
+                    logger.error("🔍 This explains why authentication failed!")
+
             response.raise_for_status()  # Raise exception for 4xx/5xx
 
             # Log response details for debugging
