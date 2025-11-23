@@ -130,10 +130,18 @@ class TogaAppOrchestrator:
 
     def load_settings_to_ui(self) -> None:
         """Load saved settings from JSON into the UI."""
-        from app_config import load_settings_from_json
+        from app_config import load_settings_from_json, load_config_location_preference
 
         try:
-            settings = load_settings_from_json()
+            # Load user's saved config location preference
+            config_location = load_config_location_preference()
+            logger.info(f"Loading settings to UI from {config_location} location")
+
+            # Set the config location in UI to match saved preference
+            self.view.set_config_location(config_location)
+
+            # Load settings from the saved location
+            settings = load_settings_from_json(config_location)
             if settings:
                 logger.info(f"Found settings file with keys: {list(settings.keys())}")
                 self.view.set_llm_settings(settings)
@@ -541,10 +549,18 @@ class TogaAppOrchestrator:
         and applies it to the running application.
         """
         try:
-            from app_config import load_settings_from_json, create_config_from_settings
+            from app_config import (
+                load_settings_from_json,
+                create_config_from_settings,
+                save_config_location_preference
+            )
 
             # Get the selected config location from UI
             location = self.view.get_config_location()
+
+            # Save location preference for next app startup
+            save_config_location_preference(location)
+            logger.info(f"Saved config location preference: {location}")
 
             # Load settings from the selected path
             settings = load_settings_from_json(location)
@@ -612,7 +628,11 @@ class TogaAppOrchestrator:
         Saves LLM configuration to the selected path (home or project).
         """
         try:
-            from app_config import save_settings_to_json, create_config_from_settings
+            from app_config import (
+                save_settings_to_json,
+                create_config_from_settings,
+                save_config_location_preference
+            )
             from dataclasses import replace
 
             # Get settings from UI
@@ -620,6 +640,10 @@ class TogaAppOrchestrator:
 
             # Get the selected config location from UI
             location = self.view.get_config_location()
+
+            # Save location preference for next app startup
+            save_config_location_preference(location)
+            logger.info(f"Saved config location preference: {location}")
 
             # Save to JSON at the selected location
             save_settings_to_json(settings, location)

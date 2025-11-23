@@ -22,7 +22,7 @@ import sys
 import warnings
 from pathlib import Path
 
-from app_config import create_config_from_settings
+from app_config import create_config_from_settings, load_config_location_preference, load_settings_from_json
 from app_controller import TogaAppOrchestrator
 from app_services import fn_check_ollama_availability
 from app_storage import StorageService, fn_ensure_directories_exist
@@ -150,10 +150,15 @@ def main() -> None:
             logger.warning(f"Could not suppress native logs: {e}")
 
     try:
-        # Create configuration
+        # Load user's saved config location preference
+        config_location = load_config_location_preference()
+        logger.info(f"Config location preference: {config_location}")
+
+        # Create configuration from saved location
         logger.info("Loading configuration...")
-        config = create_config_from_settings()
-        logger.info(f"✓ Configuration loaded")
+        settings = load_settings_from_json(config_location)
+        config = create_config_from_settings(settings)
+        logger.info(f"✓ Configuration loaded from {config_location}")
         logger.info(f"  - LLM Provider: {config.LLM_PROVIDER}")
         if config.LLM_PROVIDER == "ollama":
             logger.info(f"  - Ollama Model: {config.OLLAMA_MODEL}")
