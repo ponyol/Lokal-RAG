@@ -133,6 +133,9 @@ class LokalRAGApp(toga.App):
         self.chat_prompts = []  # Will be loaded from settings
         self.chat_active_prompt = "Default RAG Assistant"  # Currently active prompt
 
+        # Config paths (set by orchestrator from config)
+        self.changelog_path = Path("./changelog")  # Default, will be updated by controller
+
         # Chat messages storage (for markdown rendering)
         self._chat_messages = []  # List of tuples: (role, message)
 
@@ -1817,7 +1820,8 @@ class LokalRAGApp(toga.App):
 
     def _load_changelog_files(self):
         """Load changelog files and populate selection."""
-        changelog_path = Path("./changelog")
+        # Use configured changelog path instead of hardcoded "./changelog"
+        changelog_path = self.changelog_path
         if not changelog_path.exists():
             # Clear items properly to update the UI
             self.changelog_file_selection.items.clear()
@@ -2544,6 +2548,16 @@ class LokalRAGApp(toga.App):
             "theme": self.theme_selection.value.lower(),  # ← NEW: "light" or "dark"
             "window_size": self.window_size_selection.value,  # ← NEW: window size
         }
+
+    def set_changelog_path(self, path: Path) -> None:
+        """
+        Set the changelog directory path from config.
+
+        Args:
+            path: Path to changelog directory
+        """
+        self.changelog_path = path
+        logger.info(f"Changelog path set to: {path}")
 
     def set_config_location(self, location: str) -> None:
         """
