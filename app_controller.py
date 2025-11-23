@@ -119,9 +119,13 @@ class TogaAppOrchestrator:
         Initialize the UI after widgets are created.
 
         This method:
-        1. Loads saved settings from JSON
-        2. Displays initial status messages
+        1. Sets config paths (changelog, etc.)
+        2. Loads saved settings from JSON
+        3. Displays initial status messages
         """
+        # Set config paths in view
+        self.view.set_changelog_path(self.config.CHANGELOG_PATH)
+
         # Load settings
         self.load_settings_to_ui()
 
@@ -576,6 +580,9 @@ class TogaAppOrchestrator:
                 old_config = self.config
                 self.config = create_config_from_settings(settings)
 
+                # Update view with new config paths
+                self.view.set_changelog_path(self.config.CHANGELOG_PATH)
+
                 # Log configuration changes
                 logger.info(
                     f"Configuration updated - "
@@ -650,6 +657,9 @@ class TogaAppOrchestrator:
 
             # Update the controller's config
             self.config = create_config_from_settings(settings)
+
+            # Update view with new config paths
+            self.view.set_changelog_path(self.config.CHANGELOG_PATH)
 
             # Show success message
             self.view.show_info_dialog(
