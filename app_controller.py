@@ -537,10 +537,11 @@ class TogaAppOrchestrator:
         """
         Handle the "Load Settings" button click.
 
-        Loads LLM configuration from the selected path (home or project).
+        Loads LLM configuration from the selected path (home or project)
+        and applies it to the running application.
         """
         try:
-            from app_config import load_settings_from_json
+            from app_config import load_settings_from_json, create_config_from_settings
 
             # Get the selected config location from UI
             location = self.view.get_config_location()
@@ -550,11 +551,48 @@ class TogaAppOrchestrator:
 
             if settings:
                 logger.info(f"Loading settings from {location}: {list(settings.keys())}")
+
+                # Update UI with loaded settings
                 self.view.set_llm_settings(settings)
-                self.view.show_info_dialog(
-                    "Settings Loaded",
-                    f"Settings loaded successfully from {location} location!"
+
+                # IMPORTANT: Update the controller's config to apply changes
+                # This ensures all operations use the new configuration
+                old_config = self.config
+                self.config = create_config_from_settings(settings)
+
+                # Log configuration changes
+                logger.info(
+                    f"Configuration updated - "
+                    f"Provider: {self.config.LLM_PROVIDER}, "
+                    f"DB Language: {self.config.DATABASE_LANGUAGE}, "
+                    f"Embedding Model: {self.config.EMBEDDING_MODEL}"
                 )
+
+                # Check if storage-critical settings changed (DB language or paths)
+                storage_changed = (
+                    old_config.DATABASE_LANGUAGE != self.config.DATABASE_LANGUAGE or
+                    old_config.VECTOR_DB_PATH_EN != self.config.VECTOR_DB_PATH_EN or
+                    old_config.VECTOR_DB_PATH_RU != self.config.VECTOR_DB_PATH_RU or
+                    old_config.EMBEDDING_MODEL != self.config.EMBEDDING_MODEL
+                )
+
+                if storage_changed:
+                    logger.warning(
+                        "Storage-critical settings changed. "
+                        "Restart application to apply changes to vector database."
+                    )
+                    self.view.show_info_dialog(
+                        "Settings Loaded",
+                        f"Settings loaded successfully from {location} location!\n\n"
+                        "⚠️ Database or embedding settings changed.\n"
+                        "Please RESTART the application to apply these changes."
+                    )
+                else:
+                    self.view.show_info_dialog(
+                        "Settings Loaded",
+                        f"Settings loaded successfully from {location} location!\n"
+                        "Changes applied to the running application."
+                    )
             else:
                 logger.info(f"No settings file found at {location} location")
                 self.view.show_info_dialog(
