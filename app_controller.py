@@ -130,6 +130,9 @@ class TogaAppOrchestrator:
         # Set config paths in view (using updated config)
         self.view.set_changelog_path(self.config.CHANGELOG_PATH)
 
+        # Load changelog files from the configured path
+        self.view.load_changelog_files()
+
         # Display initial status
         self._display_initial_status()
 
@@ -595,6 +598,9 @@ class TogaAppOrchestrator:
                 # Update view with new config paths
                 self.view.set_changelog_path(self.config.CHANGELOG_PATH)
 
+                # Reload changelog files from new path
+                self.view.load_changelog_files()
+
                 # Log configuration changes
                 logger.info(
                     f"Configuration updated - "
@@ -672,6 +678,9 @@ class TogaAppOrchestrator:
 
             # Update view with new config paths
             self.view.set_changelog_path(self.config.CHANGELOG_PATH)
+
+            # Reload changelog files from new path
+            self.view.load_changelog_files()
 
             # Show success message
             self.view.show_info_dialog(

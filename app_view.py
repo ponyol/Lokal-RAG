@@ -876,8 +876,8 @@ class LokalRAGApp(toga.App):
         self._render_changelog_html("")
         container.add(self.changelog_content)
 
-        # Load files on startup
-        self._load_changelog_files()
+        # NOTE: Don't load files here - will be loaded in _init_ui()
+        # after changelog_path is set from config
 
         return toga.ScrollContainer(
             content=container,
@@ -2558,6 +2558,14 @@ class LokalRAGApp(toga.App):
         """
         self.changelog_path = path
         logger.info(f"Changelog path set to: {path}")
+
+    def load_changelog_files(self) -> None:
+        """
+        Load changelog files from the configured path.
+
+        This is called by the controller after changelog_path is set.
+        """
+        self._load_changelog_files()
 
     def set_config_location(self, location: str) -> None:
         """
