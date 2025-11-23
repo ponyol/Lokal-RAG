@@ -303,15 +303,25 @@ class LokalRAGApp(toga.App):
 
         V2: Added web authentication settings (use_cookies, browser_choice, save_raw_html)
         V2: Fixed vision_mode to use display text + mapping
+        V3: Changed layout - Processing Log moved to right side (1/3 width, full height)
 
         Returns:
             toga.Widget: The ingestion tab content
         """
-        # Main container (vertical layout) - Apply theme background
-        container = toga.Box(
+        # Main horizontal container (2 columns: controls on left, log on right)
+        main_container = toga.Box(
+            style=self._get_container_style(
+                direction=ROW,
+                margin=0
+            )
+        )
+
+        # Left container (2/3 width) - All controls
+        left_container = toga.Box(
             style=self._get_container_style(
                 direction=COLUMN,
-                margin=20
+                margin=20,
+                flex=2
             )
         )
 
@@ -324,7 +334,7 @@ class LokalRAGApp(toga.App):
                 font_weight="bold"
             )
         )
-        container.add(title)
+        left_container.add(title)
 
         # ---- Source Type Selection ----
         source_label = toga.Label(
@@ -335,7 +345,7 @@ class LokalRAGApp(toga.App):
                 font_weight="bold"
             )
         )
-        container.add(source_label)
+        left_container.add(source_label)
 
         # Source type selector
         self.source_type_selection = toga.Selection(
@@ -344,7 +354,7 @@ class LokalRAGApp(toga.App):
         )
         self.source_type_selection.value = "Web URLs"
         self.source_type_selection.on_change = self._on_source_type_changed
-        container.add(self.source_type_selection)
+        left_container.add(self.source_type_selection)
 
         # ---- PDF/Folder Selection ----
         folder_box = toga.Box(style=Pack(direction=ROW, margin=5))
@@ -365,20 +375,20 @@ class LokalRAGApp(toga.App):
         folder_box.add(folder_label)
         folder_box.add(self.folder_input)
         folder_box.add(folder_button)
-        container.add(folder_box)
+        left_container.add(folder_box)
 
         # ---- Web URL Input (Multiline for multiple URLs) ----
         url_label = toga.Label(
             "Web URLs (one per line):",
             style=Pack(margin=5, margin_bottom=2)
         )
-        container.add(url_label)
+        left_container.add(url_label)
 
         self.url_input = toga.MultilineTextInput(
             placeholder="https://example.com/article1\nhttps://example.com/article2\n...",
             style=Pack(height=100, margin=5)
         )
-        container.add(self.url_input)
+        left_container.add(self.url_input)
 
         # ---- V2: Web Authentication Options ----
         auth_label = toga.Label(
@@ -389,7 +399,7 @@ class LokalRAGApp(toga.App):
                 font_weight="bold"
             )
         )
-        container.add(auth_label)
+        left_container.add(auth_label)
 
         # Use cookies
         self.use_cookies_switch = toga.Switch(
@@ -397,7 +407,7 @@ class LokalRAGApp(toga.App):
             value=True,
             style=Pack(margin=5)
         )
-        container.add(self.use_cookies_switch)
+        left_container.add(self.use_cookies_switch)
 
         # Browser selection
         browser_box = toga.Box(style=Pack(direction=ROW, margin=5))
@@ -412,13 +422,13 @@ class LokalRAGApp(toga.App):
         self.browser_selection.value = "firefox"
         browser_box.add(browser_label)
         browser_box.add(self.browser_selection)
-        container.add(browser_box)
+        left_container.add(browser_box)
 
         browser_hint = toga.Label(
             "(Select where you're logged in to the site)",
             style=Pack(margin_left=185, margin_bottom=5, font_size=10)
         )
-        container.add(browser_hint)
+        left_container.add(browser_hint)
 
         # Save raw HTML for debugging
         self.save_html_switch = toga.Switch(
@@ -426,7 +436,7 @@ class LokalRAGApp(toga.App):
             value=False,
             style=Pack(margin=5)
         )
-        container.add(self.save_html_switch)
+        left_container.add(self.save_html_switch)
 
         # ---- Processing Options ----
         options_label = toga.Label(
@@ -437,7 +447,7 @@ class LokalRAGApp(toga.App):
                 font_weight="bold"
             )
         )
-        container.add(options_label)
+        left_container.add(options_label)
 
         # Translation checkbox
         self.translate_switch = toga.Switch(
@@ -445,7 +455,7 @@ class LokalRAGApp(toga.App):
             value=False,
             style=Pack(margin=5)
         )
-        container.add(self.translate_switch)
+        left_container.add(self.translate_switch)
 
         # Auto-tagging checkbox
         self.tagging_switch = toga.Switch(
@@ -453,7 +463,7 @@ class LokalRAGApp(toga.App):
             value=True,
             style=Pack(margin=5)
         )
-        container.add(self.tagging_switch)
+        left_container.add(self.tagging_switch)
 
         # V2: Vision mode selection (FIXED - display text + mapping)
         vision_box = toga.Box(style=Pack(direction=ROW, margin=5))
@@ -468,7 +478,7 @@ class LokalRAGApp(toga.App):
         self.vision_mode_selection.value = "Auto (Smart Fallback)"
         vision_box.add(vision_label)
         vision_box.add(self.vision_mode_selection)
-        container.add(vision_box)
+        left_container.add(vision_box)
 
         # ---- Action Buttons ----
         button_box = toga.Box(
@@ -497,35 +507,51 @@ class LokalRAGApp(toga.App):
         )
         button_box.add(self.start_button)
         button_box.add(self.clear_log_button)
-        container.add(button_box)
+        left_container.add(button_box)
 
-        # ---- Processing Log (Scrollable) ----
-        log_label = toga.Label(
-            "Processing Log:",
-            style=Pack(
-                margin_top=10,
-                margin_bottom=5,
-                font_weight="bold"
+        # Wrap left container in ScrollContainer for scrolling controls
+        left_scroll = toga.ScrollContainer(
+            content=left_container,
+            style=Pack(flex=2)
+        )
+
+        # ---- Right container (1/3 width) - Processing Log ----
+        right_container = toga.Box(
+            style=self._get_container_style(
+                direction=COLUMN,
+                margin=20,
+                margin_left=0,
+                flex=1
             )
         )
-        container.add(log_label)
 
-        # MultilineTextInput for logs (readonly)
+        # Processing Log title
+        log_label = toga.Label(
+            "📋 Processing Log:",
+            style=Pack(
+                margin_bottom=10,
+                font_weight="bold",
+                font_size=14
+            )
+        )
+        right_container.add(log_label)
+
+        # MultilineTextInput for logs (readonly) - takes full height
         self.log_output = toga.MultilineTextInput(
             readonly=True,
             placeholder="Processing logs will appear here...",
             style=Pack(
-                flex=1,
-                height=250
+                flex=1  # Takes all available vertical space
             )
         )
-        container.add(self.log_output)
+        right_container.add(self.log_output)
 
-        # Wrap in ScrollContainer for native scrolling
-        return toga.ScrollContainer(
-            content=container,
-            style=Pack()
-        )
+        # Add both containers to main horizontal container
+        main_container.add(left_scroll)
+        main_container.add(right_container)
+
+        # Return main container (no outer ScrollContainer needed)
+        return main_container
 
     def _create_chat_tab(self) -> toga.Widget:
         """
