@@ -119,22 +119,27 @@ class TogaAppOrchestrator:
         Initialize the UI after widgets are created.
 
         This method:
-        1. Sets config paths (changelog, etc.)
-        2. Loads saved settings from JSON
+        1. Loads saved settings from JSON (updates config)
+        2. Sets config paths (changelog, etc.) from updated config
         3. Displays initial status messages
         """
-        # Set config paths in view
-        self.view.set_changelog_path(self.config.CHANGELOG_PATH)
-
-        # Load settings
+        # IMPORTANT: Load settings FIRST to update config
+        # (This may change config.CHANGELOG_PATH and other paths)
         self.load_settings_to_ui()
+
+        # Set config paths in view (using updated config)
+        self.view.set_changelog_path(self.config.CHANGELOG_PATH)
 
         # Display initial status
         self._display_initial_status()
 
     def load_settings_to_ui(self) -> None:
-        """Load saved settings from JSON into the UI."""
-        from app_config import load_settings_from_json, load_config_location_preference
+        """Load saved settings from JSON into the UI and update config."""
+        from app_config import (
+            load_settings_from_json,
+            load_config_location_preference,
+            create_config_from_settings
+        )
 
         try:
             # Load user's saved config location preference
@@ -148,7 +153,14 @@ class TogaAppOrchestrator:
             settings = load_settings_from_json(config_location)
             if settings:
                 logger.info(f"Found settings file with keys: {list(settings.keys())}")
+
+                # Update UI with settings
                 self.view.set_llm_settings(settings)
+
+                # IMPORTANT: Update controller's config from loaded settings
+                # This ensures config paths (changelog, etc.) are correct
+                self.config = create_config_from_settings(settings)
+                logger.info(f"Config updated from settings: changelog_path={self.config.CHANGELOG_PATH}")
             else:
                 logger.info("No settings file found, using defaults")
         except Exception as e:
