@@ -745,10 +745,60 @@ def processing_pipeline_worker(
 
     for item in items:
         try:
+            # Step 0: Check for duplicates before processing
+            # Prepare metadata for duplicate check
+            if source_type == "pdf":
+                # For PDF files, use filename as source
+                check_url = None
+                check_source = item.name
+                item_name = item.name
+            else:
+                # For web articles, use URL
+                check_url = item
+                check_source = item
+                item_name = item.split("://")[-1][:50] + "..."  # Shortened URL for display
+
+            # Check if document already exists in database
+            view_queue.put(f"LOG: Checking for duplicates: {item_name}...")
+            try:
+                if storage.check_document_exists(url=check_url, source=check_source):
+                    # Document already exists - skip processing
+                    view_queue.put(f"LOG: ⚠️  DUPLICATE SKIPPED: {item_name}")
+                    view_queue.put(f"LOG:   Document already exists in database")
+
+                    # Structured logging with context
+                    logger.info(
+                        f"Content ingestion: Duplicate document skipped - "
+                        f"type: {source_type}, "
+                        f"url: {check_url or 'N/A'}, "
+                        f"source: {check_source or 'N/A'}, "
+                        f"item: {item_name}"
+                    )
+                    continue  # Skip to next item
+                else:
+                    view_queue.put(f"LOG:   ✓ Document is new, proceeding with processing")
+                    logger.debug(
+                        f"Content ingestion: New document detected - "
+                        f"type: {source_type}, "
+                        f"url: {check_url or 'N/A'}, "
+                        f"source: {check_source or 'N/A'}, "
+                        f"item: {item_name}"
+                    )
+            except Exception as dup_check_error:
+                # If duplicate check fails, log warning and continue processing
+                logger.warning(
+                    f"Content ingestion: Duplicate check failed (non-fatal) - "
+                    f"error: {dup_check_error}, "
+                    f"type: {source_type}, "
+                    f"url: {check_url or 'N/A'}, "
+                    f"source: {check_source or 'N/A'}, "
+                    f"item: {item_name}"
+                )
+                view_queue.put(f"LOG:   ⚠️  Duplicate check failed, proceeding anyway")
+
             # Step 1: Extract Markdown from source
             if source_type == "pdf":
                 # File processing (PDF or MD)
-                item_name = item.name
                 view_queue.put(f"LOG: Processing {item_name}...")
 
                 # Check file extension
@@ -763,7 +813,6 @@ def processing_pipeline_worker(
                     view_queue.put(f"LOG:   ✓ Extracted Markdown ({len(markdown_text)} chars)")
             else:
                 # Web article processing (HTML or MD URL)
-                item_name = item.split("://")[-1][:50] + "..."  # Shortened URL for display
                 view_queue.put(f"LOG: Fetching {item}...")
 
                 # Check if URL ends with .md

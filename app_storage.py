@@ -617,6 +617,86 @@ class StorageService:
         # Step 3: Return normal search results
         return top_chunks
 
+    def check_document_exists(self, url: Optional[str] = None, source: Optional[str] = None) -> bool:
+        """
+        Check if a document already exists in the database by URL or source metadata.
+
+        This method queries the active vector database to determine if a document
+        with the given URL or source already exists. It checks the first chunk only
+        (chunk_index=0) to avoid counting multiple chunks of the same document.
+
+        Args:
+            url: The URL of the document (for web articles)
+            source: The source filename or identifier (for PDFs or local files)
+
+        Returns:
+            bool: True if document exists, False otherwise
+
+        Example:
+            >>> storage = StorageService(config)
+            >>> exists = storage.check_document_exists(url="https://example.com/article")
+            >>> if exists:
+            ...     print("Document already in database")
+        """
+        if self._vectorstore is None:
+            raise RuntimeError("Vector store not initialized")
+
+        # Build where clause for ChromaDB query
+        # We check both URL and source to handle both web articles and PDF files
+        where_clause = None
+
+        if url is not None and source is not None:
+            # Check if either URL or source matches (logical OR)
+            # ChromaDB supports $or operator
+            where_clause = {
+                "$or": [
+                    {"url": url},
+                    {"source": source}
+                ]
+            }
+        elif url is not None:
+            where_clause = {"url": url}
+        elif source is not None:
+            where_clause = {"source": source}
+        else:
+            # No criteria provided
+            logger.warning("check_document_exists called without url or source")
+            return False
+
+        try:
+            # Query ChromaDB for documents matching the criteria
+            # We only need to check if ANY chunks exist (limit=1 for efficiency)
+            collection = self._vectorstore._collection
+            results = collection.get(
+                where=where_clause,
+                limit=1,  # Only need to check existence, not retrieve all
+                include=[]  # Don't fetch documents or embeddings, just check existence
+            )
+
+            # If results has any IDs, document exists
+            exists = results and results.get('ids') and len(results['ids']) > 0
+
+            if exists:
+                # Structured logging for duplicate detection
+                logger.info(
+                    f"Duplicate document detected - "
+                    f"url: {url or 'N/A'}, source: {source or 'N/A'}, "
+                    f"database: {self.config.DATABASE_LANGUAGE}"
+                )
+            else:
+                logger.debug(
+                    f"Document not found in database - "
+                    f"url: {url or 'N/A'}, source: {source or 'N/A'}, "
+                    f"database: {self.config.DATABASE_LANGUAGE}"
+                )
+
+            return exists
+
+        except Exception as e:
+            logger.error(f"Error checking document existence: {e}")
+            # On error, assume document doesn't exist to allow processing
+            return False
+
     def get_document_count(self) -> int:
         """
         Get the total number of documents in the vector database.

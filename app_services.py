@@ -2531,13 +2531,16 @@ def fn_save_note(note_text: str, config: AppConfig, template_content: Optional[s
     """
     Save a user note to a timestamped markdown file.
 
-    Creates a markdown file with the current date/time as a header,
-    optionally followed by a template, and then the user's note text.
+    Creates a markdown file with the following structure:
+    1. First line of note_text becomes the title (# header)
+    2. Timestamp line (without #): "Заметка от DD MMMM YYYY г., HH:MM:SS"
+    3. Optional template content (if provided)
+    4. Remaining lines of note_text
 
     Args:
-        note_text: The text content of the note
+        note_text: The text content of the note. First line becomes the title.
         config: Application configuration
-        template_content: Optional template content to insert after date
+        template_content: Optional template content to insert after timestamp
 
     Returns:
         Path: Path to the created note file
@@ -2546,11 +2549,24 @@ def fn_save_note(note_text: str, config: AppConfig, template_content: Optional[s
         Exception: If file creation fails
 
     Example:
-        >>> note = "Нужно добавить поддержку экспорта в PDF"
+        >>> note = "Встреча по проекту\n\nОбсудили архитектуру"
         >>> note_path = fn_save_note(note, config)
+        # Creates file with:
+        # # Встреча по проекту
+        # Заметка от 22 ноября 2025 г., 18:57:59
+        #
+        # Обсудили архитектуру
 
-        >>> template = "📋 Meeting Notes\n\nAttendees:\n-"
+        >>> template = "📋 Участники:\n-"
         >>> note_path = fn_save_note(note, config, template_content=template)
+        # Creates file with:
+        # # Встреча по проекту
+        # Заметка от 22 ноября 2025 г., 18:57:59
+        #
+        # 📋 Участники:
+        # -
+        #
+        # Обсудили архитектуру
     """
     from datetime import datetime
 
@@ -2580,14 +2596,38 @@ def fn_save_note(note_text: str, config: AppConfig, template_content: Optional[s
             display_timestamp = display_timestamp.replace(eng, rus)
 
         # Build markdown content
-        content = f"# Заметка от {display_timestamp}\n\n"
+        # Split note text into lines to extract title from first line
+        lines = note_text.strip().split('\n', 1)  # Split only on first newline
 
-        # Add template content if provided
+        # First line becomes the title (with #)
+        if lines and lines[0].strip():
+            first_line = lines[0].strip()
+            # Remove # if user already added it
+            if first_line.startswith('#'):
+                title = first_line
+            else:
+                title = f"# {first_line}"
+
+            # Remaining lines (if any)
+            remaining_text = lines[1].strip() if len(lines) > 1 else ""
+        else:
+            # Empty note - use timestamp as title
+            title = f"# Заметка от {display_timestamp}"
+            remaining_text = ""
+
+        # Build content structure:
+        # 1. Title (from first line)
+        content = f"{title}\n"
+        # 2. Timestamp (without #)
+        content += f"Заметка от {display_timestamp}\n\n"
+
+        # 3. Add template content if provided
         if template_content:
             content += f"{template_content.strip()}\n\n"
 
-        # Add user's note text
-        content += f"{note_text.strip()}\n"
+        # 4. Add remaining note text (everything after first line)
+        if remaining_text:
+            content += f"{remaining_text}\n"
 
         # Write to file
         with open(filepath, 'w', encoding='utf-8') as f:
