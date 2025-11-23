@@ -273,6 +273,63 @@ def load_settings_from_json(location: str = "home") -> dict:
         return {}
 
 
+def save_config_location_preference(location: str) -> None:
+    """
+    Save user's config location preference for persistence across sessions.
+
+    This saves the user's choice of config location (home vs project) to a
+    special file so the application can remember it on next startup.
+
+    Args:
+        location: Either "home" or "project"
+
+    Example:
+        >>> save_config_location_preference("project")
+        # Next app startup will load from project location
+    """
+    from pathlib import Path
+
+    # Save preference to home directory (always)
+    preference_file = Path.home() / ".lokal-rag-location"
+
+    try:
+        with open(preference_file, "w", encoding="utf-8") as f:
+            f.write(location)
+    except Exception as e:
+        print(f"Warning: Failed to save config location preference: {e}")
+
+
+def load_config_location_preference() -> str:
+    """
+    Load user's saved config location preference.
+
+    Returns:
+        str: Either "home" or "project" (defaults to "home" if not set)
+
+    Example:
+        >>> location = load_config_location_preference()
+        >>> settings = load_settings_from_json(location)
+    """
+    from pathlib import Path
+
+    preference_file = Path.home() / ".lokal-rag-location"
+
+    if not preference_file.exists():
+        return "home"  # Default
+
+    try:
+        with open(preference_file, "r", encoding="utf-8") as f:
+            location = f.read().strip()
+            # Validate
+            if location in ["home", "project"]:
+                return location
+            else:
+                return "home"
+    except Exception as e:
+        print(f"Warning: Failed to load config location preference: {e}")
+        return "home"
+
+
 def save_settings_to_json(settings: dict, location: str = "home") -> None:
     """
     Save LLM settings to JSON file.

@@ -2545,6 +2545,18 @@ class LokalRAGApp(toga.App):
             "window_size": self.window_size_selection.value,  # ← NEW: window size
         }
 
+    def set_config_location(self, location: str) -> None:
+        """
+        Set the config file location in the UI.
+
+        Args:
+            location: Either "home" or "project"
+        """
+        if location == "project":
+            self.config_location_selection.value = "Project (.lokal-rag/settings.json)"
+        else:  # "home"
+            self.config_location_selection.value = "Home (~/.lokal-rag/settings.json)"
+
     def get_config_location(self) -> str:
         """
         Get the selected config file location.
