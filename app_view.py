@@ -1819,13 +1819,15 @@ class LokalRAGApp(toga.App):
         """Load changelog files and populate selection."""
         changelog_path = Path("./changelog")
         if not changelog_path.exists():
-            self.changelog_file_selection.items = []
+            # Clear items properly to update the UI
+            self.changelog_file_selection.items.clear()
             self._render_changelog_html("# No changelog directory found\n\nFiles will be created after processing documents.")
             return
 
         files = sorted(changelog_path.glob("*.md"), reverse=True)
         if not files:
-            self.changelog_file_selection.items = []
+            # Clear items properly to update the UI
+            self.changelog_file_selection.items.clear()
             self._render_changelog_html("# No changelog files found\n\nFiles will be created after processing documents.")
             return
 
@@ -1844,7 +1846,13 @@ class LokalRAGApp(toga.App):
             file_items.append(display_name)
             self.changelog_files_map[display_name] = file_path
 
-        self.changelog_file_selection.items = file_items
+        # Clear existing items first, then add new ones
+        # This ensures the Selection widget properly updates in Toga
+        self.changelog_file_selection.items.clear()
+        for item in file_items:
+            self.changelog_file_selection.items.append(item)
+
+        # Select first item if available
         if file_items:
             self.changelog_file_selection.value = file_items[0]
             self._on_changelog_file_changed(None)
