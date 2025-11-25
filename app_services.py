@@ -17,7 +17,9 @@ import gc
 import json
 import logging
 import queue
+import random
 import re
+import time
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -1662,14 +1664,83 @@ def fn_fetch_web_article(url: str, config: AppConfig, view_queue: Optional['queu
             logger.info("No cookies to send")
             cookies_to_use = None
 
+        # Retry configuration for handling rate limiting and bot detection
+        max_retries = 4
+        retry_delays = [2, 4, 8, 16]  # Exponential backoff in seconds
+
+        # Additional User-Agent options for rotation (helps avoid bot detection)
+        user_agents = [
+            config.WEB_USER_AGENT,
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        ]
+
+        response = None
+        last_error = None
+
         with httpx.Client(
             cookies=cookies_to_use,
             follow_redirects=True,
             timeout=config.WEB_REQUEST_TIMEOUT
         ) as client:
-            logger.info(f"Fetching URL: {url}")
-            response = client.get(url, headers=headers)
-            response.raise_for_status()  # Raise exception for 4xx/5xx
+            for attempt in range(max_retries):
+                try:
+                    # Rotate User-Agent on retries to avoid bot detection patterns
+                    if attempt > 0:
+                        headers["User-Agent"] = user_agents[attempt % len(user_agents)]
+                        logger.info(f"Retry attempt {attempt + 1}/{max_retries} (User-Agent rotated)")
+                    else:
+                        logger.info(f"Fetching URL: {url}")
+
+                    # Add random delay before retry (but not on first attempt)
+                    if attempt > 0:
+                        # Add small random jitter to the delay (±20%)
+                        delay = retry_delays[attempt - 1]
+                        jitter = delay * 0.2 * (random.random() * 2 - 1)  # ±20% random jitter
+                        actual_delay = delay + jitter
+                        logger.info(f"Waiting {actual_delay:.1f}s before retry...")
+                        time.sleep(actual_delay)
+
+                    response = client.get(url, headers=headers)
+                    response.raise_for_status()  # Raise exception for 4xx/5xx
+
+                    # Success! Break out of retry loop
+                    if attempt > 0:
+                        logger.info(f"✓ Request succeeded on attempt {attempt + 1}")
+                    break
+
+                except httpx.HTTPStatusError as e:
+                    last_error = e
+                    status_code = e.response.status_code
+
+                    # Retry only on specific error codes
+                    # 403: Forbidden (often temporary bot detection)
+                    # 429: Too Many Requests (rate limiting)
+                    # 503: Service Unavailable (temporary server issue)
+                    if status_code in [403, 429, 503]:
+                        if attempt < max_retries - 1:
+                            logger.warning(
+                                f"⚠️  HTTP {status_code} error (attempt {attempt + 1}/{max_retries}). "
+                                f"This may be temporary rate limiting or bot detection. Retrying..."
+                            )
+                            continue  # Try again
+                        else:
+                            logger.error(f"❌ HTTP {status_code} error persists after {max_retries} attempts")
+                            raise  # Re-raise the exception after all retries exhausted
+                    else:
+                        # For other HTTP errors (401, 404, 500, etc.), don't retry
+                        logger.error(f"❌ HTTP {status_code} error (non-retryable)")
+                        raise
+
+                except Exception as e:
+                    # For non-HTTP errors (network issues, timeouts), don't retry
+                    logger.error(f"❌ Request failed: {type(e).__name__}: {e}")
+                    raise
+
+            # If we exhausted all retries, raise the last error
+            if response is None and last_error:
+                raise last_error
 
             # Log response details for debugging
             content_type = response.headers.get("content-type", "")
@@ -1877,11 +1948,36 @@ def fn_fetch_web_article(url: str, config: AppConfig, view_queue: Optional['queu
                             if view_queue:
                                 view_queue.put(f"LOG:   → Processing web image {idx}/{len(images_to_process)}...")
 
-                            # Download image
+                            # Download image with retry logic (images can also get 403 errors)
+                            img_bytes = None
+                            img_max_retries = 3
+                            img_retry_delays = [1, 2, 4]
+
                             with httpx.Client(timeout=config.WEB_REQUEST_TIMEOUT) as client:
-                                img_response = client.get(img_url, headers={"User-Agent": config.WEB_USER_AGENT})
-                                img_response.raise_for_status()
-                                img_bytes = img_response.content
+                                for img_attempt in range(img_max_retries):
+                                    try:
+                                        if img_attempt > 0:
+                                            delay = img_retry_delays[img_attempt - 1]
+                                            logger.info(f"Image retry {img_attempt + 1}/{img_max_retries}, waiting {delay}s...")
+                                            time.sleep(delay)
+
+                                        img_response = client.get(img_url, headers={"User-Agent": config.WEB_USER_AGENT})
+                                        img_response.raise_for_status()
+                                        img_bytes = img_response.content
+
+                                        if img_attempt > 0:
+                                            logger.info(f"✓ Image download succeeded on attempt {img_attempt + 1}")
+                                        break
+
+                                    except httpx.HTTPStatusError as img_e:
+                                        if img_e.response.status_code in [403, 429, 503] and img_attempt < img_max_retries - 1:
+                                            logger.warning(f"Image HTTP {img_e.response.status_code}, retrying...")
+                                            continue
+                                        else:
+                                            raise  # Re-raise on last attempt or non-retryable error
+
+                            if img_bytes is None:
+                                raise Exception("Failed to download image after retries")
 
                             # Get description from vision model
                             description = fn_describe_image(img_bytes, config)
