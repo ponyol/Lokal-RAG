@@ -413,16 +413,43 @@ def _describe_image_ollama(base64_image: str, model: str, config: AppConfig) -> 
         "stream": False,
     }
 
+    # Retry configuration for timeout errors
+    max_retries = 3
+    last_error = None
+
     with httpx.Client(timeout=config.LLM_REQUEST_TIMEOUT) as client:
-        response = client.post(url, json=payload)
-        response.raise_for_status()
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    logger.warning(f"Ollama vision API timeout, retry {attempt + 1}/{max_retries}...")
+                    time.sleep(2)  # Brief delay before retry
 
-    data = response.json()
+                response = client.post(url, json=payload)
+                response.raise_for_status()
 
-    if "response" not in data:
-        raise ValueError(f"Invalid Ollama vision response format: {data}")
+                # Success! Parse and return
+                data = response.json()
 
-    return data["response"].strip()
+                if "response" not in data:
+                    raise ValueError(f"Invalid Ollama vision response format: {data}")
+
+                if attempt > 0:
+                    logger.info(f"✓ Ollama vision request succeeded on attempt {attempt + 1}")
+
+                return data["response"].strip()
+
+            except (httpx.TimeoutException, httpx.ReadTimeout) as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    logger.warning(f"⚠️  Timeout error (attempt {attempt + 1}/{max_retries}): {e}")
+                    continue  # Try again
+                else:
+                    logger.error(f"❌ Timeout persists after {max_retries} attempts")
+                    raise Exception(f"Ollama vision API timeout after {max_retries} attempts") from e
+
+    # Should never reach here, but just in case
+    if last_error:
+        raise last_error
 
 
 def _describe_image_lmstudio(base64_image: str, model: str, config: AppConfig) -> str:
@@ -450,20 +477,47 @@ def _describe_image_lmstudio(base64_image: str, model: str, config: AppConfig) -
         "stream": False,
     }
 
+    # Retry configuration for timeout errors
+    max_retries = 3
+    last_error = None
+
     with httpx.Client(timeout=config.LLM_REQUEST_TIMEOUT) as client:
-        response = client.post(url, json=payload)
-        response.raise_for_status()
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    logger.warning(f"LM Studio vision API timeout, retry {attempt + 1}/{max_retries}...")
+                    time.sleep(2)  # Brief delay before retry
 
-    data = response.json()
+                response = client.post(url, json=payload)
+                response.raise_for_status()
 
-    if "choices" not in data or len(data["choices"]) == 0:
-        raise ValueError(f"Invalid LM Studio vision response format: {data}")
+                # Success! Parse and return
+                data = response.json()
 
-    message = data["choices"][0].get("message", {})
-    if "content" not in message:
-        raise ValueError(f"Invalid LM Studio vision message format: {data}")
+                if "choices" not in data or len(data["choices"]) == 0:
+                    raise ValueError(f"Invalid LM Studio vision response format: {data}")
 
-    return message["content"].strip()
+                message = data["choices"][0].get("message", {})
+                if "content" not in message:
+                    raise ValueError(f"Invalid LM Studio vision message format: {data}")
+
+                if attempt > 0:
+                    logger.info(f"✓ LM Studio vision request succeeded on attempt {attempt + 1}")
+
+                return message["content"].strip()
+
+            except (httpx.TimeoutException, httpx.ReadTimeout) as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    logger.warning(f"⚠️  Timeout error (attempt {attempt + 1}/{max_retries}): {e}")
+                    continue  # Try again
+                else:
+                    logger.error(f"❌ Timeout persists after {max_retries} attempts")
+                    raise Exception(f"LM Studio vision API timeout after {max_retries} attempts") from e
+
+    # Should never reach here, but just in case
+    if last_error:
+        raise last_error
 
 
 def _describe_image_ollama_with_url(base64_image: str, model: str, base_url: str, config: AppConfig) -> str:
@@ -477,16 +531,43 @@ def _describe_image_ollama_with_url(base64_image: str, model: str, base_url: str
         "stream": False,
     }
 
+    # Retry configuration for timeout errors
+    max_retries = 3
+    last_error = None
+
     with httpx.Client(timeout=config.LLM_REQUEST_TIMEOUT) as client:
-        response = client.post(url, json=payload)
-        response.raise_for_status()
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    logger.warning(f"Ollama (custom URL) vision API timeout, retry {attempt + 1}/{max_retries}...")
+                    time.sleep(2)  # Brief delay before retry
 
-    data = response.json()
+                response = client.post(url, json=payload)
+                response.raise_for_status()
 
-    if "response" not in data:
-        raise ValueError(f"Invalid Ollama vision response format: {data}")
+                # Success! Parse and return
+                data = response.json()
 
-    return data["response"].strip()
+                if "response" not in data:
+                    raise ValueError(f"Invalid Ollama vision response format: {data}")
+
+                if attempt > 0:
+                    logger.info(f"✓ Ollama (custom URL) vision request succeeded on attempt {attempt + 1}")
+
+                return data["response"].strip()
+
+            except (httpx.TimeoutException, httpx.ReadTimeout) as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    logger.warning(f"⚠️  Timeout error (attempt {attempt + 1}/{max_retries}): {e}")
+                    continue  # Try again
+                else:
+                    logger.error(f"❌ Timeout persists after {max_retries} attempts")
+                    raise Exception(f"Ollama (custom URL) vision API timeout after {max_retries} attempts") from e
+
+    # Should never reach here, but just in case
+    if last_error:
+        raise last_error
 
 
 def _describe_image_lmstudio_with_url(base64_image: str, model: str, base_url: str, config: AppConfig) -> str:
@@ -514,21 +595,48 @@ def _describe_image_lmstudio_with_url(base64_image: str, model: str, base_url: s
         "stream": False,
     }
 
+    # Retry configuration for timeout errors
+    max_retries = 3
+    last_error = None
+
     with httpx.Client(timeout=config.LLM_REQUEST_TIMEOUT) as client:
-        response = client.post(url, json=payload)
-        response.raise_for_status()
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    logger.warning(f"LM Studio (custom URL) vision API timeout, retry {attempt + 1}/{max_retries}...")
+                    time.sleep(2)  # Brief delay before retry
 
-    data = response.json()
-    logger.info(f"Total time response: {response.elapsed.total_seconds()} seconds")
+                response = client.post(url, json=payload)
+                response.raise_for_status()
 
-    if "choices" not in data or len(data["choices"]) == 0:
-        raise ValueError(f"Invalid LM Studio vision response format: {data}")
+                # Success! Parse and return
+                data = response.json()
+                logger.info(f"Total time response: {response.elapsed.total_seconds()} seconds")
 
-    message = data["choices"][0].get("message", {})
-    if "content" not in message:
-        raise ValueError(f"Invalid LM Studio vision message format: {data}")
+                if "choices" not in data or len(data["choices"]) == 0:
+                    raise ValueError(f"Invalid LM Studio vision response format: {data}")
 
-    return message["content"].strip()
+                message = data["choices"][0].get("message", {})
+                if "content" not in message:
+                    raise ValueError(f"Invalid LM Studio vision message format: {data}")
+
+                if attempt > 0:
+                    logger.info(f"✓ LM Studio (custom URL) vision request succeeded on attempt {attempt + 1}")
+
+                return message["content"].strip()
+
+            except (httpx.TimeoutException, httpx.ReadTimeout) as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    logger.warning(f"⚠️  Timeout error (attempt {attempt + 1}/{max_retries}): {e}")
+                    continue  # Try again
+                else:
+                    logger.error(f"❌ Timeout persists after {max_retries} attempts")
+                    raise Exception(f"LM Studio (custom URL) vision API timeout after {max_retries} attempts") from e
+
+    # Should never reach here, but just in case
+    if last_error:
+        raise last_error
 
 
 def _describe_image_claude(image_bytes: bytes, model: str, config: AppConfig) -> str:
