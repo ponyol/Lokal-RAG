@@ -997,7 +997,8 @@ def processing_pipeline_worker(
             import re
             safe_tag = re.sub(r'[^\w\s-]', '', primary_tag)
             safe_tag = re.sub(r'[-\s]+', '-', safe_tag).lower()
-            filename = timestamp.strftime(f"%Y-%m-%dT%H-%M-%S-{safe_tag}")
+            filename = timestamp.strftime(f"%Y-%m-%dT%H-%M-%S")
+            # filename = timestamp.strftime(f"%Y-%m-%dT%H-%M-%S-{safe_tag}")
 
             # Debug: Log markdown size before saving (if vision is enabled)
             if vision_mode != "disabled":
@@ -1009,7 +1010,8 @@ def processing_pipeline_worker(
                 saved_path_en = fn_save_markdown_to_disk(
                     text=markdown_text,
                     tag=primary_tag,
-                    filename=f"{filename}_en",
+                    filename=filename,
+                    # filename=f"{filename}_en",
                     config=config,
                     language="en",
                 )
@@ -1018,7 +1020,8 @@ def processing_pipeline_worker(
                 saved_path_ru = fn_save_markdown_to_disk(
                     text=russian_text,
                     tag=primary_tag,
-                    filename=f"{filename}_ru",
+                    filename=filename,
+                    # filename=f"{filename}_ru",
                     config=config,
                     language="ru",
                 )
