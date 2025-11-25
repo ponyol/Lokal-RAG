@@ -478,7 +478,7 @@ def _describe_image_lmstudio(base64_image: str, model: str, config: AppConfig) -
     }
 
     # Retry configuration for timeout errors
-    max_retries = 3
+    max_retries = 5
     last_error = None
 
     with httpx.Client(timeout=config.LLM_REQUEST_TIMEOUT) as client:
@@ -486,7 +486,7 @@ def _describe_image_lmstudio(base64_image: str, model: str, config: AppConfig) -
             try:
                 if attempt > 0:
                     logger.warning(f"LM Studio vision API timeout, retry {attempt + 1}/{max_retries}...")
-                    time.sleep(2)  # Brief delay before retry
+                    time.sleep(10)  # Brief delay before retry
 
                 response = client.post(url, json=payload)
                 response.raise_for_status()
@@ -532,7 +532,7 @@ def _describe_image_ollama_with_url(base64_image: str, model: str, base_url: str
     }
 
     # Retry configuration for timeout errors
-    max_retries = 3
+    max_retries = 5
     last_error = None
 
     with httpx.Client(timeout=config.LLM_REQUEST_TIMEOUT) as client:
@@ -540,7 +540,7 @@ def _describe_image_ollama_with_url(base64_image: str, model: str, base_url: str
             try:
                 if attempt > 0:
                     logger.warning(f"Ollama (custom URL) vision API timeout, retry {attempt + 1}/{max_retries}...")
-                    time.sleep(2)  # Brief delay before retry
+                    time.sleep(10)  # Brief delay before retry
 
                 response = client.post(url, json=payload)
                 response.raise_for_status()
@@ -596,7 +596,7 @@ def _describe_image_lmstudio_with_url(base64_image: str, model: str, base_url: s
     }
 
     # Retry configuration for timeout errors
-    max_retries = 3
+    max_retries = 5
     last_error = None
 
     with httpx.Client(timeout=config.LLM_REQUEST_TIMEOUT) as client:
@@ -604,7 +604,7 @@ def _describe_image_lmstudio_with_url(base64_image: str, model: str, base_url: s
             try:
                 if attempt > 0:
                     logger.warning(f"LM Studio (custom URL) vision API timeout, retry {attempt + 1}/{max_retries}...")
-                    time.sleep(2)  # Brief delay before retry
+                    time.sleep(10)  # Brief delay before retry
 
                 response = client.post(url, json=payload)
                 response.raise_for_status()
@@ -1773,8 +1773,8 @@ def fn_fetch_web_article(url: str, config: AppConfig, view_queue: Optional['queu
             cookies_to_use = None
 
         # Retry configuration for handling rate limiting and bot detection
-        max_retries = 4
-        retry_delays = [2, 4, 8, 16]  # Exponential backoff in seconds
+        max_retries = 6
+        retry_delays = [2, 4, 8, 16, 32, 64]  # Exponential backoff in seconds
 
         # Additional User-Agent options for rotation (helps avoid bot detection)
         user_agents = [
@@ -2058,8 +2058,8 @@ def fn_fetch_web_article(url: str, config: AppConfig, view_queue: Optional['queu
 
                             # Download image with retry logic (images can also get 403 errors)
                             img_bytes = None
-                            img_max_retries = 3
-                            img_retry_delays = [1, 2, 4]
+                            img_max_retries = 5
+                            img_retry_delays = [1, 2, 4, 8, 16]
 
                             with httpx.Client(timeout=config.WEB_REQUEST_TIMEOUT) as client:
                                 for img_attempt in range(img_max_retries):
