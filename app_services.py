@@ -893,6 +893,7 @@ def _call_gemini(
     """
     try:
         import google.generativeai as genai
+        from google.generativeai.types import HarmCategory, HarmBlockThreshold
     except ImportError:
         raise ImportError(
             "The 'google-generativeai' package is required for Gemini API. "
@@ -922,10 +923,18 @@ def _call_gemini(
             "max_output_tokens": 8192,
         }
 
+        devops_safety_settings = {
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+        }
+
         # Call Gemini API
         response = model.generate_content(
             prompt,
             generation_config=generation_config,
+            safety_settings=devops_safety_settings,
             request_options={"timeout": config.LLM_REQUEST_TIMEOUT},
         )
 
